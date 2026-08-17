@@ -11,4 +11,8 @@ export default defineConfig({
       "@": resolve(import.meta.dirname, "./src"),
     },
   },
+  build: {
+    // three.js 海面视觉让主包偏大，属预期
+    chunkSizeWarningLimit: 900,
+  },
 })
