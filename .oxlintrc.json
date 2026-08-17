@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "browser": true
+  },
+  "plugins": ["react", "unicorn", "typescript", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "off"
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/jsx-key": "warn",
+    "react/react-in-jsx-scope": "off",
+    "unicorn/filename-case": "off",
+    "no-console": "off"
+  },
+  "ignorePatterns": ["dist", "node_modules", "apps/web/src/components/ui/**"]
+}
+
