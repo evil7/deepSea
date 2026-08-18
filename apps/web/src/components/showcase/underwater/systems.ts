@@ -1,34 +1,95 @@
 import * as THREE from "three"
 
+import { createCircularGeometry } from "@/components/showcase/circular-geometry"
+import type { OceanConf } from "@/components/showcase/ocean-conf"
+
 import {
-  bubbleFragmentShader,
-  bubbleVertexShader,
   causticsFragmentShader,
   causticsVertexShader,
   codeCharFragmentShader,
   codeCharVertexShader,
-  godRayFragmentShader,
-  godRayVertexShader,
+  lightShaftFragmentShader,
+  lightShaftVertexShader,
 } from "./shaders"
 
 // ---------------------------------------------------------------------------
-// 水下系统构建器：caustics（折射光影）/ godRays（丁达尔）/ bubbles（气泡）
-// / codeParticles（漂浮代码）
+// 水下系统构建器：seabed（海底实体地面）/ caustics（海底光斑）/
+// lightShafts（海中光柱）/ codeParticles（漂浮代码）
+// 统一骨架：全部采样共享 sea-field 的 waveField（世界 XZ → 海面高度）——
+//   · 海底光斑（GPU）：正色映射 height → 亮度（浪峰聚光亮、浪谷暗）
+//   · 海中光柱（GPU）：取反/取正(-height) → 强度，位置 = 海面网格三角形对齐
+//   · 海面（ocean.tsx）：height → 位移 + 浪花
+// 海中/海底支持动态高度（surfaceY↔bottomY）。
 // ---------------------------------------------------------------------------
 
-// —— caustics：海底折射光影（参考 giser2017 领域扭曲算法）——
-export function createCaustics(): {
+// 海底 / 光柱的垂直范围（可动态调整：surfaceY=海面、bottomY=海底）
+interface UnderwaterExtent {
+  surfaceY: number
+  bottomY: number
+}
+
+// —— 海底实体地面 ——
+// 之前"海底看不见"：只有半透明光斑平面、且颜色极暗 → 被深海背景吞没。
+// 修复：新增不透明圆形海底地面（bottomColor），光斑叠加其上。
+export function createSeabed(bottomY: number): {
   mesh: THREE.Mesh
-  update: (dive: number, t: number) => void
+  update: (dive: number, conf: OceanConf) => void
   dispose: () => void
 } {
-  const geometry = new THREE.PlaneGeometry(60, 60, 32, 32)
-  geometry.rotateX(-Math.PI * 0.5)
+  const geometry = createCircularGeometry(60, 48, 48)
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#04182b"),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.position.y = bottomY
+  mesh.renderOrder = 0
+
+  return {
+    mesh,
+    update: (dive, conf) => {
+      // 海底深度（正值 → 海面下方距离）：海底地面跟随下沉/上浮
+      mesh.position.y = -conf.bottomDepth
+      material.opacity = dive * 0.92
+      material.color.set(conf.bottomColor)
+    },
+    dispose: () => {
+      geometry.dispose()
+      material.dispose()
+    },
+  }
+}
+
+// —— caustics：海底折射光斑 ——
+// 统一骨架：直接用共享 waveField（世界 XZ → 海面高度），正色映射：
+//   浪峰（h>0）聚光 → 亮斑；浪谷（h<0） → 暗。与海面同一函数/参数/坐标。
+export function createCaustics(bottomY: number): {
+  mesh: THREE.Mesh
+  update: (dive: number, t: number, conf: OceanConf) => void
+  dispose: () => void
+} {
+  const geometry = createCircularGeometry(60, 32, 32)
   const uniforms = {
     uTime: { value: 0 },
-    uScale: { value: 9.0 },
-    uSpeed: { value: 0.28 },
-    uFlowSpeed: { value: new THREE.Vector2(0.02, 0.015) },
+    uFlowDir: { value: new THREE.Vector2(0.2, -0.98).normalize() },
+    uFlowSpeed: { value: 0.15 },
+    uWaveElevation: { value: 0.35 },
+    uWaveIterations: { value: 8 },
+    uWaveDrag: { value: 0.115 },
+    uSwellStrength: { value: 0.45 },
+    uSwellScale: { value: 1.65 },
+    uSwellSpeed: { value: 0.7 },
+    uSmallWavesElevation: { value: 0.08 },
+    uSmallWavesFrequency: { value: 1 },
+    uSmallWavesSpeed: { value: 0.2 },
+    uSmallWavesIterations: { value: 2 },
+    uMidElevation: { value: 0.07 },
+    uMidScale: { value: 4.6 },
+    uMidSpeed: { value: 0.64 },
+    uWaveDensity: { value: 1 },
+    uWaveSpeed: { value: 1 },
     uBrightness: { value: 1.35 },
     uOpacity: { value: 0 },
     uLightColor: { value: new THREE.Color("#9fd8ff") },
@@ -42,14 +103,40 @@ export function createCaustics(): {
     depthWrite: false,
   })
   const mesh = new THREE.Mesh(geometry, material)
-  // 铺在海底（相机水下看斜下方时作为海底本体）
-  mesh.position.set(0, -6.2, -7)
+  // 铺在海底（圆形 60 半径，与海面沙盘同心）
+  mesh.position.y = bottomY
+  mesh.renderOrder = 1
 
   return {
     mesh,
-    update: (dive: number, t: number) => {
+    update: (dive, t, conf) => {
       uniforms.uTime.value = t
-      uniforms.uOpacity.value = dive
+      // 海底深度（正值 → 海面下方距离）：光斑平面跟随下沉/上浮
+      mesh.position.y = -conf.bottomDepth
+      uniforms.uOpacity.value = dive * 0.9
+      uniforms.uBrightness.value = conf.causticBrightness
+      ;(uniforms.uDeepColor.value as THREE.Color).set(conf.bottomColor)
+      // 归一化流向（与海面一致，同一 waveField → 同向同速）
+      const a = conf.flowAngle * (Math.PI / 180)
+      ;(uniforms.uFlowDir.value as THREE.Vector2)
+        .set(Math.sin(a), Math.cos(a))
+        .normalize()
+      uniforms.uFlowSpeed.value = conf.flowSpeed
+      uniforms.uWaveElevation.value = conf.waveHeight
+      uniforms.uWaveIterations.value = conf.waveIterations
+      uniforms.uWaveDrag.value = conf.waveDrag
+      uniforms.uSwellStrength.value = conf.swellStrength
+      uniforms.uSwellScale.value = conf.swellScale
+      uniforms.uSwellSpeed.value = conf.swellSpeed
+      uniforms.uSmallWavesElevation.value = conf.smallElevation
+      uniforms.uSmallWavesFrequency.value = conf.smallFrequency
+      uniforms.uSmallWavesSpeed.value = conf.smallSpeed
+      uniforms.uSmallWavesIterations.value = conf.smallIterations
+      uniforms.uMidElevation.value = conf.midElevation
+      uniforms.uMidScale.value = conf.midScale
+      uniforms.uMidSpeed.value = conf.midSpeed
+      uniforms.uWaveDensity.value = conf.waveDensity
+      uniforms.uWaveSpeed.value = conf.waveSpeed
     },
     dispose: () => {
       geometry.dispose()
@@ -58,216 +145,147 @@ export function createCaustics(): {
   }
 }
 
-// —— 丁达尔光柱：7 根阳光射入海底 ——
-const GOD_RAY_POSITIONS: Array<[number, number, number, number]> = [
-  [-5.2, 2.4, -2.5, 0.0],
-  [-2.4, 2.8, -4.2, 1.2],
-  [0.2, 3.0, -1.2, 2.4],
-  [2.6, 2.6, -5.4, 3.6],
-  [5.0, 3.2, -2.8, 4.8],
-  [-1.2, 2.2, -7.5, 5.6],
-  [3.6, 2.0, -8.2, 6.4],
-]
+// —— 海中光柱（light shafts）：浪谷三角向下拉伸的三棱柱 ——
+// 统一骨架：几何体复用海面圆形沙盘网格（矩形切分 + 圆形裁切，世界 XZ 同坐标系），
+//   顶点着色器用共享 waveField 计算海面高度，波谷处三棱柱侧面自然向下延伸 →
+//   位置/方向与海面波浪 100% 实时对齐（同一函数、同一参数、世界坐标）。
+//   片元取反(-elevation) 决定透明度（浪谷越深越透光），靠近海底渐隐。
+const SHAFT_RADIUS = 42
+const SHAFT_SEGMENTS = 36
 
-export function createGodRays(): {
-  group: THREE.Group
-  update: (dive: number, t: number) => void
+export function createLightShafts(): {
+  mesh: THREE.Mesh
+  update: (dive: number, t: number, conf: OceanConf) => void
   dispose: () => void
 } {
-  const group = new THREE.Group()
-  const materials: THREE.ShaderMaterial[] = []
-  const geometry = new THREE.PlaneGeometry(3.6, 16)
-
-  for (const [x, y, z, phase] of GOD_RAY_POSITIONS) {
-    const material = new THREE.ShaderMaterial({
-      vertexShader: godRayVertexShader,
-      fragmentShader: godRayFragmentShader,
-      uniforms: {
-        uOpacity: { value: 0 },
-        uPhase: { value: phase },
-      },
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    })
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.set(x, y, z)
-    // 从水面斜射向海底
-    mesh.rotation.x = 0.55
-    mesh.rotation.z = (Math.random() - 0.5) * 0.3
-    group.add(mesh)
-    materials.push(material)
+  // 构造三棱柱侧面：圆形沙盘网格每个三角形 → 3 条侧棱（quad），上下顶点由 shader 落位
+  const positions: number[] = []
+  const flags: number[] = []
+  const circular = createCircularGeometry(
+    SHAFT_RADIUS,
+    SHAFT_SEGMENTS,
+    SHAFT_SEGMENTS
+  )
+  const posAttr = circular.attributes.position as THREE.BufferAttribute
+  const index = circular.index as THREE.BufferAttribute
+  const verts: Array<[number, number]> = []
+  for (let i = 0; i < posAttr.count; i++) {
+    verts.push([posAttr.getX(i), posAttr.getZ(i)])
   }
 
-  return {
-    group,
-    update: (dive: number, t: number) => {
-      for (const material of materials) {
-        const phase = material.uniforms.uPhase.value as number
-        // 透明度随潜入淡入 + 缓慢呼吸
-        material.uniforms.uOpacity.value =
-          dive * 0.5 * (0.72 + 0.28 * Math.sin(t * 0.12 + phase))
-      }
-    },
-    dispose: () => {
-      geometry.dispose()
-      for (const material of materials) {
-        material.dispose()
-      }
-    },
+  const pushVert = (x: number, z: number, flag: number) => {
+    positions.push(x, z, 0)
+    flags.push(flag)
   }
-}
 
-// —— 气泡系统：过场泳镜气泡 + 环境气泡（池化）——
-const MAX_BUBBLES = 700
-
-interface BubbleState {
-  vel: THREE.Vector3
-  ttl: number
-  maxTtl: number
-  baseScale: number
-  alive: boolean
-  seed: number
-}
-
-export function createBubbleSystem(): {
-  points: THREE.Points
-  /** 过场：相机周围喷一大团气泡（泳镜效果） */
-  burst: (count: number, center: THREE.Vector3) => void
-  /** 环境：在指定范围持续冒泡 */
-  spawnAmbient: (
-    count: number,
-    center: THREE.Vector3,
-    range: THREE.Vector3
-  ) => void
-  update: (delta: number, t: number) => void
-  dispose: () => void
-} {
-  const positions = new Float32Array(MAX_BUBBLES * 3)
-  const scales = new Float32Array(MAX_BUBBLES)
-  const alphas = new Float32Array(MAX_BUBBLES)
-  const state: BubbleState[] = []
-  for (let i = 0; i < MAX_BUBBLES; i++) {
-    state.push({
-      vel: new THREE.Vector3(),
-      ttl: 0,
-      maxTtl: 1,
-      baseScale: 0.2,
-      alive: false,
-      seed: Math.random() * 100,
-    })
+  // 一条侧棱的 quad：a_top, b_top, b_bot, a_bot → 两个三角形
+  const addQuad = (a: [number, number], b: [number, number]) => {
+    pushVert(a[0], a[1], 0)
+    pushVert(b[0], b[1], 0)
+    pushVert(b[0], b[1], 1)
+    pushVert(a[0], a[1], 0)
+    pushVert(b[0], b[1], 1)
+    pushVert(a[0], a[1], 1)
   }
+
+  // 遍历每个三角形：三条边各生成一个侧面 quad
+  // （矩形网格 + 圆形裁切：无中心顶点，不会在圆心汇聚；全量遍历）
+  for (let i = 0; i < index.count; i += 3) {
+    const a = verts[index.getX(i)]
+    const b = verts[index.getX(i + 1)]
+    const c = verts[index.getX(i + 2)]
+    addQuad(a, b)
+    addQuad(b, c)
+    addQuad(c, a)
+  }
+  circular.dispose()
 
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute("aScale", new THREE.BufferAttribute(scales, 1))
-  geometry.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1))
+  geometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(new Float32Array(positions), 3)
+  )
+  geometry.setAttribute(
+    "aFlag",
+    new THREE.BufferAttribute(new Float32Array(flags), 1)
+  )
+
+  const uniforms = {
+    uTime: { value: 0 },
+    uFlowDir: { value: new THREE.Vector2(0.2, -0.98).normalize() },
+    uFlowSpeed: { value: 0.15 },
+    uWaveElevation: { value: 0.35 },
+    uWaveIterations: { value: 8 },
+    uWaveDrag: { value: 0.115 },
+    uSwellStrength: { value: 0.45 },
+    uSwellScale: { value: 1.65 },
+    uSwellSpeed: { value: 0.7 },
+    uSmallWavesElevation: { value: 0.08 },
+    uSmallWavesFrequency: { value: 1 },
+    uSmallWavesSpeed: { value: 0.2 },
+    uSmallWavesIterations: { value: 2 },
+    uMidElevation: { value: 0.07 },
+    uMidScale: { value: 4.6 },
+    uMidSpeed: { value: 0.64 },
+    uWaveDensity: { value: 1 },
+    uWaveSpeed: { value: 1 },
+    uLength: { value: 6.2 },
+    uScale: { value: 0.8 },
+    uAngle: { value: 0.35 },
+    uTilt: { value: 0.15 },
+    uOpacity: { value: 0 },
+    uThreshold: { value: 0.0 },
+    uCrestLight: { value: 0 },
+    uLightColor: { value: new THREE.Color("#bfe6ff") },
+  }
 
   const material = new THREE.ShaderMaterial({
-    vertexShader: bubbleVertexShader,
-    fragmentShader: bubbleFragmentShader,
-    uniforms: {
-      uColor: { value: new THREE.Color("#cdeaff") },
-      uOpacity: { value: 1 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
-    },
+    vertexShader: lightShaftVertexShader,
+    fragmentShader: lightShaftFragmentShader,
+    uniforms,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
+    side: THREE.DoubleSide,
   })
 
-  const points = new THREE.Points(geometry, material)
-  points.frustumCulled = false
-
-  const spawn = (
-    center: THREE.Vector3,
-    range: THREE.Vector3,
-    velUp: [number, number],
-    ttl: [number, number],
-    scale: [number, number]
-  ) => {
-    const slot = state.find((s) => !s.alive)
-    if (!slot) {
-      return
-    }
-    const index = state.indexOf(slot)
-    positions[index * 3] = center.x + (Math.random() - 0.5) * 2 * range.x
-    positions[index * 3 + 1] = center.y + (Math.random() - 0.5) * 2 * range.y
-    positions[index * 3 + 2] = center.z + (Math.random() - 0.5) * 2 * range.z
-    slot.vel.set(
-      (Math.random() - 0.5) * 1.2,
-      velUp[0] + Math.random() * (velUp[1] - velUp[0]),
-      (Math.random() - 0.5) * 1.2
-    )
-    slot.maxTtl = ttl[0] + Math.random() * (ttl[1] - ttl[0])
-    slot.ttl = slot.maxTtl
-    slot.baseScale = scale[0] + Math.random() * (scale[1] - scale[0])
-    slot.alive = true
-    slot.seed = Math.random() * 100
-    scales[index] = slot.baseScale
-    alphas[index] = 0
-  }
-
-  const burst = (count: number, center: THREE.Vector3) => {
-    // 贴相机的大气泡团：范围大、上浮快、寿命短
-    for (let i = 0; i < count; i++) {
-      spawn(
-        center,
-        new THREE.Vector3(7, 4.5, 6),
-        [3.2, 5.6],
-        [1.6, 3.2],
-        [0.25, 0.6]
-      )
-    }
-  }
-
-  const spawnAmbient = (
-    count: number,
-    center: THREE.Vector3,
-    range: THREE.Vector3
-  ) => {
-    for (let i = 0; i < count; i++) {
-      spawn(center, range, [1.6, 2.8], [3.0, 6.0], [0.1, 0.3])
-    }
-  }
-
-  const update = (delta: number, t: number) => {
-    let needsUpdate = false
-    for (let i = 0; i < MAX_BUBBLES; i++) {
-      const s = state[i]
-      if (!s.alive) {
-        continue
-      }
-      s.ttl -= delta
-      if (s.ttl <= 0) {
-        s.alive = false
-        alphas[i] = 0
-        needsUpdate = true
-        continue
-      }
-      // 上浮 + 左右漂移
-      positions[i * 3] += s.vel.x * delta
-      positions[i * 3 + 1] += s.vel.y * delta
-      positions[i * 3 + 2] += s.vel.z * delta
-      // 寿命渐出 + 微闪烁
-      const life = s.ttl / s.maxTtl
-      const flicker = 0.75 + 0.25 * Math.sin(t * 6 + s.seed * 10)
-      alphas[i] = Math.min(1, life * 2) * flicker
-      needsUpdate = true
-    }
-    if (needsUpdate) {
-      ;(geometry.attributes.position as THREE.BufferAttribute).needsUpdate =
-        true
-      ;(geometry.attributes.aAlpha as THREE.BufferAttribute).needsUpdate = true
-    }
-  }
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.frustumCulled = false
+  mesh.renderOrder = 2
 
   return {
-    points,
-    burst,
-    spawnAmbient,
-    update,
+    mesh,
+    update: (dive, t, conf) => {
+      uniforms.uTime.value = t
+      uniforms.uOpacity.value = dive * conf.shaftOpacity
+      uniforms.uLength.value = conf.shaftLength
+      uniforms.uScale.value = conf.shaftScale
+      uniforms.uAngle.value = conf.shaftAngle * (Math.PI / 180)
+      uniforms.uThreshold.value = conf.shaftThreshold
+      uniforms.uCrestLight.value = conf.shaftCrestLight ? 1 : 0
+      ;(uniforms.uLightColor.value as THREE.Color).set(conf.shaftColor)
+      // 归一化流向（与海面一致）
+      const a = conf.flowAngle * (Math.PI / 180)
+      ;(uniforms.uFlowDir.value as THREE.Vector2)
+        .set(Math.sin(a), Math.cos(a))
+        .normalize()
+      uniforms.uFlowSpeed.value = conf.flowSpeed
+      uniforms.uWaveElevation.value = conf.waveHeight
+      uniforms.uWaveIterations.value = conf.waveIterations
+      uniforms.uWaveDrag.value = conf.waveDrag
+      uniforms.uSwellStrength.value = conf.swellStrength
+      uniforms.uSwellScale.value = conf.swellScale
+      uniforms.uSwellSpeed.value = conf.swellSpeed
+      uniforms.uSmallWavesElevation.value = conf.smallElevation
+      uniforms.uSmallWavesFrequency.value = conf.smallFrequency
+      uniforms.uSmallWavesSpeed.value = conf.smallSpeed
+      uniforms.uSmallWavesIterations.value = conf.smallIterations
+      uniforms.uMidElevation.value = conf.midElevation
+      uniforms.uMidScale.value = conf.midScale
+      uniforms.uMidSpeed.value = conf.midSpeed
+      uniforms.uWaveDensity.value = conf.waveDensity
+      uniforms.uWaveSpeed.value = conf.waveSpeed
+    },
     dispose: () => {
       geometry.dispose()
       material.dispose()
@@ -276,6 +294,10 @@ export function createBubbleSystem(): {
 }
 
 // —— 漂浮代码粒子 ——
+// 运动：跟随海面洋流方向（flowDir 映射到 XZ 平面）统一漂移，超界 wrap 循环；
+//       再叠加小幅正弦摆动保留随机感；同时跟随鼠标视差同向缓慢平移。
+// 淡入淡出：每个粒子独立周期/相位，alpha 按 sin 脉冲循环 0→1→0，随机消失再现。
+// 字符：每秒随机更换一部分粒子的字符（图集索引），内容持续变动。
 const MAX_CODE = 4000
 // 青绿蓝随机调色板（海底氛围）
 const CODE_PALETTE = [
@@ -285,10 +307,26 @@ const CODE_PALETTE = [
   new THREE.Color("#52c9d1"),
   new THREE.Color("#a9c8ff"),
 ]
+// 代码粒子漂移范围（与初始分布一致）：x ∈ [-14,14]、z ∈ [-16,4]
+const CODE_X_MIN = -14
+const CODE_X_MAX = 14
+const CODE_Z_MIN = -16
+const CODE_Z_MAX = 4
+// 洋流速度换算系数：海面 UV 速度 → 世界单位/秒（放慢避免眼花）
+const FLOW_SCALE = 2.5
+// 鼠标视差跟随系数（同向、慢速）
+const MOUSE_X_SCALE = 0.8
+const MOUSE_Y_SCALE = 0.45
+
+// 数值范围 wrap（粒子漂出范围后从另一侧循环出现）
+const wrap = (v: number, min: number, max: number) => {
+  const span = max - min
+  return min + ((((v - min) % span) + span) % span)
+}
 
 export function createCodeParticles(atlas: THREE.Texture): {
   points: THREE.Points
-  update: (t: number) => void
+  update: (t: number, conf: OceanConf, mouseX: number, mouseY: number) => void
   dispose: () => void
 } {
   const positions = new Float32Array(MAX_CODE * 3)
@@ -296,13 +334,16 @@ export function createCodeParticles(atlas: THREE.Texture): {
   const seeds = new Float32Array(MAX_CODE)
   const chars = new Float32Array(MAX_CODE)
   const alphas = new Float32Array(MAX_CODE)
+  // 淡入淡出周期/相位（秒）
+  const fadePeriods = new Float32Array(MAX_CODE)
+  const fadePhases = new Float32Array(MAX_CODE)
   const colors = new Float32Array(MAX_CODE * 3)
 
   const color = new THREE.Color()
   for (let i = 0; i < MAX_CODE; i++) {
-    const x = (Math.random() - 0.5) * 28
+    const x = (Math.random() - 0.5) * (CODE_X_MAX - CODE_X_MIN)
     const y = -1 - Math.random() * 7.5
-    const z = -16 + Math.random() * 20
+    const z = CODE_Z_MIN + Math.random() * (CODE_Z_MAX - CODE_Z_MIN)
     positions[i * 3] = x
     positions[i * 3 + 1] = y
     positions[i * 3 + 2] = z
@@ -311,7 +352,9 @@ export function createCodeParticles(atlas: THREE.Texture): {
     basePositions[i * 3 + 2] = z
     seeds[i] = Math.random() * 100
     chars[i] = Math.floor(Math.random() * 64)
-    alphas[i] = 0.35 + Math.random() * 0.6
+    alphas[i] = 0
+    fadePeriods[i] = 4 + Math.random() * 5 // 4~9 秒一个淡入淡出周期
+    fadePhases[i] = Math.random() * 100 // 随机相位 → 随机消失时刻
     color.copy(CODE_PALETTE[Math.floor(Math.random() * CODE_PALETTE.length)])
     colors[i * 3] = color.r
     colors[i * 3 + 1] = color.g
@@ -340,17 +383,64 @@ export function createCodeParticles(atlas: THREE.Texture): {
   const points = new THREE.Points(geometry, material)
   points.frustumCulled = false
 
-  const update = (t: number) => {
+  const positionAttr = geometry.attributes.position as THREE.BufferAttribute
+  const charAttr = geometry.attributes.aChar as THREE.BufferAttribute
+  const alphaAttr = geometry.attributes.aAlpha as THREE.BufferAttribute
+
+  // 字符快速变换步进（0.35 秒一批）
+  let lastCharSwap = -1
+
+  const update = (
+    t: number,
+    conf: OceanConf,
+    mouseX: number,
+    mouseY: number
+  ) => {
+    // 洋流方向映射到 XZ 平面（海面 flowAngle → 世界 x/z）
+    const a = conf.flowAngle * (Math.PI / 180)
+    const dx = Math.sin(a)
+    const dz = Math.cos(a)
+    const drift = t * conf.flowSpeed * FLOW_SCALE
+    // 鼠标视差：与海面同向（pan）但更慢
+    const mx = mouseX * MOUSE_X_SCALE
+    const my = mouseY * MOUSE_Y_SCALE
+
     for (let i = 0; i < MAX_CODE; i++) {
       const seed = seeds[i]
+      // 自主摇曳：每个粒子独立频率/相位，X 轴左右摆动明显（模拟海水晃动）
+      const swayFreq = 0.5 + (seed % 0.7) // 0.5~1.2 Hz 独立频率
+      const swayPhase = seed * 37 // 独立相位
+      // 主运动：跟随洋流统一漂移（wrap 循环）+ 左右摇曳 + 鼠标视差
       positions[i * 3] =
-        basePositions[i * 3] + Math.sin(t * 0.3 + seed * 90) * 0.8
+        wrap(basePositions[i * 3] + dx * drift, CODE_X_MIN, CODE_X_MAX) +
+        Math.sin(t * swayFreq + swayPhase) * 0.55 +
+        Math.sin(t * swayFreq * 2.3 + swayPhase * 1.7) * 0.18 +
+        mx
       positions[i * 3 + 1] =
-        basePositions[i * 3 + 1] + Math.sin(t * 0.45 + seed * 45) * 0.5
+        basePositions[i * 3 + 1] + Math.sin(t * 0.45 + seed * 45) * 0.2 + my
       positions[i * 3 + 2] =
-        basePositions[i * 3 + 2] + Math.cos(t * 0.35 + seed * 30) * 0.5
+        wrap(basePositions[i * 3 + 2] + dz * drift, CODE_Z_MIN, CODE_Z_MAX) +
+        Math.cos(t * swayFreq * 0.8 + swayPhase) * 0.15
+
+      // 淡入淡出：sin 脉冲（半周期可见、半周期消失），pow 使中间更亮、两端快速归零
+      const f = Math.sin(Math.PI * (t / fadePeriods[i] + fadePhases[i]))
+      const fade = Math.pow(Math.max(0, f), 3)
+      alphas[i] = (0.45 + (seed % 0.45)) * fade
     }
-    ;(geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true
+    positionAttr.needsUpdate = true
+    alphaAttr.needsUpdate = true
+
+    // 字符快速随机变换：每 0.35 秒更换 ~35% 粒子的字符（更频繁的滚动代码感）
+    const charSwapStep = Math.floor(t / 0.35)
+    if (charSwapStep !== lastCharSwap) {
+      lastCharSwap = charSwapStep
+      for (let i = 0; i < MAX_CODE; i++) {
+        if (Math.random() < 0.35) {
+          chars[i] = Math.floor(Math.random() * 64)
+        }
+      }
+      charAttr.needsUpdate = true
+    }
   }
 
   return {
@@ -366,60 +456,59 @@ export function createCodeParticles(atlas: THREE.Texture): {
 // —— 水下场景全景（组装）——
 export interface UnderwaterScene {
   group: THREE.Group
+  seabed: ReturnType<typeof createSeabed>
   caustics: ReturnType<typeof createCaustics>
-  godRays: ReturnType<typeof createGodRays>
-  bubbles: ReturnType<typeof createBubbleSystem>
+  lightShafts: ReturnType<typeof createLightShafts>
   code: ReturnType<typeof createCodeParticles>
   update: (
     dive: number,
     t: number,
     delta: number,
-    camPos: THREE.Vector3
+    camPos: THREE.Vector3,
+    conf: OceanConf,
+    mouseX: number,
+    mouseY: number
   ) => void
   dispose: () => void
 }
 
-export function buildUnderwaterScene(atlas: THREE.Texture): UnderwaterScene {
+export function buildUnderwaterScene(
+  atlas: THREE.Texture,
+  extent: UnderwaterExtent
+): UnderwaterScene {
   const group = new THREE.Group()
-  const caustics = createCaustics()
-  const godRays = createGodRays()
-  const bubbles = createBubbleSystem()
+  const seabed = createSeabed(extent.bottomY)
+  const caustics = createCaustics(extent.bottomY)
+  const lightShafts = createLightShafts()
   const code = createCodeParticles(atlas)
 
+  group.add(seabed.mesh)
   group.add(caustics.mesh)
-  group.add(godRays.group)
-  group.add(bubbles.points)
+  group.add(lightShafts.mesh)
   group.add(code.points)
-
-  // 环境气泡：在相机前方海底区域持续冒泡
-  let ambientTimer = 0
-  const ambientCenter = new THREE.Vector3(0, -5.5, -6)
-  const ambientRange = new THREE.Vector3(10, 2.5, 9)
 
   return {
     group,
+    seabed,
     caustics,
-    godRays,
-    bubbles,
+    lightShafts,
     code,
-    update: (dive, t, delta, camPos) => {
-      caustics.update(dive, t)
-      godRays.update(dive, t)
-      bubbles.update(delta, t)
-      code.update(t)
-      if (dive > 0.6) {
-        ambientTimer += delta
-        if (ambientTimer > 0.16) {
-          ambientTimer = 0
-          bubbles.spawnAmbient(1, ambientCenter, ambientRange)
-        }
-      }
+    update: (dive, t, delta, camPos, c, mouseX, mouseY) => {
+      // 海底实体地面：随潜入淡入（修复"海底看不见"）
+      seabed.update(dive, c)
+      // 海底光斑：统一 waveField 正色映射（浪峰聚光亮），随海面洋流同向晃动
+      caustics.update(dive, t, c)
+      // 海中光柱：浪谷三角向下拉伸，位置/方向与海面波浪实时对齐
+      lightShafts.update(dive, t, c)
+      // 代码粒子：洋流漂移 + 鼠标视差同向缓慢跟随
+      code.update(t, c, mouseX, mouseY)
+      void delta
       void camPos
     },
     dispose: () => {
+      seabed.dispose()
       caustics.dispose()
-      godRays.dispose()
-      bubbles.dispose()
+      lightShafts.dispose()
       code.dispose()
     },
   }

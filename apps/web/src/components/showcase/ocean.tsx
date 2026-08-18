@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react"
 import * as THREE from "three"
 
+import { createCircularGeometry } from "@/components/showcase/circular-geometry"
+import { DEFAULT_CONF, type OceanConf } from "@/components/showcase/ocean-conf"
+import { seaFieldGLSL } from "@/components/showcase/sea-field"
 import { createCodeAtlas } from "@/components/showcase/underwater/atlas"
 import { buildUnderwaterScene } from "@/components/showcase/underwater/systems"
 
@@ -9,100 +12,50 @@ import { buildUnderwaterScene } from "@/components/showcase/underwater/systems"
 // 效果源自 Open Three「波涛海浪」「水天一色」与 giser2017「波浪效果」：
 //   · 海面：wavedx 指数波（exp(sin-1)，波峰尖）× 多方向迭代 + Gerstner 拖拽
 //           + Perlin 涌浪/碎浪 → 天然随机，浪高差异明显
+//   · 整体流动：所有噪声采样带统一流向偏移 → 整个海面纹样向同一方向无限推移
+//   · 浪头白沫：直接由 vElevation 波峰曲率驱动（屏幕空间拉普拉斯）
+//           → 脊线方向与海浪完全统一，顶峰连接成细长白沫带
 //   · 着色：fresnel 天空反射 + 太阳高光 + ACES filmic tonemap
 //   · 背景：程序化渐变天空（海天一色）
-//   · 滚动潜入：下滑越过视口 40% → 泳镜气泡过场 → 沉入海底
+//   · 视角：相机放平（地平线在屏幕上方 1/3 处），120×40 宽幅海面远端汇成消失线
+//           （横向远超视锥，消除矩形畸变导致的左右远角缺失）
+//   · 滚动潜入：下滑越过视口 15% → 贴海面气泡爆发（摄像机掉入水中）→ 沉入海底
 //       - 丁达尔光柱（阳光射入海底）
 //       - 水波折射光影 caustics（参考 giser2017 领域扭曲算法）
 //       - 漂浮代码字符 + 环境气泡 + 水膜遮罩
 //
-// ── 调参速查（改 WAVE 对象即可，保存即热更新）────────────────────────
-// 【主浪】wavedx 多方向指数波，浪形随机性的核心
-//   waveElevation      整体浪高（0 ~ 0.6，越大浪越高）
-//   waveIterations     波方向迭代次数（3 ~ 8，越多越随机也越吃性能）
-//   waveDrag           拖拽系数（0 ~ 0.12，波间拉扯感，越大越"活"）
-// 【涌浪分组】低频噪声调制主浪 —— 浪高差异明显的关键
-//   swellStrength      调制强度（0 = 无分组；0.5+ = 明显涌浪）
-//   swellScale         涌浪空间尺度（越小分组越大）
-//   swellSpeed         涌浪变化速度
-// 【小波】Perlin 碎浪（abs 下凹，浪花碎痕）
-//   smallElevation     碎浪深度（0 ~ 0.3）
-//   smallFrequency     碎浪基础频率
-//   smallSpeed         碎浪刷新速度
-//   smallIterations    碎浪迭代次数（1 ~ 10）
-// 【中频起伏】正负双向随机浪涌
-//   midElevation       中频起伏幅度
-//   midScale / midSpeed
-// 【海面配色】
-//   depthColor         深水色（浪谷）
-//   surfaceColor       波峰亮蓝（兼作太阳高光色）
-//   colorOffset / colorMultiplier  明暗过渡
-//   fresnelStrength    天空反射强度（0 ~ 1，越大海天越浑然一体）
-//   specularStrength / specularPower  太阳镜面高光强度/锐度
-// 【天空（海天一色）】
-//   skyHorizon         地平线亮蓝（海天交接处）
-//   skyZenith          天顶深蓝
-//   sunDirection       太阳方向（决定高光与光晕位置）
-// 【雾】fogColor 应与地平线同色系，远处海面才能融入天际线
-//   fogColor / fogNear / fogFar
-// 【相机】camera —— 海面俯瞰机位 + 鼠标视差；cameraUnder —— 水下机位
-// 【潜水】滚动越过阈值触发潜入，气泡过场后进入水下场景
-//   diveThreshold      滚动触发阈值（视口高度比例，0 ~ 1）
-//   diveDuration       潜入/浮出动画时长（秒）
-//   fogUnder           水下雾色（与深海背景同色系）
-//   skyUnderTop/skyUnderBottom  水下深海渐变背景（上亮下暗）
+// ── 参数传入 ──────────────────────────────────────────────────────
+//   组件通过 props.conf 接收 Partial<OceanConf>（见 ocean-conf.ts），
+//   与 DEFAULT_CONF 深合并；tick 每帧同步到 uniforms/相机/雾，实时生效。
+//   浏览器地址加 #sea-debug 打开调试面板（SeaDebugPanel）：
+//     滑块调参 + 复制按钮导出完整 JSON（可直接作为 conf 传入）。
+// ── 调参速查（ocean-conf.ts 的 DEFAULT_CONF）────────────────────────
+// 【海浪】waveHeight（浪高）/ waveDensity（密度）/ waveSpeed（海浪移速）
+//        flowAngle（流向角）/ flowSpeed（海面移速）
+// 【视角】cameraHeight（高低）/ cameraAngle（方向）/ cameraPitch（俯仰）
+//        cameraDistance（距离）
+// 【鼠标】mouseFollow（跟随摇移开关）/ mouseInvert（反向跟随开关）
+//        parallaxStrength（视差强度）
+// 【海面配色】depthColor / surfaceColor / foamColor / colorOffset
+//            / colorMultiplier / fresnelStrength / specularStrength / specularPower
+// 【天空】skyHorizon / skyZenith / sunDirectionX/Y/Z
+// 【雾与潜水】fogColor / fogRadius（圆形雾半径）/ fogSpread（雾带宽度）
+//            / fogStrength（雾强度）/ diveThreshold / diveDuration
+//            / diveDip / riseLift / fogUnder / fogUnderNear / fogUnderFar
+//            / skyUnderTop / skyUnderBottom
+// 【海中光柱】shaftCrestLight（浪顶为光）/ shaftThreshold（生成阈值）
+//            / shaftScale（光影缩放）/ shaftAngle（入射角度）
+//            / shaftLength / shaftOpacity / shaftColor
+// 【海水与海底】waterColor / bottomDepth（海底深度）/ bottomColor / causticBrightness
 // ---------------------------------------------------------------------------
 
-const WAVE = {
-  // 主浪（wavedx 多方向指数波）
-  waveElevation: 0.3,
-  waveIterations: 6,
-  waveDrag: 0.06,
-  // 涌浪分组（噪声调制主浪，制造明显的高度差异）
-  swellStrength: 0.55,
-  swellScale: 0.9,
-  swellSpeed: 0.22,
-  // 小波（Perlin 噪声，迭代减幅成碎浪）
-  smallElevation: 0.12,
-  smallFrequency: 3,
-  smallSpeed: 0.2,
-  smallIterations: 4,
-  // 中频随机起伏（正负双向，进一步打破重复）
-  midElevation: 0.08,
-  midScale: 2.4,
-  midSpeed: 0.4,
-  // 海面配色（浪峰=主色亮蓝，浪底=深水色）
-  depthColor: new THREE.Color("#0d1f3d"),
-  surfaceColor: new THREE.Color("#5b7cff"),
-  colorOffset: 0.08,
-  colorMultiplier: 6,
-  fresnelStrength: 0.9,
-  specularStrength: 1.1,
-  specularPower: 128,
-  // 天空（海天一色：地平线亮蓝 → 天顶深蓝 + 太阳方向）
-  skyHorizon: new THREE.Color("#3d6ea8"),
-  skyZenith: new THREE.Color("#040b18"),
-  sunDirection: new THREE.Vector3(0.5, 0.32, 0.8).normalize(),
-  // 距离雾（与地平线同色系，远海融入天际线）
-  fogColor: new THREE.Color("#1a3350"),
-  fogNear: 2,
-  fogFar: 10,
-  // 相机（海面俯瞰机位 + 鼠标视差）
-  camera: new THREE.Vector3(1, 1, 1),
-  // 潜水：滚动触发潜入 + 水下机位 + 水下配色
-  diveThreshold: 0.4,
-  diveDuration: 2.0,
-  cameraUnder: new THREE.Vector3(0, -3.6, 5.5),
-  fogUnder: new THREE.Color("#04131f"),
-  fogUnderNear: 3,
-  fogUnderFar: 22,
-  skyUnderTop: new THREE.Color("#0d4a6e"),
-  skyUnderBottom: new THREE.Color("#020d18"),
-} as const
-
-// 水面细分（512 足够呈现碎浪细节，又不至于压垮移动端）
-const GEOMETRY_SIZE = 12
-const GEOMETRY_SEGMENTS = 512
+// 圆形海面沙盘：矩形规则网格切分（波浪三角面为横竖网格，无放射状），
+// 生成后投影回圆形边界（外框为圆，无矩形尖角）
+// 半径 42 覆盖视锥（相机轨道距离 ~11，75° 视锥远端需覆盖 ±20+）
+// 128×128 细分保证波浪细节
+const GEOMETRY_RADIUS = 42
+const GEOMETRY_WIDTH_SEGMENTS = 128
+const GEOMETRY_DEPTH_SEGMENTS = 128
 
 // ---------------------------------------------------------------------------
 // 顶点着色器
@@ -111,12 +64,18 @@ const GEOMETRY_SEGMENTS = 512
 //           + 拖拽累积（Gerstner 式水平位移，波间互相拉扯）→ 天然随机
 //   ② 小波：Perlin cnoise 多迭代，abs 下凹碎浪，采样带动态偏移
 //   ③ 中频随机起伏（正负双向）
-//   并输出 vWorldPosition 供片元做 fresnel 天空反射（海天一色）
+// 整体流动：所有噪声采样统一减去 flowDir×uTime×uFlowSpeed →
+//   整个海面纹样（噪声图案 + 波）向同一方向无限推移（Perlin 连续场无边界）
+// 圆形外框：片元按距中心距离做边缘渐隐（vRadius → alpha 淡出成圆形沙盘）
+// 并输出：
+//   · vWorldPosition  供片元做 fresnel 天空反射（海天一色）
+//   · vFoamNoise      白沫边缘 Perlin 破碎微扰（方向无关，仅撕边）
+// 注意：白沫的脊线位置由片元对 vElevation 的曲率检测得出，天然与波浪方向统一
 // ---------------------------------------------------------------------------
 const vertexShader = /* glsl */ `
-  #include <fog_pars_vertex>
-
   uniform float uTime;
+  uniform vec2 uFlowDir;
+  uniform float uFlowSpeed;
   uniform float uWaveElevation;
   uniform float uWaveIterations;
   uniform float uWaveDrag;
@@ -130,156 +89,38 @@ const vertexShader = /* glsl */ `
   uniform float uMidElevation;
   uniform float uMidScale;
   uniform float uMidSpeed;
+  uniform float uWaveDensity;
+  uniform float uWaveSpeed;
+  uniform float uFoamNoiseScale;
+  uniform float uFoamNoiseSpeed;
+  uniform float uRadius;
 
   varying float vElevation;
   varying vec3 vWorldPosition;
+  varying float vFoamNoise;
+  varying float vRadius;
 
-  //  Classic Perlin 3D Noise
-  //  by Stefan Gustavson
-  //
-  vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
-  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-  vec3 fade(vec3 t) {return t*t*t*(t*(t*6.0-15.0)+10.0);}
-
-  float cnoise(vec3 P){
-    vec3 Pi0 = floor(P);
-    vec3 Pi1 = Pi0 + vec3(1.0);
-    Pi0 = mod(Pi0, 289.0);
-    Pi1 = mod(Pi1, 289.0);
-    vec3 Pf0 = fract(P);
-    vec3 Pf1 = Pf0 - vec3(1.0);
-    vec4 ix = vec4(Pi0.x, Pi1.x, Pi0.x, Pi1.x);
-    vec4 iy = vec4(Pi0.yy, Pi1.yy);
-    vec4 iz0 = Pi0.zzzz;
-    vec4 iz1 = Pi1.zzzz;
-    vec4 ixy = permute(permute(ix) + iy);
-    vec4 ixy0 = permute(ixy + iz0);
-    vec4 ixy1 = permute(ixy + iz1);
-    vec4 gx0 = ixy0 / 7.0;
-    vec4 gy0 = fract(floor(gx0) / 7.0) - 0.5;
-    gx0 = fract(gx0);
-    vec4 gz0 = vec4(0.5) - abs(gx0) - abs(gy0);
-    vec4 sz0 = step(gz0, vec4(0.0));
-    gx0 -= sz0 * (step(0.0, gx0) - 0.5);
-    gy0 -= sz0 * (step(0.0, gy0) - 0.5);
-    vec4 gx1 = ixy1 / 7.0;
-    vec4 gy1 = fract(floor(gx1) / 7.0) - 0.5;
-    gx1 = fract(gx1);
-    vec4 gz1 = vec4(0.5) - abs(gx1) - abs(gy1);
-    vec4 sz1 = step(gz1, vec4(0.0));
-    gx1 -= sz1 * (step(0.0, gx1) - 0.5);
-    gy1 -= sz1 * (step(0.0, gy1) - 0.5);
-    vec3 g000 = vec3(gx0.x,gy0.x,gz0.x);
-    vec3 g100 = vec3(gx0.y,gy0.y,gz0.y);
-    vec3 g010 = vec3(gx0.z,gy0.z,gz0.z);
-    vec3 g110 = vec3(gx0.w,gy0.w,gz0.w);
-    vec3 g001 = vec3(gx1.x,gy1.x,gz1.x);
-    vec3 g101 = vec3(gx1.y,gy1.y,gz1.y);
-    vec3 g011 = vec3(gx1.z,gy1.z,gz1.z);
-    vec3 g111 = vec3(gx1.w,gy1.w,gz1.w);
-    vec4 norm0 = taylorInvSqrt(vec4(dot(g000, g000), dot(g010, g010), dot(g100, g100), dot(g110, g110)));
-    g000 *= norm0.x;
-    g010 *= norm0.y;
-    g100 *= norm0.z;
-    g110 *= norm0.w;
-    vec4 norm1 = taylorInvSqrt(vec4(dot(g001, g001), dot(g011, g011), dot(g101, g101), dot(g111, g111)));
-    g001 *= norm1.x;
-    g011 *= norm1.y;
-    g101 *= norm1.z;
-    g111 *= norm1.w;
-    float n000 = dot(g000, Pf0);
-    float n100 = dot(g100, vec3(Pf1.x, Pf0.yz));
-    float n010 = dot(g010, vec3(Pf0.x, Pf1.y, Pf0.z));
-    float n110 = dot(g110, vec3(Pf1.xy, Pf0.z));
-    float n001 = dot(g001, vec3(Pf0.xy, Pf1.z));
-    float n101 = dot(g101, vec3(Pf1.x, Pf0.y, Pf1.z));
-    float n011 = dot(g011, vec3(Pf0.x, Pf1.yz));
-    float n111 = dot(g111, Pf1);
-    vec3 fade_xyz = fade(Pf0);
-    vec4 n_z = mix(vec4(n000, n100, n010, n110), vec4(n001, n101, n011, n111), fade_xyz.z);
-    vec2 n_yz = mix(n_z.xy, n_z.zw, fade_xyz.y);
-    float n_xyz = mix(n_yz.x, n_yz.y, fade_xyz.x);
-    return 2.2 * n_xyz;
-  }
-
-  // 简单确定性哈希（用于碎浪采样偏移，制造不重复的随机感）
-  float hash11(float p) {
-    return fract(sin(p * 127.1) * 43758.5453);
-  }
-
-  // 参考「水天一色」的指数波：波峰尖锐、波谷平缓，比纯 sin 更真实
-  float wavedx(vec2 position, vec2 direction, float speed, float frequency, float timeshift) {
-    float x = dot(direction, position) * frequency + timeshift * speed;
-    return exp(sin(x) - 1.0);
-  }
+  ${seaFieldGLSL}
 
   void main() {
-    #include <begin_vertex>
-    #include <project_vertex>
-    #include <fog_vertex>
-
     vec4 modelPosition = modelMatrix * vec4(position, 1.0);
 
-    // ① 涌浪分组：低频噪声调制主浪振幅（浪高差异明显的核心）
-    float swell = cnoise(vec3(
-      modelPosition.xz * uSwellScale,
-      uTime * uSwellSpeed
-    ));
-    float amp = uWaveElevation * (1.0 + swell * uSwellStrength);
-
-    // ② 主浪：wavedx 多方向指数波叠加 + 拖拽累积
-    //    方向每轮旋转（iter += 12°），频率/速度倍增、权重衰减 → 天然随机不重复
-    vec2 wavePos = modelPosition.xz * 0.35;
-    float iter = 0.0;
-    float phase = 5.0;
-    float speed = 1.6;
-    float weight = 1.0;
-    float w = 0.0;
-    float ws = 0.0;
-    for (int i = 0; i < 8; i++) {
-      if (float(i) >= uWaveIterations) {
-        break;
-      }
-      vec2 dir = vec2(sin(iter), cos(iter));
-      float res = wavedx(wavePos, dir, speed, phase, uTime);
-      // 拖拽：波的能量沿传播方向拉扯采样坐标，波与波互相挤压 → 高差更明显
-      wavePos += dir * res * weight * uWaveDrag;
-      w += res * weight;
-      iter += 12.0;
-      ws += weight;
-      weight = mix(weight, 0.0, 0.2);
-      phase *= 1.18;
-      speed *= 1.07;
-    }
-    // wavedx 输出 ∈ [0.37, 1]，归一到 [-1, 1] 再乘振幅
-    float normalized = clamp((w / ws - 0.368) / 0.632, 0.0, 1.0);
-    float elevation = (normalized - 0.5) * 2.0 * amp;
-
-    // ③ 小波碎浪：Perlin 多迭代 abs 下凹，采样带动态偏移（随机感刷新）
-    for (float i = 1.0; i <= 10.0; i++) {
-      if (i > uSmallWavesIterations) {
-        break;
-      }
-      // 每迭代独立的采样偏移 + 时间相位，避免碎浪纹样重复
-      vec2 off = vec2(hash11(i * 3.7) * 120.0, hash11(i * 9.1) * 120.0);
-      float tShift = hash11(i * 5.3) * 20.0;
-      float n = cnoise(vec3(
-        modelPosition.xz * uSmallWavesFrequency * i * 1.35 + off,
-        uTime * uSmallWavesSpeed * (1.0 + 0.15 * i) + tShift
-      ));
-      elevation -= abs(n) * uSmallWavesElevation / i;
-    }
-
-    // ④ 中频随机起伏（正负双向），进一步打破重复
-    float mid = cnoise(vec3(
-      modelPosition.xz * uMidScale,
-      uTime * uMidSpeed
-    ));
-    elevation += mid * uMidElevation;
+    // —— 统一骨架：海面波浪高度（与海底光斑 / 海中光柱共享同一 waveField）——
+    vec2 samplePos = modelPosition.xz - uFlowDir * uTime * uFlowSpeed;
+    float elevation = waveField(modelPosition.xz, uTime);
 
     modelPosition.y += elevation;
     vElevation = elevation;
     vWorldPosition = modelPosition.xyz;
+
+    // 距中心距离 → 圆形边缘渐隐
+    vRadius = length(modelPosition.xz);
+
+    // 白沫边缘 Perlin 破碎微扰（碎浪尺度，随整体流动，仅撕边不破坏连接）
+    vFoamNoise = cnoise(vec3(
+      samplePos * uFoamNoiseScale,
+      uTime * uFoamNoiseSpeed
+    ));
 
     vec4 viewPosition = viewMatrix * modelPosition;
     vec4 projectedPosition = projectionMatrix * viewPosition;
@@ -290,8 +131,9 @@ const vertexShader = /* glsl */ `
 // ---------------------------------------------------------------------------
 // 片元着色器
 // 海面 = 深水色（浪谷）↔ 波峰亮蓝（浪峰）渐变
+//      + 顶峰白沫（屏幕空间曲率检测波峰脊线 → 方向与海浪统一）
 //      + fresnel 天空反射（近掠角反射天空色 → 海天一色）
-//      + 太阳镜面高光（波峰闪光）
+//      + 太阳镜面高光（波峰闪光，白沫处微暗让泡沫更清晰）
 // 颜色在 linear 空间计算，末尾交给 three 内置
 //   tonemapping_fragment（ACESFilmicToneMapping）+ colorspace_fragment（sRGB）
 // 与场景背景（天空纹理）走同一输出管线，保证海天颜色一致
@@ -300,23 +142,34 @@ const vertexShader = /* glsl */ `
 // 法线用屏幕空间导数重建（dFdx/dFdy），无需额外顶点法线数据
 // ---------------------------------------------------------------------------
 const fragmentShader = /* glsl */ `
-  #include <fog_pars_fragment>
-
   precision highp float;
 
   uniform vec3 uDepthColor;
   uniform vec3 uSurfaceColor;
+  uniform vec3 uFoamColor;
+  uniform vec3 uWaterColor;
   uniform float uColorOffset;
   uniform float uColorMultiplier;
   uniform float uFresnelStrength;
   uniform float uSpecularStrength;
   uniform float uSpecularPower;
+  uniform float uFoamStrength;
+  uniform float uFoamCurvMax;
+  uniform float uFoamHeightStart;
+  uniform float uFoamSlopeGate;
   uniform vec3 uSkyHorizon;
   uniform vec3 uSkyZenith;
   uniform vec3 uSunDirection;
+  uniform float uRadius;
+  uniform vec3 uFogColor;
+  uniform float uFogRadius;
+  uniform float uFogSpread;
+  uniform float uFogStrength;
 
   varying float vElevation;
   varying vec3 vWorldPosition;
+  varying float vFoamNoise;
+  varying float vRadius;
 
   // 海天一色的天空：地平线亮蓝 → 天顶深蓝（近似大气散射）
   vec3 getSky(vec3 dir) {
@@ -329,6 +182,24 @@ const fragmentShader = /* glsl */ `
   }
 
   void main() {
+    // —— 圆形外框：距中心越远 alpha 越淡（沙盘边缘渐隐成圆）——
+    float edge = 1.0 - smoothstep(uRadius * 0.82, uRadius, vRadius);
+    // —— 圆形外围雾：距中心超过 fogRadius 逐渐融入雾色（替代全局距离雾）——
+    float fogFade = smoothstep(uFogRadius, uFogRadius + uFogSpread, vRadius);
+
+    // —— 背面（从海中仰视海面）：海面 DoubleSide 双面渲染 ——
+    // 正面 = 海面（顶部看）；背面 = 海中（下方看）。从海中看：浪谷透光、
+    // 浪峰挡光 → 海中丁达尔底色（与光柱取反逻辑一致，同一 vElevation）。
+    if (!gl_FrontFacing) {
+      float light = smoothstep(0.05, -0.4, vElevation);
+      vec3 deep = mix(uWaterColor, vec3(0.02, 0.08, 0.14), 0.45);
+      vec3 color = deep + light * vec3(0.38, 0.66, 0.9);
+      gl_FragColor = vec4(color, edge);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+      return;
+    }
+
     // 屏幕空间导数重建世界法线（浪面真实朝向 → fresnel 正确）
     vec3 worldPos = vWorldPosition;
     vec3 dx = dFdx(worldPos);
@@ -351,29 +222,54 @@ const fragmentShader = /* glsl */ `
 
     // 太阳镜面高光（波峰闪光）
     float spec = pow(max(dot(R, uSunDirection), 0.0), uSpecularPower);
-    color += uSurfaceColor * spec * uSpecularStrength;
 
-    gl_FragColor = vec4(color, 1.0);
+    // —— 顶峰白沫（方向与海浪完全统一）——
+    // 主门控 = 现有高亮 mixStrength（波峰亮蓝的顶部饱和区）：
+    //   白沫即高亮波峰顶的白色覆盖 → 方向、位置天然与海浪一致
+    // 曲率（屏幕空间拉普拉斯，凸起为负）仅作脊线锐化增益，不承担主定位
+    vec2 sl = vec2(dFdx(vElevation), dFdy(vElevation));
+    float lap = dFdx(sl.x) + dFdy(sl.y);
+    float peak = max(-lap, 0.0);
+    float peakNorm = clamp(peak / uFoamCurvMax, 0.0, 1.0);
+    float crestBoost = 0.4 + 0.6 * peakNorm * peakNorm;
+    // 高亮顶部：mixStrength 接近饱和处才覆盖白沫（细长连续带）
+    float foam = smoothstep(uFoamHeightStart, 1.0, mixStrength) * crestBoost;
+    // 坡度抑制：碎浪陡坡（非波峰顶部）不误报
+    float slopeLen = length(sl);
+    float slopeGate = 1.0 - smoothstep(uFoamSlopeGate, uFoamSlopeGate * 2.0, slopeLen);
+    foam *= clamp(0.5 + 0.5 * slopeGate, 0.0, 1.0);
+    // Perlin 微扰：撕边缘但不破坏连接
+    foam *= 0.85 + 0.3 * vFoamNoise;
+    // 高亮微调：白沫处轻微压暗太阳镜面高光，让泡沫带更清晰
+    color += uSurfaceColor * spec * uSpecularStrength * (1.0 - foam * 0.55);
+    color = mix(color, uFoamColor, foam * uFoamStrength);
+
+    // 圆形外围雾：距沙盘中心越远越融入雾色（海面外围雾化，不再全局距离雾）
+    color = mix(color, uFogColor, fogFade * uFogStrength);
+
+    gl_FragColor = vec4(color, edge);
     // three 输出管线：ACES tone mapping → sRGB（与天空背景一致 → 海天一色）
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
-    #include <fog_fragment>
   }
 `
 
 // 程序化天空渐变（地平线亮蓝 → 天顶深蓝，作为场景背景 → 海天一色）
-function createSkyTexture(): THREE.CanvasTexture {
-  return createVerticalGradientTexture(WAVE.skyZenith, WAVE.skyHorizon)
+function createSkyTexture(
+  horizon: string,
+  zenith: string
+): THREE.CanvasTexture {
+  return createVerticalGradientTexture(zenith, horizon)
 }
 
 // 深海渐变背景（上方有光、越深越暗）
-function createDeepTexture(): THREE.CanvasTexture {
-  return createVerticalGradientTexture(WAVE.skyUnderTop, WAVE.skyUnderBottom)
+function createDeepTexture(top: string, bottom: string): THREE.CanvasTexture {
+  return createVerticalGradientTexture(top, bottom)
 }
 
 function createVerticalGradientTexture(
-  top: THREE.Color,
-  bottom: THREE.Color
+  top: string,
+  bottom: string
 ): THREE.CanvasTexture {
   const canvas = document.createElement("canvas")
   canvas.width = 4
@@ -381,8 +277,8 @@ function createVerticalGradientTexture(
   const ctx = canvas.getContext("2d")
   if (ctx) {
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
-    gradient.addColorStop(0, `#${top.getHexString()}`)
-    gradient.addColorStop(1, `#${bottom.getHexString()}`)
+    gradient.addColorStop(0, top)
+    gradient.addColorStop(1, bottom)
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, canvas.width, canvas.height)
   }
@@ -391,32 +287,70 @@ function createVerticalGradientTexture(
   return texture
 }
 
-export function Ocean() {
+export interface OceanProps {
+  /** 覆盖默认参数的配置（Partial 合并，热更新实时生效） */
+  conf?: Partial<OceanConf>
+}
+
+const DEG2RAD = Math.PI / 180
+
+// 轨道相机：相机绕中心旋转（angle），高度 height，距离 distance，
+// 俯仰 pitch（度，负=向下看）作用于注视点高度 → 圆形沙盘始终居中
+function applyOrbitCamera(
+  camPos: THREE.Vector3,
+  lookPos: THREE.Vector3,
+  c: OceanConf
+) {
+  const a = c.cameraAngle * DEG2RAD
+  camPos.set(
+    Math.sin(a) * c.cameraDistance,
+    c.cameraHeight,
+    Math.cos(a) * c.cameraDistance
+  )
+  // 注视点：中心下方（pitch 负 → 向下俯视沙盘中心）
+  const lookY = Math.tan(c.cameraPitch * DEG2RAD) * c.cameraDistance * 0.9
+  lookPos.set(0, lookY, 0)
+}
+
+export function Ocean({ conf }: OceanProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const veilRef = useRef<HTMLDivElement>(null)
+  // 当前生效配置（props 变化时同步，tick 每帧读取）
+  const confRef = useRef<OceanConf>({ ...DEFAULT_CONF, ...conf })
+
+  // props.conf 变化 → 更新 ref（不重建场景，tick 里实时同步）
+  useEffect(() => {
+    confRef.current = { ...DEFAULT_CONF, ...conf }
+  }, [conf])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) {
       return
     }
+    const C = confRef.current
 
     // —— 场景 / 相机 / 渲染器 ——
     const scene = new THREE.Scene()
-    const skyTexture = createSkyTexture()
-    const deepTexture = createDeepTexture()
+    const skyTexture = createSkyTexture(C.skyHorizon, C.skyZenith)
+    const deepTexture = createDeepTexture(C.skyUnderTop, C.skyUnderBottom)
     scene.background = skyTexture
-    const fog = new THREE.Fog(WAVE.fogColor.clone(), WAVE.fogNear, WAVE.fogFar)
+    // 全局距离雾（仅水下兜底：海底/代码粒子；海面改用圆形雾，见 fragment shader）
+    const fog = new THREE.Fog(C.fogUnder, 0, 100)
     scene.fog = fog
 
     const camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
       0.1,
-      100
+      200
     )
-    camera.position.copy(WAVE.camera)
-    camera.lookAt(0, 0, 0)
+    // 轨道相机（圆形沙盘）：围绕中心旋转，高低/方向/俯仰/距离由 conf 控制
+    const surfaceCam = new THREE.Vector3()
+    const surfaceLook = new THREE.Vector3()
+    applyOrbitCamera(surfaceCam, surfaceLook, C)
+    camera.position.copy(surfaceCam)
+    camera.lookAt(surfaceLook)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -426,63 +360,96 @@ export function Ocean() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     container.appendChild(renderer.domElement)
 
-    // —— 水面（位移全在 vertex shader，CPU 零开销）——
-    const geometry = new THREE.PlaneGeometry(
-      GEOMETRY_SIZE,
-      GEOMETRY_SIZE,
-      GEOMETRY_SEGMENTS,
-      GEOMETRY_SEGMENTS
+    // —— 水面（圆形沙盘，位移全在 vertex shader，CPU 零开销）——
+    const geometry = createCircularGeometry(
+      GEOMETRY_RADIUS,
+      GEOMETRY_WIDTH_SEGMENTS,
+      GEOMETRY_DEPTH_SEGMENTS
     )
     const material = new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader,
       transparent: true,
-      fog: true,
+      side: THREE.DoubleSide,
       uniforms: {
         uTime: { value: 0 },
-        uWaveElevation: { value: WAVE.waveElevation },
-        uWaveIterations: { value: WAVE.waveIterations },
-        uWaveDrag: { value: WAVE.waveDrag },
-        uSwellStrength: { value: WAVE.swellStrength },
-        uSwellScale: { value: WAVE.swellScale },
-        uSwellSpeed: { value: WAVE.swellSpeed },
-        uSmallWavesElevation: { value: WAVE.smallElevation },
-        uSmallWavesFrequency: { value: WAVE.smallFrequency },
-        uSmallWavesSpeed: { value: WAVE.smallSpeed },
-        uSmallWavesIterations: { value: WAVE.smallIterations },
-        uMidElevation: { value: WAVE.midElevation },
-        uMidScale: { value: WAVE.midScale },
-        uMidSpeed: { value: WAVE.midSpeed },
-        uDepthColor: { value: WAVE.depthColor.clone() },
-        uSurfaceColor: { value: WAVE.surfaceColor.clone() },
-        uColorOffset: { value: WAVE.colorOffset },
-        uColorMultiplier: { value: WAVE.colorMultiplier },
-        uFresnelStrength: { value: WAVE.fresnelStrength },
-        uSpecularStrength: { value: WAVE.specularStrength },
-        uSpecularPower: { value: WAVE.specularPower },
-        uSkyHorizon: { value: WAVE.skyHorizon.clone() },
-        uSkyZenith: { value: WAVE.skyZenith.clone() },
-        uSunDirection: { value: WAVE.sunDirection.clone() },
-        ...THREE.UniformsLib.fog,
+        uFlowDir: {
+          value: new THREE.Vector2(
+            Math.sin(C.flowAngle * DEG2RAD),
+            Math.cos(C.flowAngle * DEG2RAD)
+          ).normalize(),
+        },
+        uFlowSpeed: { value: C.flowSpeed },
+        uWaveElevation: { value: C.waveHeight },
+        uWaveIterations: { value: C.waveIterations },
+        uWaveDrag: { value: C.waveDrag },
+        uSwellStrength: { value: C.swellStrength },
+        uSwellScale: { value: C.swellScale },
+        uSwellSpeed: { value: C.swellSpeed },
+        uSmallWavesElevation: { value: C.smallElevation },
+        uSmallWavesFrequency: { value: C.smallFrequency },
+        uSmallWavesSpeed: { value: C.smallSpeed },
+        uSmallWavesIterations: { value: C.smallIterations },
+        uMidElevation: { value: C.midElevation },
+        uMidScale: { value: C.midScale },
+        uMidSpeed: { value: C.midSpeed },
+        uWaveDensity: { value: C.waveDensity },
+        uWaveSpeed: { value: C.waveSpeed },
+        uFoamNoiseScale: { value: C.foamNoiseScale },
+        uFoamNoiseSpeed: { value: C.foamNoiseSpeed },
+        uRadius: { value: GEOMETRY_RADIUS },
+        uDepthColor: { value: new THREE.Color(C.depthColor) },
+        uSurfaceColor: { value: new THREE.Color(C.surfaceColor) },
+        uFoamColor: { value: new THREE.Color(C.foamColor) },
+        uWaterColor: { value: new THREE.Color(C.waterColor) },
+        uColorOffset: { value: C.colorOffset },
+        uColorMultiplier: { value: C.colorMultiplier },
+        uFoamStrength: { value: C.foamStrength },
+        uFoamCurvMax: { value: C.foamCurvMax },
+        uFoamHeightStart: { value: C.foamHeightStart },
+        uFoamSlopeGate: { value: C.foamSlopeGate },
+        uFresnelStrength: { value: C.fresnelStrength },
+        uSpecularStrength: { value: C.specularStrength },
+        uSpecularPower: { value: C.specularPower },
+        uSkyHorizon: { value: new THREE.Color(C.skyHorizon) },
+        uSkyZenith: { value: new THREE.Color(C.skyZenith) },
+        uSunDirection: {
+          value: new THREE.Vector3(
+            C.sunDirectionX,
+            C.sunDirectionY,
+            C.sunDirectionZ
+          ).normalize(),
+        },
+        uFogColor: { value: new THREE.Color(C.fogColor) },
+        uFogRadius: { value: C.fogRadius },
+        uFogSpread: { value: C.fogSpread },
+        uFogStrength: { value: C.fogStrength },
       },
     })
 
     const water = new THREE.Mesh(geometry, material)
-    water.rotation.x = -Math.PI * 0.5
     scene.add(water)
 
-    // —— 水下场景（滚动潜入后可见：caustics 折射光影 + 丁达尔光柱 + 代码 + 气泡）——
+    // —— 水下场景（滚动潜入后可见：海底地面 + 光斑 + 海中光柱 + 代码粒子）——
     const atlas = createCodeAtlas()
-    const underwater = buildUnderwaterScene(atlas)
+    const underwater = buildUnderwaterScene(atlas, {
+      surfaceY: 0,
+      bottomY: -C.bottomDepth,
+    })
     underwater.group.visible = false
     scene.add(underwater.group)
 
     // —— 潜水状态机：surface → diving → underwater → surfacing ——
-    const surfaceCam = WAVE.camera.clone()
-    const underCam = WAVE.cameraUnder.clone()
+    const underCam = new THREE.Vector3()
+    const underLook = new THREE.Vector3()
+    const applyUnderCam = () => {
+      // 水下机位：固定位置（不随海底深度变化；潜水后镜头只由滚动翻页状态决定）
+      underCam.set(0, -3, 5.6)
+      underLook.set(0, -1.5, -8)
+    }
+    applyUnderCam()
     type Phase = "surface" | "diving" | "underwater" | "surfacing"
     let phase: Phase = "surface"
-    let prevPhase: Phase = "surface"
     let dive = 0 // 0 = 海面，1 = 完全潜入
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
@@ -490,7 +457,7 @@ export function Ocean() {
     // 滚动越过阈值触发潜入 / 回滚浮出
     const onScroll = () => {
       const shouldDive =
-        window.scrollY > window.innerHeight * WAVE.diveThreshold
+        window.scrollY > window.innerHeight * confRef.current.diveThreshold
       if (shouldDive && (phase === "surface" || phase === "surfacing")) {
         phase = "diving"
       } else if (
@@ -523,22 +490,107 @@ export function Ocean() {
     const startTime = performance.now()
     const camPos = new THREE.Vector3()
     const lookPos = new THREE.Vector3()
-    const fogSurface = new THREE.Color(WAVE.fogColor)
-    const fogUnder = new THREE.Color(WAVE.fogUnder)
+    const fogSurface = new THREE.Color(C.fogColor)
+    const fogUnder = new THREE.Color(C.fogUnder)
+    const flowVec = new THREE.Vector2()
+    const sunVec = new THREE.Vector3()
     let lastFrame = performance.now()
+    let prevSkyH = C.skyHorizon
+    let prevSkyZ = C.skyZenith
+    let prevUnderT = C.skyUnderTop
+    let prevUnderB = C.skyUnderBottom
+    let skyTextureAlive = skyTexture
+    let deepTextureAlive = deepTexture
+
+    // 从 confRef 同步当前生效值（每帧调用，数值复制开销极低）
+    const syncConf = (u: Record<string, { value: unknown }>) => {
+      const c = confRef.current
+      // 流向角度 → 方向向量（normalize 保持方向语义）
+      const a = c.flowAngle * DEG2RAD
+      flowVec.set(Math.sin(a), Math.cos(a)).normalize()
+      ;(u.uFlowDir.value as THREE.Vector2).copy(flowVec)
+      sunVec.set(c.sunDirectionX, c.sunDirectionY, c.sunDirectionZ).normalize()
+      ;(u.uSunDirection.value as THREE.Vector3).copy(sunVec)
+      // 数值
+      ;(u.uFlowSpeed.value as number) = c.flowSpeed
+      ;(u.uWaveElevation.value as number) = c.waveHeight
+      ;(u.uWaveIterations.value as number) = c.waveIterations
+      ;(u.uWaveDrag.value as number) = c.waveDrag
+      ;(u.uSwellStrength.value as number) = c.swellStrength
+      ;(u.uSwellScale.value as number) = c.swellScale
+      ;(u.uSwellSpeed.value as number) = c.swellSpeed
+      ;(u.uSmallWavesElevation.value as number) = c.smallElevation
+      ;(u.uSmallWavesFrequency.value as number) = c.smallFrequency
+      ;(u.uSmallWavesSpeed.value as number) = c.smallSpeed
+      ;(u.uSmallWavesIterations.value as number) = c.smallIterations
+      ;(u.uMidElevation.value as number) = c.midElevation
+      ;(u.uMidScale.value as number) = c.midScale
+      ;(u.uMidSpeed.value as number) = c.midSpeed
+      ;(u.uWaveDensity.value as number) = c.waveDensity
+      ;(u.uWaveSpeed.value as number) = c.waveSpeed
+      ;(u.uFoamNoiseScale.value as number) = c.foamNoiseScale
+      ;(u.uFoamNoiseSpeed.value as number) = c.foamNoiseSpeed
+      ;(u.uColorOffset.value as number) = c.colorOffset
+      ;(u.uColorMultiplier.value as number) = c.colorMultiplier
+      ;(u.uFoamStrength.value as number) = c.foamStrength
+      ;(u.uFoamCurvMax.value as number) = c.foamCurvMax
+      ;(u.uFoamHeightStart.value as number) = c.foamHeightStart
+      ;(u.uFoamSlopeGate.value as number) = c.foamSlopeGate
+      ;(u.uFresnelStrength.value as number) = c.fresnelStrength
+      ;(u.uSpecularStrength.value as number) = c.specularStrength
+      ;(u.uSpecularPower.value as number) = c.specularPower
+      // 颜色
+      ;(u.uDepthColor.value as THREE.Color).set(c.depthColor)
+      ;(u.uSurfaceColor.value as THREE.Color).set(c.surfaceColor)
+      ;(u.uFoamColor.value as THREE.Color).set(c.foamColor)
+      ;(u.uWaterColor.value as THREE.Color).set(c.waterColor)
+      ;(u.uSkyHorizon.value as THREE.Color).set(c.skyHorizon)
+      ;(u.uSkyZenith.value as THREE.Color).set(c.skyZenith)
+      // 圆形雾
+      ;(u.uFogColor.value as THREE.Color).set(c.fogColor)
+      ;(u.uFogRadius.value as number) = c.fogRadius
+      ;(u.uFogSpread.value as number) = c.fogSpread
+      ;(u.uFogStrength.value as number) = c.fogStrength
+      // 相机 / 雾 / 潜水
+      applyOrbitCamera(surfaceCam, surfaceLook, c)
+      applyUnderCam()
+      fogSurface.set(c.fogColor)
+      fogUnder.set(c.fogUnder)
+      // 背景渐变纹理：颜色变化时重建（廉价 canvas）
+      if (c.skyHorizon !== prevSkyH || c.skyZenith !== prevSkyZ) {
+        prevSkyH = c.skyHorizon
+        prevSkyZ = c.skyZenith
+        skyTextureAlive.dispose()
+        skyTextureAlive = createSkyTexture(c.skyHorizon, c.skyZenith)
+        if (dive < 0.5) {
+          scene.background = skyTextureAlive
+        }
+      }
+      if (c.skyUnderTop !== prevUnderT || c.skyUnderBottom !== prevUnderB) {
+        prevUnderT = c.skyUnderTop
+        prevUnderB = c.skyUnderBottom
+        deepTextureAlive.dispose()
+        deepTextureAlive = createDeepTexture(c.skyUnderTop, c.skyUnderBottom)
+        if (dive >= 0.5) {
+          scene.background = deepTextureAlive
+        }
+      }
+    }
 
     const tick = () => {
       const now = performance.now()
       const delta = Math.min((now - lastFrame) / 1000, 0.05)
       lastFrame = now
       const elapsed = (now - startTime) / 1000
+      const cur = confRef.current
       material.uniforms.uTime.value = elapsed
+      syncConf(material.uniforms)
 
       // —— 潜水状态推进 ——
       if (phase === "diving") {
-        dive = Math.min(1, dive + delta / WAVE.diveDuration)
+        dive = Math.min(1, dive + delta / cur.diveDuration)
       } else if (phase === "surfacing") {
-        dive = Math.max(0, dive - delta / WAVE.diveDuration)
+        dive = Math.max(0, dive - delta / cur.diveDuration)
       }
       if (dive <= 0) {
         phase = "surface"
@@ -547,41 +599,60 @@ export function Ocean() {
       }
       const eased = easeInOutCubic(dive)
 
-      // 过场气泡：刚进入 diving 时相机周围爆发一大团（泳镜感）
-      if (phase === "diving" && prevPhase !== "diving") {
-        underwater.bubbles.burst(260, camPos)
-      }
-      prevPhase = phase
-
-      // —— 相机：海面俯瞰 ↔ 水下 插值（鼠标视差只作用于海面）——
+      // —— 相机：海面轨道机位 ↔ 水下 插值（鼠标摇移只作用于海面）——
       mouse.x += (mouse.tx - mouse.x) * 0.04
       mouse.y += (mouse.ty - mouse.y) * 0.04
       const parallax = 1 - eased
+      const follow = cur.mouseFollow ? 1 : 0
+      const invert = cur.mouseInvert ? -1 : 1
+      const panX = mouse.x * 0.9 * follow * invert
+      const panY = mouse.y * 0.3 * follow * invert
       camPos.lerpVectors(surfaceCam, underCam, eased)
-      camPos.x += mouse.x * 0.35 * parallax
-      camPos.y += mouse.y * 0.2 * parallax
+      camPos.x += panX * parallax * cur.parallaxStrength
+      camPos.y += panY * parallax * cur.parallaxStrength
       camera.position.copy(camPos)
-      lookPos.lerpVectors(
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, -2.5, -8),
-        eased
-      )
+
+      // 视角路径：
+      //   下潜 diving —— 中段向下压（扎入水中感）
+      //   上浮 surfacing —— 中段抬起（游出水面感），末尾回平视
+      lookPos.lerpVectors(surfaceLook, underLook, eased)
+      const midBias = Math.sin(eased * Math.PI) // 0→1→0 峰值在中段
+      if (phase === "diving") {
+        lookPos.y -= midBias * cur.diveDip
+        lookPos.z -= midBias * cur.diveDip * 0.4
+      } else if (phase === "surfacing") {
+        lookPos.y += midBias * cur.riseLift
+        lookPos.z += midBias * cur.riseLift * 0.4
+      }
+      // 视差同时作用于注视点 → 纯摇移（pan）：鼠标与视角同向移动
+      lookPos.x += panX * parallax * cur.parallaxStrength
+      lookPos.y += panY * parallax * cur.parallaxStrength
       camera.lookAt(lookPos)
 
       // —— 海面 / 背景 / 雾过渡（潜入过半切换）——
-      water.visible = dive < 0.5
+      // 海面双面渲染：顶部看=海面，下方看=海中（始终可见，无需隐藏）
+      water.visible = true
       underwater.group.visible = dive > 0.05
-      if (dive >= 0.5 && scene.background !== deepTexture) {
-        scene.background = deepTexture
-      } else if (dive < 0.5 && scene.background !== skyTexture) {
-        scene.background = skyTexture
+      if (dive >= 0.5 && scene.background !== deepTextureAlive) {
+        scene.background = deepTextureAlive
+      } else if (dive < 0.5 && scene.background !== skyTextureAlive) {
+        scene.background = skyTextureAlive
       }
       fog.color.copy(fogSurface).lerp(fogUnder, eased)
-      fog.near = THREE.MathUtils.lerp(WAVE.fogNear, WAVE.fogUnderNear, eased)
-      fog.far = THREE.MathUtils.lerp(WAVE.fogFar, WAVE.fogUnderFar, eased)
+      fog.near = THREE.MathUtils.lerp(0, cur.fogUnderNear, eased)
+      fog.far = THREE.MathUtils.lerp(100, cur.fogUnderFar, eased)
 
-      // 水下系统（caustics / 光柱 / 气泡 / 代码粒子）
-      underwater.update(eased, elapsed, delta, camPos)
+      // 水下系统（caustics / 光柱 / 代码粒子）：光斑=海面高度→亮度，光柱=波峰定位，
+      // 三者同源并随海面洋流同速漂移；代码粒子随鼠标视差同向缓慢跟随
+      underwater.update(
+        eased,
+        elapsed,
+        delta,
+        camPos,
+        confRef.current,
+        mouse.x,
+        mouse.y
+      )
 
       // 泳镜水膜遮罩
       if (veilRef.current) {
@@ -603,8 +674,8 @@ export function Ocean() {
       material.dispose()
       atlas.dispose()
       underwater.dispose()
-      skyTexture.dispose()
-      deepTexture.dispose()
+      skyTextureAlive.dispose()
+      deepTextureAlive.dispose()
       renderer.dispose()
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement)

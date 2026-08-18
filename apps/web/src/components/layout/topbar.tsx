@@ -1,5 +1,6 @@
 import {
   Compass,
+  LogIn,
   MessagesSquare,
   Package,
   Rocket,
@@ -41,7 +42,10 @@ export function Topbar() {
 
         <div className="flex items-center gap-2">
           <Button asChild size="sm" className="hidden sm:inline-flex">
-            <a href="#explore">开始探索</a>
+            <a href="#top">
+              <LogIn className="size-4" />
+              登录
+            </a>
           </Button>
         </div>
       </div>

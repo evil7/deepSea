@@ -76,23 +76,25 @@ const features: Feature[] = [
 
 export function Features() {
   return (
-    <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
+    // 父级（FullscreenSlides）已固定每屏视口高度，这里撑满并垂直居中
+    // 内容页有半透明深色遮罩（fullscreen-slides contentOverlay），文字用浅色系
+    <div className="flex h-full w-full flex-col items-center justify-center px-4 py-16 sm:px-6">
       <div className="mx-auto mb-12 max-w-2xl text-center">
-        <h2 className="text-3xl font-semibold tracking-tight">
+        <h2 className="text-3xl font-semibold tracking-tight text-white drop-shadow-[0_1px_6px_rgba(2,8,24,0.9)]">
           万物皆可插件，深海皆可探索
         </h2>
-        <p className="mt-3 text-muted-foreground">
+        <p className="mt-3 text-white/75">
           围绕 DeepSeek Harness
           打造的五大能力，从发现、社区到安装与安全，一条龙覆盖。
         </p>
       </div>
 
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid w-full max-w-7xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {features.map((feature) => (
           <Card
             key={feature.id}
             id={feature.id}
-            className="scroll-mt-24 transition-colors hover:border-primary/50"
+            className="scroll-mt-24 border-white/15 bg-slate-900/70 text-white backdrop-blur-sm transition-colors hover:border-primary/50"
           >
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -100,22 +102,32 @@ export function Features() {
                   <feature.icon className="size-5" />
                 </span>
                 {feature.tag && (
-                  <Badge variant="secondary" className="font-mono">
+                  <Badge
+                    variant="secondary"
+                    className="border-white/10 bg-white/10 font-mono text-white/80"
+                  >
                     {feature.tag}
                   </Badge>
                 )}
               </div>
-              <CardTitle className="mt-4">{feature.title}</CardTitle>
-              <CardDescription>{feature.description}</CardDescription>
+              <CardTitle className="mt-4 text-white">{feature.title}</CardTitle>
+              <CardDescription className="text-white/65">
+                {feature.description}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button asChild variant="ghost" size="sm" className="px-0">
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="px-0 text-white/80 hover:text-white"
+              >
                 <a href={`#${feature.id}`}>{feature.label} →</a>
               </Button>
             </CardContent>
           </Card>
         ))}
       </div>
-    </section>
+    </div>
   )
 }
