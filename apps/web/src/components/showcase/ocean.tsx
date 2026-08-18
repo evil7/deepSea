@@ -3,6 +3,7 @@ import * as THREE from "three"
 
 import { createCircularGeometry } from "@/components/showcase/circular-geometry"
 import { DEFAULT_CONF, type OceanConf } from "@/components/showcase/ocean-conf"
+import type { SeaState } from "@/components/showcase/sea-state"
 import { seaFieldGLSL } from "@/components/showcase/sea-field"
 import { createCodeAtlas } from "@/components/showcase/underwater/atlas"
 import { buildUnderwaterScene } from "@/components/showcase/underwater/systems"
@@ -290,6 +291,11 @@ function createVerticalGradientTexture(
 export interface OceanProps {
   /** 覆盖默认参数的配置（Partial 合并，热更新实时生效） */
   conf?: Partial<OceanConf>
+  /** 海洋状态：surface=海面（首页），deep=深海（核心能力屏/二级功能页）
+   *  状态变化时自动平滑下潜/上浮动画；点击、滚动、路由统一走此状态 */
+  state?: SeaState
+  /** 背景虚化（二级页叠加轻微 blur，突出前景内容） */
+  blur?: boolean
 }
 
 const DEG2RAD = Math.PI / 180
@@ -312,16 +318,23 @@ function applyOrbitCamera(
   lookPos.set(0, lookY, 0)
 }
 
-export function Ocean({ conf }: OceanProps) {
+export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const veilRef = useRef<HTMLDivElement>(null)
   // 当前生效配置（props 变化时同步，tick 每帧读取）
   const confRef = useRef<OceanConf>({ ...DEFAULT_CONF, ...conf })
+  // 海洋状态（路由/滚动/点击切换时同步；状态机 tick 内读取，动画平滑过渡）
+  const stateRef = useRef<SeaState>(state)
 
   // props.conf 变化 → 更新 ref（不重建场景，tick 里实时同步）
   useEffect(() => {
     confRef.current = { ...DEFAULT_CONF, ...conf }
   }, [conf])
+
+  // 海洋状态变化 → 同步 ref（不重建场景；tick 内驱动下潜/上浮动画）
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
 
   useEffect(() => {
     const container = containerRef.current
@@ -440,6 +453,7 @@ export function Ocean({ conf }: OceanProps) {
     scene.add(underwater.group)
 
     // —— 潜水状态机：surface → diving → underwater → surfacing ——
+    // 由 seaState 驱动：deep → 下潜（二级页/核心能力屏），surface → 上浮（首页）
     const underCam = new THREE.Vector3()
     const underLook = new THREE.Vector3()
     const applyUnderCam = () => {
@@ -449,25 +463,10 @@ export function Ocean({ conf }: OceanProps) {
     }
     applyUnderCam()
     type Phase = "surface" | "diving" | "underwater" | "surfacing"
-    let phase: Phase = "surface"
-    let dive = 0 // 0 = 海面，1 = 完全潜入
+    let phase: Phase = stateRef.current === "deep" ? "underwater" : "surface"
+    let dive = stateRef.current === "deep" ? 1 : 0 // 0 = 海面，1 = 完全潜入
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-
-    // 滚动越过阈值触发潜入 / 回滚浮出
-    const onScroll = () => {
-      const shouldDive =
-        window.scrollY > window.innerHeight * confRef.current.diveThreshold
-      if (shouldDive && (phase === "surface" || phase === "surfacing")) {
-        phase = "diving"
-      } else if (
-        !shouldDive &&
-        (phase === "underwater" || phase === "diving")
-      ) {
-        phase = "surfacing"
-      }
-    }
-    window.addEventListener("scroll", onScroll, { passive: true })
 
     // —— 鼠标视差（轻微移动相机，增强沉浸感）——
     const mouse = { x: 0, y: 0, tx: 0, ty: 0 }
@@ -484,6 +483,11 @@ export function Ocean({ conf }: OceanProps) {
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     }
     window.addEventListener("resize", onResize)
+
+    // 初始背景：deep 状态直接使用深海纹理（避免首帧闪现天空）
+    if (stateRef.current === "deep") {
+      scene.background = deepTexture
+    }
 
     // —— 动画循环 ——
     let raf = 0
@@ -586,7 +590,16 @@ export function Ocean({ conf }: OceanProps) {
       material.uniforms.uTime.value = elapsed
       syncConf(material.uniforms)
 
-      // —— 潜水状态推进 ——
+      // —— 潜水状态推进（由统一 seaState 驱动，替代原滚动判断）——
+      // 点击（探索更多/进度点）、滚动（首页翻屏）、路由（功能页/回首页）
+      // 都会更新 stateRef；此处只响应状态做平滑下潜/上浮，动画路径统一
+      if (stateRef.current === "deep") {
+        if (phase === "surface" || phase === "surfacing") {
+          phase = "diving"
+        }
+      } else if (phase === "underwater" || phase === "diving") {
+        phase = "surfacing"
+      }
       if (phase === "diving") {
         dive = Math.min(1, dive + delta / cur.diveDuration)
       } else if (phase === "surfacing") {
@@ -669,7 +682,6 @@ export function Ocean({ conf }: OceanProps) {
       window.cancelAnimationFrame(raf)
       window.removeEventListener("mousemove", onMouseMove)
       window.removeEventListener("resize", onResize)
-      window.removeEventListener("scroll", onScroll)
       geometry.dispose()
       material.dispose()
       atlas.dispose()
@@ -687,7 +699,9 @@ export function Ocean({ conf }: OceanProps) {
     <>
       <div
         ref={containerRef}
-        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+        className={`pointer-events-none fixed inset-0 z-0 overflow-hidden ${
+          blur ? "blur-[5px]" : ""
+        }`}
         aria-hidden="true"
       />
       {/* 泳镜水膜遮罩：潜入海底时的暗角蓝膜 */}

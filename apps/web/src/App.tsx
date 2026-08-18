@@ -1,125 +1,91 @@
-import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Plug, MessagesSquare } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Routes, Route, useLocation } from "react-router-dom"
 
-import { Features } from "@/components/home/features"
-import {
-  FullscreenSlides,
-  type FullscreenSlidesHandle,
-} from "@/components/layout/fullscreen-slides"
+import { Toaster } from "@/components/ui/sonner"
 import { Topbar } from "@/components/layout/topbar"
 import type { OceanConf } from "@/components/showcase/ocean-conf"
 import { Ocean } from "@/components/showcase/ocean"
 import { SeaDebugPanel } from "@/components/showcase/sea-debug-panel"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import type { SeaState } from "@/components/showcase/sea-state"
+import { HomePage } from "@/pages/home"
+import { PluginDetailPage } from "@/pages/plugin-detail"
+import { PluginsPage } from "@/pages/plugins"
 
 export function App() {
   // 海洋参数配置（调试面板 #sea-debug 调整；也可以直接写 JSON 对象）
   const [conf, setConf] = useState<Partial<OceanConf>>({})
-  // 全屏幻灯控制句柄（「探索更多」等入口统一走幻灯跳转）
-  const slidesRef = useRef<FullscreenSlidesHandle>(null)
-  // 「探索更多」按钮：fixed 在首页底部，开始滚动后淡出，回到顶部重现
-  const [showExplore, setShowExplore] = useState(true)
+  const location = useLocation()
 
+  // 二级功能页（/plugins、/plugin/...）：固定海底 + 背景虚化
+  const isSubPage = location.pathname !== "/"
+
+  // 统一海洋状态：surface=海面（首页 hero/插件精选），deep=深海
+  // 驱动源（动画路径统一）：
+  //   · 路由变化 → 功能页 deep / 回首页 surface
+  //   · 首页翻屏（滚动/点击探索更多/进度点）→ 核心能力屏 deep，其余 surface
+  const [seaState, setSeaState] = useState<SeaState>(
+    isSubPage ? "deep" : "surface"
+  )
+
+  // 路由变化 → 同步海洋状态（功能页固定深海；回首页回海面）
   useEffect(() => {
-    const onScroll = () => {
-      // 视口内滚动超过阈值（约一屏的 12%）即淡出；回到顶部附近重现
-      setShowExplore(window.scrollY < window.innerHeight * 0.12)
+    setSeaState(isSubPage ? "deep" : "surface")
+  }, [isSubPage])
+
+  // 首页翻屏上报 → 仅首页路由时采纳（二级页由路由状态锁定）
+  const handleHomeSeaState = (state: SeaState) => {
+    if (!isSubPage) {
+      setSeaState(state)
     }
-    window.addEventListener("scroll", onScroll, { passive: true })
-    onScroll()
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [])
+  }
+
+  // 路由跳转后回到顶部（#hash 锚点除外：首页锚点滚动到对应区块）
+  useEffect(() => {
+    if (location.hash) {
+      const el = document.getElementById(location.hash.slice(1))
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" })
+        return
+      }
+    }
+    window.scrollTo(0, 0)
+  }, [location.pathname, location.hash])
 
   return (
     <div id="top" className="min-h-dvh">
-      {/* 3D 海面背景：滚动触发潜入海底（丁达尔光柱 + caustics 折射光影 + 漂浮代码） */}
-      <Ocean conf={conf} />
+      {/* 3D 海面背景：统一海洋状态驱动下潜/上浮动画；二级页叠加 20% 虚化 */}
+      <Ocean conf={conf} state={seaState} blur={isSubPage} />
 
       {/* 调试面板：地址 #sea-debug 显示，滑块调参 + 复制 JSON */}
       <SeaDebugPanel conf={conf} onChange={setConf} />
 
       <Topbar />
 
-      {/* 沉入海底的入口：fixed 在首页底部；滚动即淡出，回顶部重现 */}
-      <button
-        type="button"
-        onClick={() => slidesRef.current?.next()}
-        aria-hidden={!showExplore}
-        tabIndex={showExplore ? 0 : -1}
-        className={`fixed bottom-10 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-1.5 text-white/70 transition-all duration-500 hover:text-white ${
-          showExplore ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-      >
-        <span className="text-xs font-medium tracking-[0.2em]">探索更多</span>
-        <ChevronDown className="size-5 animate-bounce" />
-      </button>
-
-      <main className="relative z-10">
-        {/* 全屏幻灯：每屏固定占满视口，左侧进度点导航；内容页半透明深色遮罩 */}
-        <FullscreenSlides
-          ref={slidesRef}
-          heightClass="h-[calc(100dvh-4rem)]"
-          contentOverlay
-          slides={[
-            {
-              id: "hero",
-              label: "首页",
-              node: (
-                <div className="relative flex h-full items-center justify-center">
-                  <div className="mx-auto max-w-3xl px-4 py-24 text-center sm:px-6">
-                    <Badge
-                      variant="outline"
-                      className="border-white/20 bg-white/10 text-white backdrop-blur-sm"
-                    >
-                      DeepSeek Harness 插件生态聚合站
-                    </Badge>
-                    <h1 className="mt-6 text-5xl font-bold tracking-tight text-white drop-shadow-[0_2px_16px_rgba(8,26,61,0.9)] sm:text-7xl">
-                      deepSea
-                    </h1>
-                    <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
-                      搜罗与聚类 deepseek-harness
-                      周边插件生态。快速搜索、下载使用，
-                      从社区讨论到安全管理，潜得越深，收获越多。
-                    </p>
-                    <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                      <Button asChild size="lg">
-                        <a href="#explore">
-                          <Plug className="size-4" />
-                          大海捞珍
-                        </a>
-                      </Button>
-                      <Button
-                        asChild
-                        size="lg"
-                        variant="outline"
-                        className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                      >
-                        <a href="#community">
-                          <MessagesSquare className="size-4" />
-                          港口酒馆
-                        </a>
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: "explore",
-              label: "核心能力",
-              node: <Features />,
-            },
-          ]}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <HomePage
+              seaState={seaState}
+              onSeaStateChange={handleHomeSeaState}
+            />
+          }
         />
+        <Route path="/plugins" element={<PluginsPage />} />
+        <Route path="/plugin/:owner/:repo" element={<PluginDetailPage />} />
+        <Route
+          path="*"
+          element={
+            <HomePage
+              seaState={seaState}
+              onSeaStateChange={handleHomeSeaState}
+            />
+          }
+        />
+      </Routes>
 
-        <footer className="border-t border-white/10 bg-slate-950/60 py-10 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-sm text-white/70 sm:flex-row sm:px-6">
-            <p>deepSea · DeepSeek Harness 插件生态聚合站</p>
-            <p className="font-mono">dsh · deepc · everything is a plugin</p>
-          </div>
-        </footer>
-      </main>
+      {/* 全局提示（自行捕捞需登录等） */}
+      <Toaster position="bottom-right" />
     </div>
   )
 }

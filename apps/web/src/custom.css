@@ -1,0 +1,124 @@
+/* ===========================================================================
+ * custom.css —— deepSea 站点自定义层（主题 / 字体 / 全局色板统一管理）
+ *
+ * ⚠️ 规范：
+ *   1. 不要修改 src/index.css —— 它是脚手架自动生成的官方文件
+ *      （@import tailwindcss / shadcn tokens / :root / .dark 变量），
+ *      重跑脚手架会覆盖；改动一律放本文件。
+ *   2. 本文件在 index.css 之后引入（main.tsx import 顺序），通过 CSS
+ *      原生 @layer 追加到同名层，优先级高于 index.css 的同名规则。
+ *   3. 组件内的颜色仍用 Tailwind 原子类（如 bg-slate-900/70、text-white），
+ *      这是正常的组件级样式；只有「全局主题变量 / 字体 / 站点级基色」
+ *      才放这里，避免重复。
+ *
+ * 可用变量：index.css 的 :root/.dark 已定义全套 shadcn token
+ *   （--background / --foreground / --primary / --muted / --radius 等）。
+ *   此处仅覆盖站点需要定制的部分。
+ * =========================================================================== */
+
+/* —— 站点级字体定制（unlayered：后加载覆盖 index.css 同层 :root） —— */
+:root {
+  /* 主字体：Inter Variable（脚手架已含）+ 站内通用字体栈回退 */
+  --font-sans:
+    "Inter Variable", "Inter", "PingFang SC", "Microsoft YaHei",
+    system-ui, -apple-system, sans-serif;
+  /* 等宽字体：代码/仓库名等场景 */
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas,
+    monospace;
+}
+
+/* —— 站点全局基调（深色海洋站点，unlayered） —— */
+html {
+  color-scheme: dark;
+}
+body {
+  /* 深色海洋站点：内容区默认深底，避免纯白闪烁 */
+  background-color: var(--background);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 官方组件 token 适配层（毛玻璃态统一覆盖）
+ *   站点是深色海洋视觉，但脚手架 :root（light）token 为浅色 → 官方组件
+ *   （Select 弹层 / Button outline / Input / Badge / Tabs 等）显示白底，
+ *   与毛玻璃不协调。此处把 :root token 覆盖为「海洋深色玻璃」色板，
+ *   所有通过 token 取色的官方组件自动适配，无需逐组件改。
+ *   弹层类组件（select-content 等）再叠加 backdrop-blur 毛玻璃。
+ *
+ * ⚠️ 必须 unlayered（顶层直接写，不要包 @layer）：index.css 的 :root /
+ *    .dark 变量与组件类都是 unlayered 或 utilities 层，CSS 中 unlayered
+ *    样式优先于所有 @layer；若放 @layer base 会被 index.css 的 unlayered
+ *    :root 变量反超，覆盖不生效（实测踩坑）。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* —— 海洋深色玻璃 token（unlayered，后加载覆盖 index.css 同层 :root） —— */
+:root {
+  /* —— 基础色板：深蓝黑背景 / 浅色前景 —— */
+  --background: oklch(0.13 0.022 240);
+  --foreground: oklch(0.97 0.008 230);
+
+  /* 卡片 / 弹层：半透明深玻璃（配合 backdrop-blur 实现毛玻璃） */
+  --card: oklch(0.17 0.025 240 / 70%);
+  --card-foreground: oklch(0.97 0.008 230);
+  --popover: oklch(0.17 0.025 240 / 85%);
+  --popover-foreground: oklch(0.97 0.008 230);
+
+  /* 主色：青色系（海洋光柱同源） */
+  --primary: oklch(0.72 0.14 230);
+  --primary-foreground: oklch(0.13 0.022 240);
+
+  /* 次级 / 弱化 */
+  --secondary: oklch(0.22 0.03 240 / 70%);
+  --secondary-foreground: oklch(0.95 0.01 230);
+  --muted: oklch(0.22 0.03 240 / 70%);
+  --muted-foreground: oklch(0.72 0.03 230);
+
+  /* 强调高亮（Select item hover / ghost hover）：深色玻璃 */
+  --accent: oklch(0.25 0.045 230 / 80%);
+  --accent-foreground: oklch(0.97 0.008 230);
+
+  /* 边框 / 输入 / 焦点环：白色半透明（毛玻璃描边） */
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.14 230 / 60%);
+
+  /* 侧栏（未用但保持同色系） */
+  --sidebar: oklch(0.15 0.024 240 / 70%);
+  --sidebar-foreground: oklch(0.97 0.008 230);
+  --sidebar-primary: oklch(0.72 0.14 230);
+  --sidebar-primary-foreground: oklch(0.13 0.022 240);
+  --sidebar-accent: oklch(0.25 0.045 230 / 80%);
+  --sidebar-accent-foreground: oklch(0.97 0.008 230);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.72 0.14 230 / 60%);
+}
+
+/* —— 弹层毛玻璃（unlayered，优先于 utilities 的 bg-popover 等） —— */
+[data-slot="select-content"],
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="context-menu-content"],
+[data-slot="command-dialog"] {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Tooltip 官方为反色设计（bg-foreground text-background），
+   token 翻转后直接覆盖为深色玻璃 + 浅字，保持可读 */
+[data-slot="tooltip-content"] {
+  background-color: oklch(0.13 0.022 240 / 92%) !important;
+  color: oklch(0.97 0.008 230) !important;
+  border: 1px solid oklch(1 0 0 / 14%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+/* 指向小尖角：radix Arrow 渲染的 svg 无 data-slot 属性，
+   类名为 bg-foreground fill-foreground（浅色）→ 按类名覆盖为深玻璃同色，
+   避免尖角与气泡色差 */
+[data-slot="tooltip-content"] svg[class*="bg-foreground"],
+[data-slot="tooltip-content"] svg[class*="fill-foreground"] {
+  background-color: oklch(0.13 0.022 240 / 92%) !important;
+  fill: oklch(0.13 0.022 240 / 92%) !important;
+}
+

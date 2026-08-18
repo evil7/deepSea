@@ -14,7 +14,12 @@ export interface FullscreenSlide {
   /** 进度点悬停提示 / 无障碍标签 */
   label?: string
   node: ReactNode
+  /** 遮罩类：覆盖默认 contentOverlay 样式（分级虚化：越深雾越浓） */
+  overlayClassName?: string
 }
+
+/** 默认内容屏遮罩（无自定义 overlayClassName 时使用） */
+const DEFAULT_OVERLAY_CLASS = "bg-slate-950/60 backdrop-blur-md"
 
 export interface FullscreenSlidesHandle {
   /** 跳转到指定屏（索引） */
@@ -34,6 +39,8 @@ interface FullscreenSlidesProps {
   contentOverlay?: boolean
   /** 外部控制跳转（如「探索更多」按钮） */
   ref?: Ref<FullscreenSlidesHandle>
+  /** 当前屏变化回调（index；用于把屏与海洋状态统一绑定） */
+  onActiveChange?: (index: number) => void
 }
 
 /**
@@ -48,9 +55,15 @@ export function FullscreenSlides({
   heightClass = "h-dvh",
   contentOverlay = false,
   ref,
+  onActiveChange,
 }: FullscreenSlidesProps) {
   const [active, setActive] = useState(0)
   const sectionRefs = useRef<(HTMLElement | null)[]>([])
+  // 回调放 ref：observer 只建立一次，避免依赖变化重建
+  const onActiveChangeRef = useRef(onActiveChange)
+  useEffect(() => {
+    onActiveChangeRef.current = onActiveChange
+  }, [onActiveChange])
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -62,6 +75,7 @@ export function FullscreenSlides({
             )
             if (index >= 0) {
               setActive(index)
+              onActiveChangeRef.current?.(index)
             }
           }
         }
@@ -122,7 +136,11 @@ export function FullscreenSlides({
       {/* 每屏：固定占满视口 */}
       {slides.map((slide, index) => {
         // 首页透明；后续内容页盖半透明深色遮罩（字体可读）
-        const overlay = contentOverlay && index > 0
+        // 每屏可传 overlayClassName 覆盖默认遮罩 → 分级虚化（越深雾越浓）
+        const overlay =
+          contentOverlay && index > 0
+            ? (slide.overlayClassName ?? DEFAULT_OVERLAY_CLASS)
+            : null
         return (
           <section
             key={slide.id}
@@ -139,10 +157,15 @@ export function FullscreenSlides({
             {overlay && (
               <div
                 aria-hidden="true"
-                className="absolute inset-0 z-0 bg-slate-950/60 backdrop-blur-md"
+                className={cn("absolute inset-0 z-0", overlay)}
               />
             )}
-            <div className={cn(overlay && "relative z-10 h-full")}>
+            {/* 内容屏统一收拢：左侧避让固定进度点（left-5 ≈30px），右侧对称收拢一丁点 */}
+            <div
+              className={cn(
+                overlay && "relative z-10 h-full px-4 sm:px-12 lg:px-16"
+              )}
+            >
               {slide.node}
             </div>
           </section>
