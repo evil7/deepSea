@@ -152,7 +152,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                     {
                       id: "manage",
                       icon: Package,
-                      title: "插件管理插件",
+                      title: "插件管理器",
                       description:
                         "本地安装、更新提示一站式管理，deepc 插件可复刻本站用于本地。",
                       tag: "deepc",
@@ -160,7 +160,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                     {
                       id: "sync",
                       icon: MonitorSmartphone,
-                      title: "多端互联插件",
+                      title: "多端互联协议",
                       description:
                         "桌面端与移动端互通，插件与配置跨设备同步，随时随地下潜。",
                       tag: "sync",

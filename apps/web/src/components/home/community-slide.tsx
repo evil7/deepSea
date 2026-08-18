@@ -227,7 +227,7 @@ function AnimatedTitle({
           // eslint-disable-next-line react/no-array-index-key -- 静态字符数组，索引即稳定标识
           key={`${c}-${i}`}
           className={cn(
-            "title-char inline-block text-3xl font-black opacity-0 sm:text-4xl",
+            "title-char inline-block text-4xl font-black opacity-0 sm:text-6xl",
             tone === "cyan"
               ? "text-cyan-200 drop-shadow-[0_0_22px_rgba(34,211,238,0.6)]"
               : "text-amber-200 drop-shadow-[0_0_22px_rgba(251,191,36,0.55)]",
@@ -262,8 +262,8 @@ function CornerLabel({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute flex flex-col gap-1.5",
-        isLeft ? "bottom-[5%] left-[5%] items-start" : "right-[5%] top-[5%] items-end"
+        "pointer-events-none absolute z-30 flex flex-col gap-1.5",
+        isLeft ? "bottom-[2%] left-[2%] items-start" : "right-[2%] top-[2%] items-end"
       )}
     >
       <AnimatedTitle
@@ -304,6 +304,10 @@ export function CommunitySlide() {
   const particleLayerRef = useRef<HTMLDivElement>(null)
   const zoomAnimLeftRef = useRef<ReturnType<typeof animate> | null>(null)
   const zoomAnimRightRef = useRef<ReturnType<typeof animate> | null>(null)
+  // 全屏虚化背景层（hover 后对应图淡入铺满作为氛围背景）
+  const bgC1Ref = useRef<HTMLImageElement>(null)
+  const bgC2Ref = useRef<HTMLImageElement>(null)
+  const bgAnimRef = useRef<ReturnType<typeof animate> | null>(null)
 
   // 加载两社区 seed（自家订阅定时刷新；官方静态 seed）
   useEffect(() => {
@@ -352,6 +356,7 @@ export function CommunitySlide() {
       animRef.current?.pause()
       zoomAnimLeftRef.current?.pause()
       zoomAnimRightRef.current?.pause()
+      bgAnimRef.current?.pause()
     }
   }, [])
 
@@ -410,6 +415,28 @@ export function CommunitySlide() {
     }
   }
 
+  /** hover 侧对应的图淡入铺满为全屏虚化背景（氛围层）；移出则全淡出 */
+  const animateBackground = (side: "left" | "right" | null) => {
+    const c1 = bgC1Ref.current
+    const c2 = bgC2Ref.current
+    if (!c1 || !c2) return
+    const bgState = {
+      o1: Number(c1.style.opacity || 0),
+      o2: Number(c2.style.opacity || 0),
+    }
+    bgAnimRef.current?.pause()
+    bgAnimRef.current = animate(bgState, {
+      o1: side === "left" ? 1 : 0,
+      o2: side === "right" ? 1 : 0,
+      duration: 520,
+      ease: "outCubic",
+      onUpdate: () => {
+        c1.style.opacity = String(bgState.o1)
+        c2.style.opacity = String(bgState.o2)
+      },
+    })
+  }
+
   /** 动画分割线到目标位置（弹性回弹）；图片延迟错拍缩放（景深）；迸发纸屑 */
   const animatePos = (target: number, side: "left" | "right" | null) => {
     // 1) 裂缝先行：分割线用弹性缓动回弹裂开
@@ -445,6 +472,8 @@ export function CommunitySlide() {
     if (side !== null) {
       burstConfetti(target)
     }
+    // 4) 全屏虚化背景：被 hover 图淡入铺满作为氛围背景（移出全淡出）
+    animateBackground(side)
   }
 
   /** 鼠标在容器内移动：以分割线当前位置为界判定左右，跨线才切换（更跟手） */
@@ -479,8 +508,30 @@ export function CommunitySlide() {
   return (
     <div
       ref={sectionRef}
-      className="mx-auto flex h-full w-full max-w-7xl flex-col justify-center px-4 pt-4 pb-8 sm:px-6"
+      className="relative mx-auto flex h-full w-full max-w-7xl flex-col justify-center px-4 pt-4 pb-8 sm:px-6"
     >
+      {/* 全屏虚化背景：hover 后对应社区图淡入铺满整个视口（撕裂卡片后方的整屏氛围） */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <img
+          ref={bgC1Ref}
+          src="/c1.png"
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl"
+          style={{ opacity: 0 }}
+        />
+        <img
+          ref={bgC2Ref}
+          src="/c2.png"
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl"
+          style={{ opacity: 0 }}
+        />
+      </div>
+
       {/* 标题区：仅保留代号 + 英文 + 大标题（上移，为下方图片腾出画幅） */}
       <div className="slide-reveal-title mb-4">
         <p className="font-mono text-xs tracking-[0.3em] text-cyan-300/90">
@@ -553,7 +604,7 @@ export function CommunitySlide() {
         <svg
           viewBox="0 0 1 1"
           preserveAspectRatio="none"
-          className="pointer-events-none absolute inset-0 h-full w-full"
+          className="pointer-events-none absolute inset-0 z-20 h-full w-full"
           aria-hidden="true"
         >
           <path
@@ -587,7 +638,7 @@ export function CommunitySlide() {
         {/* 纸屑粒子层（hover 切换时沿裂缝迸发） */}
         <div
           ref={particleLayerRef}
-          className="pointer-events-none absolute inset-0 z-20"
+          className="pointer-events-none absolute inset-0 z-40"
           aria-hidden="true"
         />
       </div>
