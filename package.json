@@ -9,13 +9,20 @@
   },
   "scripts": {
     "dev": "pnpm --filter @deepsea/web dev",
-    "build": "pnpm -r build",
+    "dev:all": "node scripts/dev.mjs",
+    "build": "pnpm --filter @deepsea/web build && pnpm --filter @deepsea/worker build",
     "typecheck": "pnpm -r typecheck",
     "lint": "oxlint",
     "format": "oxfmt --write \"**/*.{ts,tsx}\"",
     "format:check": "oxfmt --check \"**/*.{ts,tsx}\"",
     "preview": "pnpm --filter @deepsea/web preview",
-    "search:plugins": "node scripts/search-deepseek-repos.mjs"
+    "search:plugins": "node scripts/search-deepseek-repos.mjs",
+    "sync:discussions": "node scripts/sync-discussions.mjs",
+    "dev:worker": "pnpm --filter @deepsea/worker dev",
+    "deploy": "pnpm build && pnpm --filter @deepsea/worker deploy",
+    "secret:list": "pnpm --filter @deepsea/worker secret:list",
+    "secret:put": "pnpm --filter @deepsea/worker secret:put",
+    "secret:del": "pnpm --filter @deepsea/worker secret:del"
   },
   "devDependencies": {
     "oxfmt": "^0.63.0",

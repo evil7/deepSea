@@ -12,6 +12,11 @@ applyTo: ["apps/web/src/lib/github/**", "apps/web/src/hooks/**", "packages/**"]
 - **discussions 只有 GraphQL 可用**；仓库/插件搜索、issues、releases 用 REST。
 - 统一封装在 `apps/web/src/lib/github/` 下，组件与页面**不得直接 import octokit**，必须走封装后的函数与 hooks。
 - Token 只存在于前端内存/会话中，禁止写入仓库、localStorage 明文存储；未登录时以匿名身份访问（限流更低，需做好降级提示）。
+- **【架构红线】一切可直接前端化的 GitHub 能力都用前端 octokit 直调官方 API，不得扩展后端（Cloudflare Worker）代理**。
+  后端 Worker **只做 auth**（OAuth 登录 / 回调 / 会话校验 / 登出），并把 access token 通过 `/auth/me` 返回给前端
+  （前端 `setGitHubToken()` 存内存）。所有数据读写——包括 discussions 列表、详情、回复、表情反应、
+  创建讨论、issues、releases——一律在前端 `lib/github/` 用 octokit 完成。
+  新增能力时先问：能前端化吗？能就直接加前端 octokit 封装，不要再给 Worker 加 `/api/*` 代理路由。
 
 ## 客户端初始化（`lib/github/client.ts`）
 
@@ -54,8 +59,13 @@ query ($owner: String!, $repo: String!, $first: Int!, $cursor: String) {
 }
 ```
 
-- 官方 discussions 地址：`deepseek-ai/deepseek-harness`（该仓库 `has_discussions: true`）
-- 按 `category.name` 分区展示；评论数、更新时间用于排序与热度展示。
+- 主社区 = `evil7/deepSea`（自有仓库，可互动，站内回复/表情/发帖）；
+  官方 `deepseek-ai/deepseek-harness` 仅作只读跳转链接。
+- 列表/详情/回复/表情/创建讨论全部走**前端 octokit GraphQL 直调**（登录后带 token），
+  不经过 Worker 代理。相关 mutation：`createDiscussion`、`addDiscussionComment`、
+  `addReaction`、`removeReaction`。
+- 匿名用户读静态 seed（`public/data/discussions.json`，Actions 每小时同步）零配额；
+  登录后前端定时（3 分钟）octokit 直调最新列表替换内存缓存。
 
 ## Issues / 工单（`lib/github/issues.ts`）
 

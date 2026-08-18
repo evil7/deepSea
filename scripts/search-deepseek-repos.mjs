@@ -10,20 +10,27 @@
 //   GITHUB_TOKEN=ghp_xxx pnpm search:plugins          # 带 token（限流 30/min）
 //   pnpm search:plugins -- --min-stars 0               # 放宽 star 门槛（默认 ≥10）
 //   pnpm search:plugins -- --min-age-days 0            # 关闭发布时间门槛（默认 ≥5 天）
-//   pnpm search:plugins -- --sort updated --limit 200  # 按更新时间、每类型最多 200 条（默认 500）
+//   pnpm search:plugins -- --sort updated --limit 200  # 按更新时间、每类型最多 200 条（默认 1000）
+//   pnpm search:plugins -- --concurrency 10            # 并发查询数（默认 6，受 30 req/min 限速）
+//   pnpm search:plugins -- --merge                     # 拼接输出目录下其它 JSON 结果
 //   pnpm search:plugins -- --out data/repos.json       # 自定义输出路径
 //   pnpm search:plugins -- --topics-only               # 只跑 topic 搜索
 //   pnpm search:plugins -- --readme                    # 额外收录 README 全文命中
 //   pnpm search:plugins -- -v                          # 打印每轮查询进度
 //
-// 默认缓存参数：limit 500/类型，star ≥ 10，创建时间距今 ≥ 5 天（质量门槛）。
+// 默认缓存参数：limit 1000/类型（拉满单查询上限），star ≥ 10，创建时间距今 ≥ 5 天（质量门槛）。
+// 专属收录：带 deepc-list topic 的仓库无条件收录（跳过 star/age 门槛）。
 // 关键词精选 6 个核心词（1 组 OR 查询；追加时自动拆分，至多 12 个分 2 次）。
 //
-// 搜索优化（减少请求、防触顶）：
+// 搜索优化（减少请求、防触顶、提速）：
 //   · 关键词按 OR 合并分组（每 6 term 一组 = GitHub 单查询布尔上限）
-//   · topic 无法合并（qualifier 不支持 OR，422），保持逐条 11 次
+//   · topic 无法合并（qualifier 不支持 OR，422），保持逐条
+//   · 并发：多查询并行执行（--concurrency，默认 6），全局限速器保证不超过
+//     官方 30 req/min（请求间隔 ≥2s），但请求发出后不等响应（流水线）——
+//     把网络等待时间隐藏，总墙钟时间 ≈ 请求数/30/min，而非串行累加
 //   · 每查询 per_page=100（单次最大分页）+ 按 --limit 自动翻页递归，
-//     2.1s 节流 + 配额见底自动停止；403/429 保留已收结果不中断
+//     配额见底自动停止；403/429 保留已收结果不中断
+//   · --merge：拼接 scripts/output/ 下其它结果 JSON（多配置跑出的文件合并）
 //
 // 输出：scripts/output/deepseek-harness-repos.json + 前端种子 public/data/...json
 // ---------------------------------------------------------------------------
@@ -50,9 +57,15 @@ const OFFICIAL_REPOS = new Set(["deepseek-ai/deepseek-harness"])
 // Topic 全量收录：GitHub Search 不支持对 qualifier（如 topic:）使用 OR
 // （422：Logical operators only apply to text），必须逐条查询。
 // 新增生态 topic 直接追加到数组即可。
-// 注意：cordis 为 dsh 核心依赖（everything is a plugin），其插件生态与 dsh
-//       兼容；但 ai-agents / agent-harness 等泛 AI 主题会引入大量无关噪音，
-//       不建议收录（噪音会淹没真正的 dsh 插件）。
+// 注意：
+//   · cordis 为 dsh 核心依赖（everything is a plugin），其插件生态与 dsh
+//     兼容；但 ai-agents / agent-harness 等泛 AI 主题会引入大量无关噪音，
+//     不建议收录（噪音会淹没真正的 dsh 插件）。
+//   · 已移除 plugin-marketplace / plugin-store（泛化“插件市场”主题，Claude /
+//     通用插件生态仓库大量混入：buildwithclaude、unihub、hauswerk 等）。
+//     这类噪音应直接在 topic 层剔除，而非事后维护黑名单。
+//   · deepc-list —— 生态约定 topic：插件开发者若希望自己的插件库被 deepSea
+//     主动收录，可为仓库打上 `deepc-list` topic。deepSea 据此收录并展示。
 const PLUGIN_TOPICS = [
   "dsh",
   "dsh-plugin",
@@ -63,8 +76,7 @@ const PLUGIN_TOPICS = [
   "deepseek-harness-plugin",
   "cordis",
   "cordis-plugin",
-  "plugin-marketplace",
-  "plugin-store",
+  "deepc-list",
 ]
 
 // 关键词精选（name/description 命中）：
@@ -78,7 +90,11 @@ const KEYWORD_TERMS = {
   nameDesc: [
     '"deepseek-harness"',
     '"deepseek harness"',
-    '"dsh"',
+    // "dsh" 为缩写，会撞上无关项目（Dshell 网络取证、DsHidMini 手柄驱动）。
+    // 用 NOT 排除（不能用 -term：-D 开头会被 GitHub 解析为日期 qualifier，
+    // 导致整个查询返回 0 结果）。NOT 占 1 个布尔运算符，故该词单独一组。
+    // 注意："dsh" 会前缀匹配 "Dshell-plugins"（Dsh 开头），需引号精确排除。
+    '"dsh" NOT Dshell NOT DsHidMini NOT "Dshell-plugins"',
     '"dsh-plugin"',
     '"deepseek-harness plugin"',
     '"harness plugin"',
@@ -91,7 +107,12 @@ const KEYWORD_TERMS = {
   ],
 }
 
-// GitHub Search 布尔运算符上限：5 个 OR = 6 个 term 为一组
+// GitHub Search 布尔运算符上限：5 个 OR = 6 个 term 为一组。
+// 注意：含 NOT 的 term（如 "dsh" NOT Dshell NOT DsHidMini）会额外占用
+// 2 个运算符，故每组最大有效 term 数需按运算符数重新计算：
+//   · 普通 term 组：≤6 term（5 个 OR）
+//   · 含 1 个 NOT 的 term：相当于 3 个运算符（1 AND + 2 NOT），该组最多容纳
+//     2 个 term（1 OR + 2 NOT = 3）
 const MAX_OR_TERMS = 6
 
 /** 把 term 列表按每组 ≤6 个拆组，用 OR 合并为查询字符串 */
@@ -100,6 +121,87 @@ function groupByOr(terms, qualifier) {
   for (let i = 0; i < terms.length; i += MAX_OR_TERMS) {
     const chunk = terms.slice(i, i + MAX_OR_TERMS)
     groups.push(`${chunk.join(" OR ")} ${qualifier}`)
+  }
+  return groups
+}
+
+// ---------------------------------------------------------------------------
+// 并发 + 全局限速
+//   GitHub Search API 带 token 30 req/min（匿名 10/min）。串行实现每请求后
+//   睡 2.1s，但响应等待时间也白白流逝。这里用「限速器 + 并发池」：
+//     · SearchThrottle：全局串行占坑，保证任意两次「请求发起」间隔 ≥ interval，
+//       但发起后不等响应 —— 流水线，多个查询并行翻页
+//     · runPool：固定并发 worker 跑任务数组，每个任务自行过限速器
+//   总墙钟时间 ≈ 请求总数 × interval（而非串行累加响应等待）
+// ---------------------------------------------------------------------------
+class SearchThrottle {
+  constructor(intervalMs) {
+    this.intervalMs = intervalMs
+    this.last = 0
+    this.tail = Promise.resolve()
+  }
+
+  /** 排队直到允许发起下一个请求（串行占坑；发起后调用方自行 await 响应） */
+  async acquire() {
+    let release
+    const prev = this.tail
+    this.tail = new Promise((r) => (release = r))
+    await prev
+    try {
+      const now = Date.now()
+      const wait = Math.max(0, this.intervalMs - (now - this.last))
+      if (wait > 0) {
+        await new Promise((r) => setTimeout(r, wait))
+      }
+      this.last = Date.now()
+    } finally {
+      release()
+    }
+  }
+}
+
+/** 并发池：固定 worker 数执行任务数组（结果按原序；异常以 Error 值返回） */
+async function runPool(tasks, concurrency) {
+  const results = Array.from({ length: tasks.length })
+  let next = 0
+  const worker = async () => {
+    // 并发池 worker：各 worker 并行消费独立任务队列，await 合法（非串行依赖）
+    /* eslint-disable no-await-in-loop */
+    for (;;) {
+      const i = next++
+      if (i >= tasks.length) {
+        return
+      }
+      try {
+        results[i] = await tasks[i]()
+      } catch (err) {
+        results[i] = err
+      }
+    }
+    /* eslint-enable no-await-in-loop */
+  }
+  const n = Math.max(1, Math.min(concurrency, tasks.length))
+  await Promise.all(Array.from({ length: n }, worker))
+  return results
+}
+
+/**
+ * 关键词拆组（运算符感知）：term 内含 NOT 的单独成组，避免整组超 5 运算符。
+ * GitHub 单查询最多 5 个 AND/OR/NOT：
+ *   · 普通 term：6 个 OR 连接（5 运算符）
+ *   · 含 1 个 NOT 的 term："a" NOT b NOT c = 2 个 NOT + 0 个 OR = 2 运算符，
+ *     单独成组最安全（不与其他 term 混 OR）
+ */
+function splitKeywordGroups(terms, qualifier) {
+  const plain = terms.filter((t) => !/\sNOT\s/i.test(t))
+  const withNot = terms.filter((t) => /\sNOT\s/i.test(t))
+  const groups = []
+  for (let i = 0; i < plain.length; i += MAX_OR_TERMS) {
+    const chunk = plain.slice(i, i + MAX_OR_TERMS)
+    groups.push(`${chunk.join(" OR ")} ${qualifier}`)
+  }
+  for (const t of withNot) {
+    groups.push(`${t} ${qualifier}`)
   }
   return groups
 }
@@ -115,12 +217,16 @@ function parseArgs(argv) {
     minAgeDays: 5,
     sort: "stars", // stars | updated | created
     // 单查询收录上限：GitHub Search API 每查询最多返回 1000 条
-    // 缓存默认每类型 500 个（关键词组 / 每个 topic 各 500）
-    limit: 500,
+    // 缓存默认每类型 1000 个（关键词组 / 每个 topic 各 1000，即拉满）
+    limit: 1000,
     out: path.join(__dirname, "output", "deepseek-harness-repos.json"),
     topicsOnly: false,
     readme: false,
     verbose: false,
+    // 并发查询数：多查询并行翻页（全局限速保证 30 req/min 不超限）
+    concurrency: 6,
+    // 拼接输出目录下其它 JSON 结果（多配置文件合并去重）
+    merge: false,
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -139,6 +245,9 @@ function parseArgs(argv) {
     else if (a.startsWith("--out=")) args.out = a.slice(6)
     else if (a === "--topics-only") args.topicsOnly = true
     else if (a === "--readme") args.readme = true
+    else if (a === "--concurrency") args.concurrency = Number(next()) || 6
+    else if (a.startsWith("--concurrency=")) args.concurrency = Number(a.slice(15)) || 6
+    else if (a === "--merge") args.merge = true
     else if (a === "--verbose" || a === "-v") args.verbose = true
   }
   return args
@@ -151,7 +260,7 @@ function parseArgs(argv) {
 function buildQueries({ topicsOnly, readme }) {
   const queries = []
   if (!topicsOnly) {
-    queries.push(...groupByOr(KEYWORD_TERMS.nameDesc, "in:name,description"))
+    queries.push(...splitKeywordGroups(KEYWORD_TERMS.nameDesc, "in:name,description"))
     if (readme) {
       queries.push(...groupByOr(KEYWORD_TERMS.readme, "in:readme"))
     }
@@ -163,19 +272,21 @@ function buildQueries({ topicsOnly, readme }) {
 // —— 搜索执行：按实际 limit 自动分页递归拉取 ——
 // 始终翻页直到满足以下任一条件：取满 limit、翻完 total_count、配额见底。
 // GitHub Search API：每查询最多返回 1000 条、带 token 30 req/min；
-// 分页间节流 + 检查 x-ratelimit-remaining，避免 403 截断。
-async function searchQuery(octokit, q, { sort, limit, verbose }) {
+// 并发模式下由全局 SearchThrottle 控制发起间隔（流水线，不等响应）。
+async function searchQuery(octokit, q, { sort, limit, verbose }, throttle) {
   const results = []
   // 单次最大分页（GitHub Search 上限 100/请求）
   const perPage = Math.min(limit, 100)
   const maxPages = Math.ceil(limit / perPage)
   let total = Infinity
   let remain = Infinity
-  // 分页必须串行（限流敏感），非并行 Promise.all
+  // 分页串行（同一查询内页序相关），但每页请求都过全局限速器；
+  // 多个查询并发翻页时由 throttle 统一排程，保证 30 req/min 不超限
   /* eslint-disable no-await-in-loop */
   for (let page = 1; page <= maxPages; page++) {
     let res
     try {
+      await throttle.acquire() // 全局请求间隔（token 2000ms / 匿名 6000ms）
       res = await octokit.search.repos({
         q,
         sort,
@@ -217,9 +328,6 @@ async function searchQuery(octokit, q, { sort, limit, verbose }) {
     ) {
       break
     }
-    // 分页节流：GitHub Search 带 token 30 req/min 上限（每请求 ≥2s），
-    // 多页递归拉取时保持稳定不撞 403；配额见底由上方检查兜底
-    await new Promise((r) => setTimeout(r, 2100))
   }
   /* eslint-enable no-await-in-loop */
   if (verbose) {
@@ -254,6 +362,8 @@ function aggregate(items, seen) {
       license: it.license?.spdx_id ?? null,
       archived: it.archived ?? false,
       is_official: OFFICIAL_REPOS.has(it.full_name),
+      // 带 deepc-list topic → 无条件收录（跳过 star/age 质量门槛）
+      is_deepc_list: Array.isArray(it.topics) && it.topics.includes("deepc-list"),
       // 命中关键词：记录来源（topic / keyword），便于追溯
       sources: [it.sources?.[0] ?? "search"],
     })
@@ -277,46 +387,88 @@ async function logRateLimit(octokit) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   console.log(`octokit 仓库搜索：token=${args.token ? "已提供" : "匿名"} ` +
-    `minStars=${args.minStars} minAgeDays=${args.minAgeDays} sort=${args.sort} limit=${args.limit}`)
+    `minStars=${args.minStars} minAgeDays=${args.minAgeDays} sort=${args.sort} ` +
+    `limit=${args.limit} concurrency=${args.concurrency}`)
 
   const octokit = new Octokit({ auth: args.token || undefined })
 
   const queries = buildQueries(args)
-  console.log(`\n执行 ${queries.length} 组查询…`)
+  // 全局限速：带 token 30 req/min（间隔 2s）；匿名 10 req/min（间隔 6s）
+  const throttle = new SearchThrottle(args.token ? 2000 : 6000)
+  console.log(
+    `\n执行 ${queries.length} 组查询（并发 ${args.concurrency}，` +
+      `限速 ${args.token ? 30 : 10} req/min）…`
+  )
 
   const seen = new Map()
-  // 顺序执行（不可并行：GitHub Search 限流严格，串行才能稳定 30 req/min）
-  /* eslint-disable no-await-in-loop */
-  for (const q of queries) {
-    try {
-      const items = await searchQuery(octokit, q, args)
-      const src = q.startsWith("topic:") ? "topic" : "keyword"
-      const tagged = items.map((it) => Object.assign({}, it, { sources: [src] }))
-      const merged = aggregate(tagged, seen)
-      seen.clear()
-      for (const [k, v] of merged) seen.set(k, v)
-    } catch (err) {
-      if (err.status === 403 || err.status === 429) {
-        console.warn(`\n⚠ 限流（${err.status}）：停止后续查询。请设置 GITHUB_TOKEN 提高配额。`)
-        await logRateLimit(octokit)
-        break
+  // 并发执行：每个查询一个任务，内部自行过全局限速器；403/429 以 Error 值返回
+  const tasks = queries.map((q) => async () => {
+    const items = await searchQuery(octokit, q, args, throttle)
+    const src = q.startsWith("topic:") ? "topic" : "keyword"
+    return {
+      q,
+      items: items.map((it) => Object.assign({}, it, { sources: [src] })),
+    }
+  })
+  const results = await runPool(tasks, args.concurrency)
+  let rateLimited = false
+  for (const r of results) {
+    if (r instanceof Error) {
+      if (r.status === 403 || r.status === 429) {
+        rateLimited = true
+        console.warn(`\n⚠ 限流（${r.status}）：部分查询未完成。请设置 GITHUB_TOKEN 提高配额。`)
+      } else {
+        console.warn(`\n⚠ 查询失败：${r.message}`)
       }
-      console.warn(`\n⚠ 查询失败：${q}\n  ${err.message}`)
+      continue
+    }
+    const merged = aggregate(r.items, seen)
+    seen.clear()
+    for (const [k, v] of merged) seen.set(k, v)
+  }
+  if (rateLimited) {
+    await logRateLimit(octokit)
+  }
+
+  // —— 拼接：合并输出目录下其它结果 JSON（--merge；多配置跑出的文件去重合并）——
+  if (args.merge) {
+    const dir = path.dirname(args.out)
+    if (fs.existsSync(dir)) {
+      const self = path.resolve(args.out)
+      const others = fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith(".json") && path.resolve(dir, f) !== self)
+      for (const f of others) {
+        try {
+          const arr = JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8"))
+          if (Array.isArray(arr)) {
+            const tagged = arr.map((it) =>
+              Object.assign({}, it, { sources: it.sources ?? ["merge"] })
+            )
+            const merged = aggregate(tagged, seen)
+            seen.clear()
+            for (const [k, v] of merged) seen.set(k, v)
+            console.log(`  拼接 ${f}（+${arr.length} 条）`)
+          }
+        } catch {
+          console.warn(`  ⚠ 跳过无法解析的 ${f}`)
+        }
+      }
     }
   }
-  /* eslint-enable no-await-in-loop */
 
-  // —— 过滤（质量门槛：star / 创建时间距今；官方库始终保留）+ 排序 ——
+  // —— 过滤（质量门槛：star / 创建时间距今；官方库与 deepc-list 始终保留）+ 排序 ——
   const minAgeMs = args.minAgeDays * 86400000
   const repos = [...seen.values()]
     .filter(
       (r) =>
+        r.is_deepc_list ||
         r.stargazers_count >= args.minStars ||
         OFFICIAL_REPOS.has(r.full_name)
     )
     .filter((r) => {
-      // 官方库豁免发布时间门槛（避免生态锚点被质量过滤误伤）
-      if (OFFICIAL_REPOS.has(r.full_name)) {
+      // 官方库与 deepc-list 仓库豁免发布时间门槛（无条件收录）
+      if (OFFICIAL_REPOS.has(r.full_name) || r.is_deepc_list) {
         return true
       }
       if (!args.minAgeDays || !r.created_at) {

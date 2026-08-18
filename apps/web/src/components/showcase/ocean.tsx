@@ -53,10 +53,66 @@ import { buildUnderwaterScene } from "@/components/showcase/underwater/systems"
 // 圆形海面沙盘：矩形规则网格切分（波浪三角面为横竖网格，无放射状），
 // 生成后投影回圆形边界（外框为圆，无矩形尖角）
 // 半径 42 覆盖视锥（相机轨道距离 ~11，75° 视锥远端需覆盖 ±20+）
-// 128×128 细分保证波浪细节
+// 细分度由 conf.geometrySubdivision 控制（默认 1280，保证波浪细节），
+// 调整后重建几何体（结构参数，无法 uniform 同步）
 const GEOMETRY_RADIUS = 42
-const GEOMETRY_WIDTH_SEGMENTS = 128
-const GEOMETRY_DEPTH_SEGMENTS = 128
+
+// ---------------------------------------------------------------------------
+// 设备能力检测：海面细分度自动档位
+//   默认目标 1280；低端设备自动降档，运行时再按 FPS 动态校正：
+//     · 设备类型  → UA 判断移动端
+//     · CPU 核数  → navigator.hardwareConcurrency
+//     · GPU 状态  → WEBGL_debug_renderer_info 取渲染器型号，
+//                   识别软件渲染 / 低端核显（SwiftShader、LLVMpipe、Intel HD…）
+//   档位：high=1280（默认）/ mid=640 / low=320（移动/低端）
+//   说明：FPS 本身即是 GPU 运行时状态的直接反馈——静态检测定起点，
+//         FPS 监测持续校正（掉帧降档、流畅回升），见 tick 内自适应逻辑。
+// ---------------------------------------------------------------------------
+function detectDeviceTier(): "high" | "mid" | "low" {
+  const ua = navigator.userAgent
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+  if (mobile) {
+    return "low"
+  }
+  const cores = navigator.hardwareConcurrency ?? 4
+  let gpu = ""
+  try {
+    const canvas = document.createElement("canvas")
+    const gl = canvas.getContext("webgl") as WebGLRenderingContext | null
+    if (gl) {
+      const ext = gl.getExtension("WEBGL_debug_renderer_info")
+      if (ext) {
+        gpu = String(
+          gl.getParameter(
+            ext.UNMASKED_RENDERER_WEBGL ?? ext.UNMASKED_VENDOR_WEBGL
+          ) ?? ""
+        ).toLowerCase()
+      }
+    }
+  } catch {
+    // 拿不到 GPU 信息时按 CPU 核数兜底
+  }
+  const lowGpu =
+    /swiftshader|llvmpipe|software|microsoft basic|intel hd|hd graphics|mali-[0-4]|adreno 3|powervr|mesa/i.test(
+      gpu
+    )
+  if (lowGpu || cores <= 4) {
+    return "low"
+  }
+  if (cores >= 12 && gpu && !lowGpu) {
+    return "high"
+  }
+  return "mid"
+}
+
+/** 自动细分度初始档位（默认目标 1280，低端设备自动降档） */
+function initialSubdivision(): number {
+  return detectDeviceTier() === "high"
+    ? 1280
+    : detectDeviceTier() === "mid"
+      ? 640
+      : 320
+}
 
 // ---------------------------------------------------------------------------
 // 顶点着色器
@@ -321,14 +377,58 @@ function applyOrbitCamera(
 export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const veilRef = useRef<HTMLDivElement>(null)
+  // 自动细分模式：外部未显式传 geometrySubdivision 时，由设备能力+FPS 自动调控；
+  // 显式传入（含调试面板拖动）则尊重用户值，不再自动干预
+  const autoSubMode = conf?.geometrySubdivision === undefined
+  // ref 形态：tick 闭包（[] effect）读取，conf 变化时同步
+  const autoSubRef = useRef(autoSubMode)
+  // 初始档位：自动模式=设备检测值；显式=用户值（仅首次计算，ref 稳定供闭包读）
+  const initSubRef = useRef(
+    autoSubMode
+      ? initialSubdivision()
+      : (conf?.geometrySubdivision ?? DEFAULT_CONF.geometrySubdivision)
+  )
   // 当前生效配置（props 变化时同步，tick 每帧读取）
-  const confRef = useRef<OceanConf>({ ...DEFAULT_CONF, ...conf })
+  const confRef = useRef<OceanConf>({
+    ...DEFAULT_CONF,
+    ...conf,
+    geometrySubdivision: initSubRef.current,
+  })
   // 海洋状态（路由/滚动/点击切换时同步；状态机 tick 内读取，动画平滑过渡）
   const stateRef = useRef<SeaState>(state)
+  // 水面 mesh 引用：细分度变化需重建几何体（结构参数无法 uniform 同步）
+  const waterRef = useRef<THREE.Mesh | null>(null)
 
-  // props.conf 变化 → 更新 ref（不重建场景，tick 里实时同步）
+  // 重建水面几何体（细分度变化时调用；替换并释放旧几何体）
+  const rebuildGeometry = (nextSub: number) => {
+    if (!waterRef.current) {
+      return
+    }
+    const old = waterRef.current.geometry
+    waterRef.current.geometry = createCircularGeometry(
+      GEOMETRY_RADIUS,
+      nextSub,
+      nextSub
+    )
+    old.dispose()
+  }
+
+  // props.conf 变化 → 更新 ref（不重建场景，tick 里实时同步）；
+  // 例外：geometrySubdivision（三角面细分度）是几何结构参数，无法 uniform
+  // 同步，检测到变化时重建水面几何体并替换
   useEffect(() => {
-    confRef.current = { ...DEFAULT_CONF, ...conf }
+    const prevSub = confRef.current.geometrySubdivision
+    const next = { ...DEFAULT_CONF, ...conf }
+    // 自动模式下 conf 未显式指定细分度 → 保留当前自适应值（不被 DEFAULT 重置）
+    autoSubRef.current = conf?.geometrySubdivision === undefined
+    if (autoSubRef.current) {
+      next.geometrySubdivision = prevSub
+    }
+    confRef.current = next
+    const nextSub = next.geometrySubdivision
+    if (prevSub !== nextSub) {
+      rebuildGeometry(nextSub)
+    }
   }, [conf])
 
   // 海洋状态变化 → 同步 ref（不重建场景；tick 内驱动下潜/上浮动画）
@@ -374,11 +474,9 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
     container.appendChild(renderer.domElement)
 
     // —— 水面（圆形沙盘，位移全在 vertex shader，CPU 零开销）——
-    const geometry = createCircularGeometry(
-      GEOMETRY_RADIUS,
-      GEOMETRY_WIDTH_SEGMENTS,
-      GEOMETRY_DEPTH_SEGMENTS
-    )
+    // 细分度取自 conf（默认 128），调整后由 conf effect 重建几何体
+    const sub = confRef.current.geometrySubdivision
+    const geometry = createCircularGeometry(GEOMETRY_RADIUS, sub, sub)
     const material = new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader,
@@ -441,6 +539,7 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
     })
 
     const water = new THREE.Mesh(geometry, material)
+    waterRef.current = water
     scene.add(water)
 
     // —— 水下场景（滚动潜入后可见：海底地面 + 光斑 + 海中光柱 + 代码粒子）——
@@ -505,6 +604,12 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
     let prevUnderB = C.skyUnderBottom
     let skyTextureAlive = skyTexture
     let deepTextureAlive = deepTexture
+
+    // —— FPS 自适应状态（仅自动细分模式；掉帧降档、流畅回升至初始档位）——
+    let fpsAccum = 0
+    let fpsFrames = 0
+    let lastAdapt = 0
+    let cooldownUntil = 0 // 降档冷却：期间不升档（防振荡）
 
     // 从 confRef 同步当前生效值（每帧调用，数值复制开销极低）
     const syncConf = (u: Record<string, { value: unknown }>) => {
@@ -583,12 +688,55 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
 
     const tick = () => {
       const now = performance.now()
-      const delta = Math.min((now - lastFrame) / 1000, 0.05)
+      // rawDelta 供 FPS 统计（不 clamp，真实反映掉帧；delta 用于动画稳定性）
+      const rawDelta = (now - lastFrame) / 1000
+      const delta = Math.min(rawDelta, 0.05)
       lastFrame = now
       const elapsed = (now - startTime) / 1000
       const cur = confRef.current
       material.uniforms.uTime.value = elapsed
       syncConf(material.uniforms)
+
+      // —— FPS 自适应：每秒评估一次；掉帧降档（立即），流畅回升（冷却后）——
+      // 仅自动细分模式生效；用户显式指定细分度后不再干预（autoSubRef 同步）
+      if (autoSubRef.current) {
+        fpsAccum += rawDelta
+        fpsFrames += 1
+        if (fpsAccum >= 1) {
+          const fps = fpsFrames / fpsAccum
+          fpsFrames = 0
+          fpsAccum = 0
+          const nowMs = performance.now()
+          const curSub = confRef.current.geometrySubdivision
+          if (nowMs - lastAdapt >= 5000) {
+            if (fps < 24 && curSub > 16) {
+              // 掉帧 → 降一档（减半取 8 倍数，下限 16）
+              const next = Math.max(16, Math.round(curSub / 2 / 8) * 8)
+              if (next !== curSub) {
+                confRef.current.geometrySubdivision = next
+                rebuildGeometry(next)
+                lastAdapt = nowMs
+                cooldownUntil = nowMs + 8000 // 降档后 8 秒内只降不升
+              }
+            } else if (
+              fps > 56 &&
+              curSub < initSubRef.current &&
+              nowMs >= cooldownUntil
+            ) {
+              // 流畅 → 升一档（×1.5 取 8 倍数，上限初始档位）
+              const next = Math.min(
+                initSubRef.current,
+                Math.round((curSub * 1.5) / 8) * 8
+              )
+              if (next !== curSub) {
+                confRef.current.geometrySubdivision = next
+                rebuildGeometry(next)
+                lastAdapt = nowMs
+              }
+            }
+          }
+        }
+      }
 
       // —— 潜水状态推进（由统一 seaState 驱动，替代原滚动判断）——
       // 点击（探索更多/进度点）、滚动（首页翻屏）、路由（功能页/回首页）
@@ -612,14 +760,18 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
       }
       const eased = easeInOutCubic(dive)
 
-      // —— 相机：海面轨道机位 ↔ 水下 插值（鼠标摇移只作用于海面）——
+      // —— 相机视差（摇杆语义，作用于画面内容）——
       mouse.x += (mouse.tx - mouse.x) * 0.04
       mouse.y += (mouse.ty - mouse.y) * 0.04
       const parallax = 1 - eased
       const follow = cur.mouseFollow ? 1 : 0
-      const invert = cur.mouseInvert ? -1 : 1
-      const panX = mouse.x * 0.9 * follow * invert
-      const panY = mouse.y * 0.3 * follow * invert
+      // 顺向（不勾选反向）：鼠标右 → 画面右摇；鼠标上 → 画面上摇
+      // 反向（勾选，摇杆对调）：鼠标左 → 画面右摇；鼠标上 → 画面下摇（x/y 各轴取反）
+      // 注意：相机与注视点同向平移（纯 pan），画面内容移动方向与相机相反，
+      //       故 pan 取 -mouse.x / +mouse.y（mouse.y 屏幕坐标上负下正）
+      const dir = cur.mouseInvert ? -1 : 1
+      const panX = -mouse.x * 0.9 * follow * dir
+      const panY = mouse.y * 0.3 * follow * dir
       camPos.lerpVectors(surfaceCam, underCam, eased)
       camPos.x += panX * parallax * cur.parallaxStrength
       camPos.y += panY * parallax * cur.parallaxStrength
@@ -682,7 +834,11 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
       window.cancelAnimationFrame(raf)
       window.removeEventListener("mousemove", onMouseMove)
       window.removeEventListener("resize", onResize)
-      geometry.dispose()
+      // dispose 当前生效的几何体（细分度可能已被重建替换过）
+      if (waterRef.current) {
+        waterRef.current.geometry.dispose()
+        waterRef.current = null
+      }
       material.dispose()
       atlas.dispose()
       underwater.dispose()

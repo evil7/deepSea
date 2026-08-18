@@ -21,8 +21,15 @@ user-invocable: true
 ## 关键事实
 
 - 目标仓库：`deepseek-ai/deepseek-harness`（`has_discussions: true`）
-- Discussions **只能通过 GraphQL** 访问（REST 无此接口）
-
+- Discussions **只能通过 GraphQL** 访问（REST 无此接口）- **GraphQL 必须带 token 认证**（匿名浏览器请求返回 403）——因此采用
+  「Actions 同步 seed」架构（与插件种子一致）：
+  - 同步脚本 `scripts/sync-discussions.mjs`（`pnpm sync:discussions`）用
+    `GITHUB_TOKEN` 抓取前 50 条 → 生成
+    `apps/web/public/data/discussions.json` 静态 JSON
+  - 前端 `lib/github/discussions.ts` 的 `loadDiscussionsSeed()` fetch 静态
+    JSON（内存缓存、零 API 配额、无需登录）；热门（评论数）/最新
+    （updatedAt）排序在本地完成
+  - 每小时由 `.github/workflows/sync-plugin-seed.yml` 同步并提交
 ## 步骤
 
 ### 1. 查询分类列表

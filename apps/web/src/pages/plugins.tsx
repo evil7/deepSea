@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ChevronLeft,
   ChevronRight,
+  GitFork,
   Info,
   RefreshCw,
   Search,
@@ -43,7 +44,9 @@ import { cn } from "@/lib/utils"
 // ---------------------------------------------------------------------------
 // /plugins —— 插件生态快速搜索页
 //   挑选渔获（过滤本地缓存种子）/ 自行捕捞（按条件实时查询 GitHub）双模式：
-//   · 挑选渔获：搜索框即时过滤缓存；star/发布时间设为「不限」时自动切到自行捕捞
+//   · 挑选渔获：搜索框即时过滤缓存；star/创建时间默认对齐缓存脚本门槛
+//     （minStars=10 / minAgeDays=5）；手动把任一条件设为「不限」即突破缓存
+//     门槛 → 自动切到自行捕捞
 //   · 自行捕捞：搜索框后显示搜索按钮，按当前过滤条件实时查询（需登录 token）
 // ---------------------------------------------------------------------------
 
@@ -52,19 +55,23 @@ const PAGE_SIZE = 12
 /** 骨架屏占位 key（静态，避免 index key） */
 const SKELETON_KEYS = Array.from({ length: 6 }, (_, i) => `skeleton-${i}`)
 
+// 挑选渔获模式下 star 默认对齐缓存脚本门槛（search-deepseek-repos.mjs 默认
+// minStars=10 / minAgeDays=5）：缓存即按「≥10 star 且创建距今 ≥5 天」捕捞的。
+// 选「不限」= 突破缓存门槛 → 自动切到自行捕捞（实时查询 GitHub）。
 const STAR_LEVELS = [
-  { label: "不限", value: 0 },
+  { label: "≥ 10", value: 10 },
   { label: "≥ 100", value: 100 },
   { label: "≥ 1k", value: 1000 },
   { label: "≥ 10k", value: 10000 },
+  { label: "不限", value: 0 },
 ]
 
-/** 发布时间限制（created_at 距今天数，0 = 不限） */
+/** 创建时间限制（created_at 距今 ≥ 该天数，与脚本 minAgeDays 门槛一致；0 = 不限） */
 const CREATED_LEVELS = [
+  { label: "≥ 5 天", value: 5 },
+  { label: "≥ 15 天", value: 15 },
+  { label: "≥ 30 天", value: 30 },
   { label: "不限", value: 0 },
-  { label: "5 天", value: 5 },
-  { label: "15 天", value: 15 },
-  { label: "30 天", value: 30 },
 ]
 
 /** Action 同步分钟（每小时第 23 分钟 UTC，与 sync-plugin-seed.yml 一致） */
@@ -98,8 +105,9 @@ export function PluginsPage() {
   const seedRef = useRef<PluginRepo[]>([]) // 缓存种子（挑选渔获数据源）
   const [keyword, setKeyword] = useState("")
   const [language, setLanguage] = useState<string | null>(null)
-  const [starLevel, setStarLevel] = useState(0)
-  const [createdWithin, setCreatedWithin] = useState(0)
+  // 默认对齐缓存脚本门槛（minStars=10 / minAgeDays=5），如实反映缓存数据来源
+  const [starLevel, setStarLevel] = useState(10)
+  const [createdWithin, setCreatedWithin] = useState(5)
   const [mode, setMode] = useState<ViewMode>("hot")
   const [sourceMode, setSourceMode] = useState<SourceMode>("cache")
   const [searching, setSearching] = useState(false)
@@ -312,7 +320,7 @@ export function PluginsPage() {
 
           <span className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
 
-          <span className="text-[11px] text-white/40">发布时间</span>
+          <span className="text-[11px] text-white/40">创建时间</span>
           {CREATED_LEVELS.map((c) => (
             <FilterBadge
               key={c.value}
@@ -535,7 +543,10 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
           {formatStars(repo.stargazers_count)}
         </span>
         <span className="text-white/40">·</span>
-        <span>🍴 {repo.forks_count}</span>
+        <span className="flex items-center gap-1">
+          <GitFork className="size-3.5 text-white/45" />
+          {formatStars(repo.forks_count)}
+        </span>
         <span className="ml-auto text-[11px] text-white/35">
           {repo.pushed_at ? repo.pushed_at.slice(0, 10) : ""}
         </span>

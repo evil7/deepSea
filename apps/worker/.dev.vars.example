@@ -1,0 +1,6 @@
+# 本地开发环境变量样例（复制为 .dev.vars 填写）
+# 生产用：wrangler secret put GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / TOKEN_ENC_KEY
+GITHUB_CLIENT_ID=your_github_oauth_client_id
+GITHUB_CLIENT_SECRET=your_github_oauth_client_secret
+TOKEN_ENC_KEY=change-me-to-a-long-random-secret
+DEEPSEA_BASE=http://localhost:8787

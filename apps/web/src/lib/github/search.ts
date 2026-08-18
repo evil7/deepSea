@@ -106,7 +106,8 @@ export async function liveSearchRepos(): Promise<PluginRepo[]> {
  *   · keyword        → 文本（多词自动加引号，避免 OR 拆词） + in:name,description
  *   · language       → language:xxx
  *   · minStars       → stars:>=n
- *   · createdWithinDays → created:>YYYY-MM-DD（创建于 N 天内）
+ *   · createdWithinDays → created:<YYYY-MM-DD（创建距今 ≥ N 天，与缓存脚本
+ *                          minAgeDays 门槛一致；0 = 不限）
  * 无关键词时用核心 dsh 关键词 OR 兜底（避免空查询 422）。
  * 限流敏感：需登录 token（30 req/min），匿名 10 req/min；异常向上抛出。
  */
@@ -138,7 +139,7 @@ export async function liveSearchReposByFilter(filter: {
   }
   if (filter.createdWithinDays && filter.createdWithinDays > 0) {
     const d = new Date(Date.now() - filter.createdWithinDays * 86400000)
-    qualifiers.push(`created:>${d.toISOString().slice(0, 10)}`)
+    qualifiers.push(`created:<${d.toISOString().slice(0, 10)}`)
   }
   const q =
     `${textParts.join(" OR ")} in:name,description ${qualifiers.join(" ")}`.trim()
@@ -181,17 +182,18 @@ export interface PluginFilter {
   language: string | null
   /** star 下限 */
   minStars: number
-  /** 发布时间限制：仅收录 created_at 距今 ≤ 该天数的仓库（0 = 不限） */
+  /** 创建时间限制：仅收录 created_at 距今 ≥ 该天数的仓库（与缓存脚本 minAgeDays
+   *  门槛一致；0 = 不限） */
   createdWithinDays: number
 }
 
-/** 二次过滤（搜索框 + 语言 + star + 发布时间） */
+/** 二次过滤（搜索框 + 语言 + star + 创建时间） */
 export function filterPlugins(
   list: PluginRepo[],
   filter: PluginFilter
 ): PluginRepo[] {
   const kw = filter.keyword.trim().toLowerCase()
-  // 发布时间阈值（createdWithinDays > 0 时生效）
+  // 创建时间阈值（createdWithinDays > 0 时生效）
   const cutoff =
     filter.createdWithinDays > 0
       ? Date.now() - filter.createdWithinDays * 24 * 60 * 60 * 1000
@@ -212,7 +214,8 @@ export function filterPlugins(
     }
     if (cutoff > 0) {
       const created = r.created_at ? Date.parse(r.created_at) : NaN
-      if (Number.isNaN(created) || created < cutoff) {
+      // 仅收录创建距今 ≥ N 天（与脚本 minAgeDays 门槛一致；缺失创建时间无法判断 → 剔除）
+      if (Number.isNaN(created) || created > cutoff) {
         return false
       }
     }

@@ -1,0 +1,502 @@
+[
+  {
+    "number": 14,
+    "title": "求一个memory能力",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/14",
+    "categoryName": "Ideas",
+    "comments": 28,
+    "author": "whxxxxxxxxxx",
+    "createdAt": "2026-08-13T13:01:03Z",
+    "updatedAt": "2026-08-18T13:54:47Z"
+  },
+  {
+    "number": 2723,
+    "title": "DeepSeek Harness 飞书交流群",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2723",
+    "categoryName": "Q&A",
+    "comments": 1,
+    "author": "oliblue-evan",
+    "createdAt": "2026-08-17T07:18:59Z",
+    "updatedAt": "2026-08-18T13:45:03Z"
+  },
+  {
+    "number": 3144,
+    "title": "Sandbox denials are invisible to the model when the confined program rewrites the kernel error",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3144",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "author": "tommy0103",
+    "createdAt": "2026-08-18T13:44:04Z",
+    "updatedAt": "2026-08-18T13:44:04Z"
+  },
+  {
+    "number": 2423,
+    "title": "https://dsh-hub.cc 插件商店上线。收录超过7000+插件，支持搜索、按类检索、一键安装与发布",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2423",
+    "categoryName": "General",
+    "comments": 30,
+    "author": "sliverp",
+    "createdAt": "2026-08-16T12:55:00Z",
+    "updatedAt": "2026-08-18T13:41:20Z"
+  },
+  {
+    "number": 3131,
+    "title": "DSH｜DSH Serial Console｜让用户与 AI 模型共享嵌入式串口会话",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3131",
+    "categoryName": "Show Your Plugins!",
+    "comments": 1,
+    "author": "InfinitePersistence",
+    "createdAt": "2026-08-18T12:58:22Z",
+    "updatedAt": "2026-08-18T13:40:45Z"
+  },
+  {
+    "number": 2773,
+    "title": "📈 用数据说话：DSH 插件生态 3 天翻了 3.5 倍（mydsh.dev 增速图表上线）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2773",
+    "categoryName": "Show Your Plugins!",
+    "comments": 5,
+    "author": "uluckystar",
+    "createdAt": "2026-08-17T09:40:39Z",
+    "updatedAt": "2026-08-18T13:39:24Z"
+  },
+  {
+    "number": 2397,
+    "title": "DeepSeek Harness 飞书交流群（扫码即进）· 社区插件目录",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2397",
+    "categoryName": "General",
+    "comments": 3,
+    "author": "shinjiyu",
+    "createdAt": "2026-08-16T11:36:15Z",
+    "updatedAt": "2026-08-18T13:38:01Z"
+  },
+  {
+    "number": 3143,
+    "title": "DSH｜大肥鱼桌宠插件｜一只会走路、会嘴臭、能喂食聊天的鲸鱼娘桌宠，随 DSH 启停",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3143",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "minghaoxia61-web",
+    "createdAt": "2026-08-18T13:37:52Z",
+    "updatedAt": "2026-08-18T13:37:52Z"
+  },
+  {
+    "number": 3142,
+    "title": "[Bug] 会话续接（resume）写入与中断回合的收尾写入竞态，导致会话日志 seq 重叠损坏",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3142",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "cctv96",
+    "createdAt": "2026-08-18T13:37:10Z",
+    "updatedAt": "2026-08-18T13:37:10Z"
+  },
+  {
+    "number": 3132,
+    "title": "给DSH添加局域网/远程访问能力",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3132",
+    "categoryName": "Show Your Plugins!",
+    "comments": 1,
+    "author": "GDWhisper",
+    "createdAt": "2026-08-18T13:10:36Z",
+    "updatedAt": "2026-08-18T13:35:07Z"
+  },
+  {
+    "number": 3141,
+    "title": "DSH | Build DSH Plugin | Safe, evidence-driven plugin development workflow",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3141",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "AI-Scarlett",
+    "createdAt": "2026-08-18T13:33:31Z",
+    "updatedAt": "2026-08-18T13:33:31Z"
+  },
+  {
+    "number": 3140,
+    "title": "DSH 插件已经 1700+ 了,怎么快速找到「适合我」的那一个?",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3140",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "uluckystar",
+    "createdAt": "2026-08-18T13:32:37Z",
+    "updatedAt": "2026-08-18T13:32:37Z"
+  },
+  {
+    "number": 3139,
+    "title": "Codex 同款「侧边任务」:主对话右侧开临时任务,用完即删、零残留",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3139",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "uluckystar",
+    "createdAt": "2026-08-18T13:32:36Z",
+    "updatedAt": "2026-08-18T13:32:36Z"
+  },
+  {
+    "number": 3138,
+    "title": "给 DeepSeek Harness 加一个「定时任务」能力:到点自动跑(社区插件)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3138",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "uluckystar",
+    "createdAt": "2026-08-18T13:32:35Z",
+    "updatedAt": "2026-08-18T13:32:35Z"
+  },
+  {
+    "number": 3135,
+    "title": "[duplicate] holdem — see #3136",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3135",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "shinjiyu",
+    "createdAt": "2026-08-18T13:29:40Z",
+    "updatedAt": "2026-08-18T13:35:07Z"
+  },
+  {
+    "number": 3137,
+    "title": "dsh-auth-gate: authentication and security hardening for DeepSeek Harness",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3137",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "zephaniahwang94-cmyk",
+    "createdAt": "2026-08-18T13:30:32Z",
+    "updatedAt": "2026-08-18T13:32:07Z"
+  },
+  {
+    "number": 3136,
+    "title": "🃏 holdem — GitHub 登录德州：H5 人控 + DSH AI 托管（同一座位互斥）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3136",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "shinjiyu",
+    "createdAt": "2026-08-18T13:30:10Z",
+    "updatedAt": "2026-08-18T13:51:55Z"
+  },
+  {
+    "number": 3064,
+    "title": "🎉 dsh-kingdom v0.4.0 — 王国治理插件：换届与会话归属",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3064",
+    "categoryName": "Show Your Plugins!",
+    "comments": 5,
+    "author": "lusblead",
+    "createdAt": "2026-08-18T08:21:39Z",
+    "updatedAt": "2026-08-18T13:26:34Z"
+  },
+  {
+    "number": 3134,
+    "title": "[Bug Reports + Suggestions] Windows tool-chain fixes from a user fork: encoding, cordis dedup, snapshot paths, README row, CLAUDE.md symlink",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3134",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "sunagent",
+    "createdAt": "2026-08-18T13:24:47Z",
+    "updatedAt": "2026-08-18T13:24:47Z"
+  },
+  {
+    "number": 3133,
+    "title": "DSH | dsh-plugin-reducer | Find the minimal plugin set that reproduces a failure",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3133",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "ArmyWas",
+    "createdAt": "2026-08-18T13:13:07Z",
+    "updatedAt": "2026-08-18T13:13:07Z"
+  },
+  {
+    "number": 1728,
+    "title": "加群 ： 微信 &QQ群超2000人，送DeepSeek Harness插件1836款，我己整理好了（咱们不要重复开发相同的插件）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1728",
+    "categoryName": "General",
+    "comments": 43,
+    "author": "leenkcool",
+    "createdAt": "2026-08-15T05:30:04Z",
+    "updatedAt": "2026-08-18T13:09:04Z"
+  },
+  {
+    "number": 3084,
+    "title": "dsh-omi-voice：给 DeepSeek Harness 装上「沉浸式听朗读」（豆包 TTS 音色 · BYOK）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3084",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "PolinniZhong",
+    "createdAt": "2026-08-18T09:33:09Z",
+    "updatedAt": "2026-08-18T13:03:08Z"
+  },
+  {
+    "number": 2997,
+    "title": "[Bug] Tool-call name dropped when gateway streams explicit \"null\" name deltas (dsh-llm-deepseek)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2997",
+    "categoryName": "General",
+    "comments": 2,
+    "author": "zszsz2424-rgb",
+    "createdAt": "2026-08-18T05:18:25Z",
+    "updatedAt": "2026-08-18T12:52:02Z"
+  },
+  {
+    "number": 1404,
+    "title": "dsh plugin add promotes pre-existing bundle-declaring deps into the bundle stack and breaks the next boot with \"duplicate loader entry id\"",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1404",
+    "categoryName": "General",
+    "comments": 5,
+    "author": "moonquake2004",
+    "createdAt": "2026-08-14T14:07:23Z",
+    "updatedAt": "2026-08-18T12:49:46Z"
+  },
+  {
+    "number": 3099,
+    "title": "Session log corruption when two harness processes share one DSH_HOME (stale live session appends after another process resumes)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3099",
+    "categoryName": "General",
+    "comments": 3,
+    "author": "aka-danielZhang",
+    "createdAt": "2026-08-18T10:34:49Z",
+    "updatedAt": "2026-08-18T12:44:11Z"
+  },
+  {
+    "number": 3128,
+    "title": "[Bug] dsh-llm-pi-ai ignores Retry-After when retrying — TPM-limited retries always fail",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3128",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "netweaver",
+    "createdAt": "2026-08-18T12:36:52Z",
+    "updatedAt": "2026-08-18T12:44:04Z"
+  },
+  {
+    "number": 3130,
+    "title": "DeepSeek Harness Desktop — a lightweight Wails shell for macOS, Windows, and Linux",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3130",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "zsyu9779",
+    "createdAt": "2026-08-18T12:42:17Z",
+    "updatedAt": "2026-08-18T12:42:17Z"
+  },
+  {
+    "number": 3129,
+    "title": "Issue: Model never calls a dynamically registered tool even though its schema is present in every subsequent request",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3129",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "wutianyuan1",
+    "createdAt": "2026-08-18T12:42:13Z",
+    "updatedAt": "2026-08-18T12:42:13Z"
+  },
+  {
+    "number": 1032,
+    "title": "[Bug Report] `npx @deepseek-ai/dsh web` 在干净环境必然崩溃：`cordis-plugin-group` 是静态导入依赖却只声明为 peerDependency（发布配置缺陷）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1032",
+    "categoryName": "General",
+    "comments": 5,
+    "author": "DRAG0NM",
+    "createdAt": "2026-08-14T06:52:27Z",
+    "updatedAt": "2026-08-18T12:40:59Z"
+  },
+  {
+    "number": 3118,
+    "title": "桌面版来了，给 DSH 补了个 Electron 桌面版（file:// + IPC，无需本地服务）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3118",
+    "categoryName": "Show Your Plugins!",
+    "comments": 1,
+    "author": "imlx",
+    "createdAt": "2026-08-18T11:56:05Z",
+    "updatedAt": "2026-08-18T12:40:25Z"
+  },
+  {
+    "number": 1457,
+    "title": "dsh-vault — 加密凭据保险库插件 / Encrypted Credential Vault Plugin",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1457",
+    "categoryName": "Ideas",
+    "comments": 142,
+    "author": "Ox0400",
+    "createdAt": "2026-08-14T15:21:57Z",
+    "updatedAt": "2026-08-18T12:37:43Z"
+  },
+  {
+    "number": 2426,
+    "title": "[Bug] Retry attempts and compaction requests are undercounted in session usage",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2426",
+    "categoryName": "General",
+    "comments": 2,
+    "author": "stoneface10",
+    "createdAt": "2026-08-16T12:59:07Z",
+    "updatedAt": "2026-08-18T12:37:17Z"
+  },
+  {
+    "number": 3127,
+    "title": "前端模型表单没有是非支持多模态选项，需要去改yaml",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3127",
+    "categoryName": "Q&A",
+    "comments": 0,
+    "author": "hanxiyuan",
+    "createdAt": "2026-08-18T12:36:46Z",
+    "updatedAt": "2026-08-18T12:36:46Z"
+  },
+  {
+    "number": 3126,
+    "title": "`AgentLoop` only allowlists `error | aborted`, so a merge-extended failure finish still assembles an assistant message",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3126",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "author": "lizhuojunx86",
+    "createdAt": "2026-08-18T12:35:48Z",
+    "updatedAt": "2026-08-18T12:35:48Z"
+  },
+  {
+    "number": 3125,
+    "title": "一些优化建议",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3125",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "author": "v-star0719",
+    "createdAt": "2026-08-18T12:35:23Z",
+    "updatedAt": "2026-08-18T12:35:23Z"
+  },
+  {
+    "number": 1762,
+    "title": "docker部署dsh，在线体验：https://visovala-dsh.hf.space  账号密码：admin / admin",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1762",
+    "categoryName": "General",
+    "comments": 2,
+    "author": "smanx",
+    "createdAt": "2026-08-15T06:12:36Z",
+    "updatedAt": "2026-08-18T12:35:23Z"
+  },
+  {
+    "number": 1719,
+    "title": "💡 Idea: Add 'dsh doctor' CLI command for environment & dependency diagnostics",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1719",
+    "categoryName": "Ideas",
+    "comments": 57,
+    "author": "mohitmathur95",
+    "createdAt": "2026-08-15T05:19:44Z",
+    "updatedAt": "2026-08-18T12:34:59Z"
+  },
+  {
+    "number": 1846,
+    "title": "RFC: Community plugin registry contract + first-class plugin checks (registry v2 ? dsh plugin check ? dsh doctor)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1846",
+    "categoryName": "Ideas",
+    "comments": 10,
+    "author": "zoahdev",
+    "createdAt": "2026-08-15T09:11:30Z",
+    "updatedAt": "2026-08-18T12:34:57Z"
+  },
+  {
+    "number": 3124,
+    "title": "DSH | DSH STORE | Third-party plugin marketplace with guarded lifecycle management",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3124",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "AI-Scarlett",
+    "createdAt": "2026-08-18T12:30:29Z",
+    "updatedAt": "2026-08-18T12:30:29Z"
+  },
+  {
+    "number": 3123,
+    "title": "Four new verified plugins: dependency audit, llms.txt, CN bootstrap, timesheet",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3123",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "zoahdev",
+    "createdAt": "2026-08-18T12:28:32Z",
+    "updatedAt": "2026-08-18T12:28:32Z"
+  },
+  {
+    "number": 3120,
+    "title": "Set AI_AGENT=deepseek-harness for managed subprocesses",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3120",
+    "categoryName": "Ideas",
+    "comments": 1,
+    "author": "complynx",
+    "createdAt": "2026-08-18T12:05:55Z",
+    "updatedAt": "2026-08-18T12:22:01Z"
+  },
+  {
+    "number": 3122,
+    "title": "Windows desktop host: folder-dialog crash + sandboxed subprocess failures (root causes found, fixes in    fork)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3122",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "1944629127jia-stack",
+    "createdAt": "2026-08-18T12:13:17Z",
+    "updatedAt": "2026-08-18T12:13:17Z"
+  },
+  {
+    "number": 3121,
+    "title": "重启后找不到工作区",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3121",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "author": "chnjuma",
+    "createdAt": "2026-08-18T12:09:35Z",
+    "updatedAt": "2026-08-18T12:09:35Z"
+  },
+  {
+    "number": 1477,
+    "title": "[持续更新] DeepSeek Harness 插件实战指南共建与测试记录",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1477",
+    "categoryName": "General",
+    "comments": 18,
+    "author": "dnegxuantian",
+    "createdAt": "2026-08-14T15:52:01Z",
+    "updatedAt": "2026-08-18T12:07:04Z"
+  },
+  {
+    "number": 3119,
+    "title": "Proposal: make dsh-acp-demo directly runnable from external ACP clients",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3119",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "author": "ClausYang",
+    "createdAt": "2026-08-18T12:05:55Z",
+    "updatedAt": "2026-08-18T12:05:55Z"
+  },
+  {
+    "number": 3116,
+    "title": "案例：本地 Qwen3.8 27B 驱动 DSH 长程 Agent Loop，并按需委托远端模型",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3116",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "li-yifei",
+    "createdAt": "2026-08-18T11:55:27Z",
+    "updatedAt": "2026-08-18T11:58:18Z"
+  },
+  {
+    "number": 19,
+    "title": "做 MAC 原生 APP 吗？",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/19",
+    "categoryName": "General",
+    "comments": 3,
+    "author": "chenweigao",
+    "createdAt": "2026-08-13T13:04:58Z",
+    "updatedAt": "2026-08-18T11:56:42Z"
+  },
+  {
+    "number": 3117,
+    "title": "wsl部署web端无法打开配置文件",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3117",
+    "categoryName": "General",
+    "comments": 0,
+    "author": "llwinty",
+    "createdAt": "2026-08-18T11:55:29Z",
+    "updatedAt": "2026-08-18T11:55:29Z"
+  },
+  {
+    "number": 1607,
+    "title": "cordis_inspect_query client-platform queries hang forever when no page responds, freezing the agent",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1607",
+    "categoryName": "General",
+    "comments": 2,
+    "author": "mayf3",
+    "createdAt": "2026-08-14T22:17:26Z",
+    "updatedAt": "2026-08-18T11:54:03Z"
+  },
+  {
+    "number": 3115,
+    "title": "dsh-bloom-theme — 莫兰迪配色主题，四套色板 × 明暗，顶栏一键切换",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3115",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "author": "webkubor",
+    "createdAt": "2026-08-18T11:50:53Z",
+    "updatedAt": "2026-08-18T11:50:53Z"
+  }
+]

@@ -7,17 +7,28 @@ import type { OceanConf } from "@/components/showcase/ocean-conf"
 import { Ocean } from "@/components/showcase/ocean"
 import { SeaDebugPanel } from "@/components/showcase/sea-debug-panel"
 import type { SeaState } from "@/components/showcase/sea-state"
+import { useAuth } from "@/hooks/use-auth"
+import { useDiscussionsSync } from "@/hooks/use-discussions-sync"
 import { HomePage } from "@/pages/home"
 import { PluginDetailPage } from "@/pages/plugin-detail"
 import { PluginsPage } from "@/pages/plugins"
+import { CommunityPage } from "@/pages/community"
+import { CommunityDetailPage } from "@/pages/community-detail"
 
 export function App() {
   // 海洋参数配置（调试面板 #sea-debug 调整；也可以直接写 JSON 对象）
   const [conf, setConf] = useState<Partial<OceanConf>>({})
   const location = useLocation()
 
+  // 全局登录态（topbar 用户卡片同源）；登录后由 useDiscussionsSync 启动
+  // 前端同步 worker（每 3 分钟刷新 discussions 列表，见 discussions-sync.ts）
+  const { user } = useAuth()
+  useDiscussionsSync(user)
+
   // 二级功能页（/plugins、/plugin/...）：固定海底 + 背景虚化
-  const isSubPage = location.pathname !== "/"
+  // /auth/* 为登录等纯功能路由（worker 处理），不改变海洋展示状态（视为首页）
+  const isAuthRoute = location.pathname.startsWith("/auth/")
+  const isSubPage = !isAuthRoute && location.pathname !== "/"
 
   // 统一海洋状态：surface=海面（首页 hero/插件精选），deep=深海
   // 驱动源（动画路径统一）：
@@ -73,6 +84,8 @@ export function App() {
         />
         <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/plugin/:owner/:repo" element={<PluginDetailPage />} />
+        <Route path="/community" element={<CommunityPage />} />
+        <Route path="/community/:number" element={<CommunityDetailPage />} />
         <Route
           path="*"
           element={

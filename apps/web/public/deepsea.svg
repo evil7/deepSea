@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <!-- 蓝色圆角底（与 navbar 图标 bg-primary 同源：#16b3eb = oklch(0.72 0.14 230)）
+       圆角 rx=6.5 对应 rounded-lg（10px/36px 容器 ≈ 6.67/24） -->
+  <rect width="24" height="24" rx="6.5" fill="#16b3eb" />
+  <!-- 波浪线复刻 navbar「36px 容器内 20px 图标居中」的留白比例：
+       icon 20/36 → 24 viewBox 中 13.33px；路径原宽 20 → scale 0.6667
+       平移 (24-13.33)/2 - 2*0.6667 = 4 -->
+  <g transform="translate(4 4) scale(0.6667)" stroke="#02080f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 12q2.5 2 5 0t5 0 5 0 5 0"></path>
+    <path d="M2 19q2.5 2 5 0t5 0 5 0 5 0"></path>
+    <path d="M2 5q2.5 2 5 0t5 0 5 0 5 0"></path>
+  </g>
+</svg>

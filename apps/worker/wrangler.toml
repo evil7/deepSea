@@ -1,0 +1,48 @@
+# deepSea Worker —— GitHub OAuth + 静态资源托管
+# 部署：wrangler deploy（静态资源直接取 ../web/dist 作为 ASSETS）
+name = "deepsea"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# ── 静态资源：web 构建产物直接作为 worker 资产 ─────────────────────────────
+# 构建顺序：先 pnpm --filter @deepsea/web build，再 wrangler deploy
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+# SPA 路由回退：/plugins、/plugin/... 等前端路由返回 index.html
+not_found_handling = "single-page-application"
+# 选择性 Worker-first（官方支持）：只让 /auth/* 这 4 个路由先进 Worker。
+# 其余请求保持默认 asset-first——静态资源（JS/CSS/字体/图片）由 Assets 直接
+# 服务、SPA 回退由 Assets 免费处理，全程零 Worker 计算额度。
+# 若不配置此项，浏览器导航（Sec-Fetch-Mode: navigate）到 /auth/callback
+# 会被 Assets 按 SPA 回退直接返回 index.html，OAuth 回调到不了 Worker。
+run_worker_first = [
+  "/auth/login",
+  "/auth/callback",
+  "/auth/me",
+  "/auth/logout",
+]
+
+# ── KV：state（防 CSRF）/ 会话 / 用户档案（token 加密缓存）──────────────────
+# 创建：wrangler kv namespace create DEEPSEA_KV，然后把 id 填到下面
+[[kv_namespaces]]
+binding = "DEEPSEA_KV"
+id = "a282b972ccde4838ac2bb101f5fb6e72"
+
+# ── 变量（公开配置，随代码部署）────────────────────────────────────────────
+[vars]
+# 站点基址：授权 callback 为 {DEEPSEA_BASE}/auth/callback
+DEEPSEA_BASE = "https://deepc.cn"
+# GitHub OAuth 授权端点 / scope
+GITHUB_OAUTH_AUTHORIZE = "https://github.com/login/oauth/authorize"
+# 根据项目所需：基础用户信息 + 读写 issue/discussion（repo scope 覆盖二者）
+# 若只需公开仓库可改为 public_repo 以缩小权限
+GITHUB_OAUTH_SCOPE = "read:user user:email repo"
+# 会话 / state 有效期（秒）
+SESSION_TTL_SECONDS = "2592000"
+STATE_TTL_SECONDS = "420"
+
+# ── 以下请单独设置不提交，wrangler secret put <some_key> <some_secret> ────
+# GITHUB_CLIENT_ID
+# GITHUB_CLIENT_SECRET
+# TOKEN_ENC_KEY

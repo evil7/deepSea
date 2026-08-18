@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# 环境变量（本地配置不提交；.env.production 为生产默认值需提交）
+.env
+.env.*
+!.env.example
+!.env.production
+
+# Cloudflare Workers
+.dev.vars
+.wrangler
+.wrangler.tmp*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,16 +1,16 @@
 import { useEffect, useRef } from "react"
 import {
   ChevronDown,
-  Compass,
   MessagesSquare,
   MonitorSmartphone,
   Package,
-  Plug,
   Palette,
+  Plug,
 } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { ComingSoonSlide } from "@/components/home/coming-soon"
+import { CommunitySlide } from "@/components/home/community-slide"
 import { Features } from "@/components/home/features"
 import { PluginPreview } from "@/components/plugins/plugin-preview"
 import {
@@ -57,8 +57,14 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
               id: "hero",
               label: "首页",
               node: (
-                <div className="relative flex h-full items-center justify-center">
-                  <div className="mx-auto max-w-3xl px-4 py-24 text-center sm:px-6">
+                <div className="relative h-full">
+                  {/* 内容锚定视口正中心（百分比定位）：
+                      section 从顶部导航下方开始（导航高 4rem），
+                      section 高度 = 100dvh - 4rem → 其 50% 点比视口中心低 2rem。
+                      用 top-[calc(50%-2rem)] 抵消导航占位：
+                      内容中心 = 4rem + (100dvh-4rem)/2 - 2rem = 50dvh = 视口中心，
+                      任意屏幕尺寸/比例下内容相对视口中心不偏移 */}
+                  <div className="absolute inset-x-0 top-[calc(50%-2rem)] -translate-y-1/2 px-4 text-center sm:px-6">
                     <Badge
                       variant="outline"
                       className="border-white/20 bg-white/10 text-white backdrop-blur-sm"
@@ -69,7 +75,9 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       deepSea
                     </h1>
                     <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
-                      网罗优秀生态插件的快速搜索、下载使用，社区讨论、安全管理。
+                      围绕 DeepSeek Harness 插件能力聚合。
+                      <br />
+                      从插件发现、社区讨论到安装与安全，海陆空覆盖。
                       <br />
                       风浪越大，收获越多。
                     </p>
@@ -91,9 +99,9 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                         variant="outline"
                         className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                       >
-                        <Link to="/#community">
+                        <Link to="/#dsh-chatbar">
                           <MessagesSquare className="size-4" />
-                          港口酒馆
+                          讨论交流
                         </Link>
                       </Button>
                     </div>
@@ -103,52 +111,28 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
             },
             {
               // 万物皆插件：原第三屏（核心能力）上移到第二屏；轻雾遮罩
-              id: "explore",
+              id: "dsh-ecosystem",
               label: "万物皆插件",
               overlayClassName: "bg-slate-950/40 backdrop-blur-[2px]",
               node: <Features active={seaState === "deep"} />,
             },
             {
               // 插件精选：原第二屏移到第三屏；中雾遮罩
-              id: "plugins",
+              id: "dsh-curated",
               label: "插件精选",
               overlayClassName: "bg-slate-950/55 backdrop-blur-md",
               node: <PluginPreview />,
             },
             {
-              // 社区动态：占位（后续接入 discussions）；深雾遮罩
-              id: "community",
-              label: "社区动态",
+              // 讨论交流：官方 discussions 最热/最新帖子（GraphQL 抓取）；深雾遮罩
+              id: "dsh-chatbar",
+              label: "讨论交流",
               overlayClassName: "bg-slate-950/65 backdrop-blur-md",
-              node: (
-                <ComingSoonSlide
-                  eyebrow="04 · COMMUNITY"
-                  title="社区动态"
-                  description="基于官方 discussions 包装的更顺滑社区：分区浏览、热度排序、讨论详情，发帖直达官方。"
-                  items={[
-                    {
-                      id: "discussions",
-                      icon: MessagesSquare,
-                      title: "讨论分区",
-                      description:
-                        "按分类分区浏览官方 discussions，热门讨论与最新动态一目了然。",
-                      tag: "dsh-discussions-hub",
-                    },
-                    {
-                      id: "heat",
-                      icon: Compass,
-                      title: "热度排序",
-                      description:
-                        "按讨论热度/活跃度排序，快速发现社区当前最关注的话题。",
-                      tag: "hot-topic",
-                    },
-                  ]}
-                />
-              ),
+              node: <CommunitySlide />,
             },
             {
               // 深海套装：占位（后续提供 deepsea 主题/插件管理/多端互联）；浓雾遮罩
-              id: "deepsea-kit",
+              id: "dsh-deepsea-kit",
               label: "深海套装",
               overlayClassName: "bg-slate-950/75 backdrop-blur-lg",
               node: (
@@ -182,6 +166,11 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       tag: "sync",
                     },
                   ]}
+                  installHint={{
+                    id: "dsh-install",
+                    label: "完成 deepc 工具安装",
+                    command: "dsh plugin add deepc",
+                  }}
                 />
               ),
             },

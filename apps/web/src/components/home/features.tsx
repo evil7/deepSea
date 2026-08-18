@@ -33,54 +33,54 @@ type Feature = {
 
 const features: Feature[] = [
   {
-    id: "explore",
-    label: "插件生态",
+    id: "feature-explore",
+    label: "插件精选",
     icon: Compass,
     title: "汇聚全生态插件动态",
     description:
-      "对全 GitHub 的 dsh 相关 topics 与关键词持续搜索，聚合所有周边插件仓库、star 与更新动态，一站式发现新玩具。",
+      "对全 GitHub 的 dsh 相关 topics 与关键词持续搜索，聚合所有周边插件仓库、star 与更新动态。",
     tag: "dsh-plugin-discovery",
     to: "/plugins",
   },
   {
-    id: "community",
-    label: "社区",
+    id: "feature-community",
+    label: "讨论交流",
     icon: MessagesSquare,
-    title: "更顺滑的官方社区",
+    title: "官方讨论实时同步",
     description:
-      "基于官方 discussions 包装出更好的分区、更快的访问与更沉浸的视觉体验，讨论热度与分类一目了然。",
+      "基于官方 discussions 包装的更顺滑社区：最热与最新话题一目了然，一键直达官方讨论。",
     tag: "dsh-discussions-hub",
-    to: "/#community",
+    to: "/#dsh-chatbar",
   },
   {
-    id: "install",
-    label: "安装互助",
+    id: "feature-install",
+    label: "安装文档",
     icon: Rocket,
     title: "安装即用，有问直达",
     description:
       "统一界面生成安装指引，直连对应插件的 issues 发起提问与工单，互助体验高效直接。",
     tag: "dsh-issue-bridge",
-    to: "/#install",
+    to: "/#dsh-install",
   },
   {
-    id: "manage",
+    id: "feature-manage",
     label: "插件管理",
     icon: Package,
     title: "本地可复刻的管理中心",
     description:
       "插件安装、更新提示一站式管理；deepc 插件可复刻本站点，完全用于本地使用。",
     tag: "deepc",
-    to: "/#manage",
+    to: "/#feature-manage",
   },
   {
-    id: "security",
+    id: "feature-security",
     label: "安全管理",
     icon: ShieldCheck,
     title: "deepc 安全护栏",
     description:
       "统一且安全的映射方案、动态安全路径与二次验证，为 deepseek-harness 装上安全护栏。",
     tag: "deepc-security",
-    to: "/#security",
+    to: "/#feature-security",
   },
 ]
 
@@ -105,7 +105,7 @@ export function Features({ active = false }: { active?: boolean }) {
           02 · ECOSYSTEM
         </p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white drop-shadow-[0_1px_6px_rgba(2,8,24,0.9)] sm:text-4xl">
-          万物皆插件，深海任君淘
+          万物皆插件，经此入海流
         </h2>
         <p className="mt-3 text-white/75">
           围绕 DeepSeek Harness

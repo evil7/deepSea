@@ -26,6 +26,12 @@ interface ComingSoonSlideProps {
   description: string
   /** 规划能力卡片 */
   items: PlannedItem[]
+  /** 安装命令提示（可选）：锚点 id + 标签 + 命令，如 deepc 工具安装 */
+  installHint?: {
+    id: string
+    label: string
+    command: string
+  }
 }
 
 export function ComingSoonSlide({
@@ -33,6 +39,7 @@ export function ComingSoonSlide({
   title,
   description,
   items,
+  installHint,
 }: ComingSoonSlideProps) {
   return (
     <div className="mx-auto flex h-full w-full max-w-7xl flex-col justify-center px-4 py-16 sm:px-6">
@@ -78,6 +85,19 @@ export function ComingSoonSlide({
           </Card>
         ))}
       </div>
+
+      {/* 安装命令提示（如 deepc 工具安装）：锚点 id 供导航滚动定位 */}
+      {installHint && (
+        <div
+          id={installHint.id}
+          className="mt-8 flex scroll-mt-24 items-center justify-center gap-2 rounded-lg border border-white/10 bg-slate-900/60 px-4 py-2.5 backdrop-blur-sm"
+        >
+          <span className="text-xs text-white/50">{installHint.label}：</span>
+          <code className="rounded bg-black/40 px-2 py-0.5 font-mono text-xs text-cyan-300">
+            {installHint.command}
+          </code>
+        </div>
+      )}
 
       {/* 占位标识 */}
       <p className="mt-8 flex items-center gap-2 text-xs text-white/40">

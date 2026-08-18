@@ -52,20 +52,30 @@ jobs:
       - name: 运行插件收录脚本
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # 默认参数：limit 500/类型、star ≥ 10、创建距今 ≥ 5 天（缓存质量门槛），
-        # 6 核心关键词 1 组 OR + 11 topic，自动分页递归 + 配额见底兜底
+        # 默认参数：limit 1000/类型、star ≥ 10、创建距今 ≥ 5 天；
+        # deepc-list topic 无条件收录（插件开发者打标即被收录）；
+        # 并发 6 + 全局限速 30 req/min（流水线隐藏响应等待）
         run: pnpm search:plugins
+
+      - name: 同步官方 discussions（讨论交流）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # GitHub GraphQL 必须带 token（浏览器匿名 403），故在 Actions 内
+        # 抓取前 50 条，生成静态 JSON 供前端零配额读取
+        run: pnpm sync:discussions
 
       - name: 提交种子数据更新（无变更则跳过）
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/web/public/data/deepseek-harness-repos.json \
-                  scripts/output/deepseek-harness-repos.json
+                  scripts/output/deepseek-harness-repos.json \
+                  apps/web/public/data/discussions.json \
+                  scripts/output/discussions.json
           if git diff --cached --quiet; then
             echo "无数据变更，跳过提交"
           else
-            git commit -m "chore(data): 同步插件种子数据 $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git commit -m "chore(data): 同步插件种子与讨论数据 $(date -u +'%Y-%m-%d %H:%M') UTC"
             git push
             echo "已提交并推送种子数据更新"
           fi

@@ -16,6 +16,9 @@
     "react/jsx-key": "warn",
     "react/react-in-jsx-scope": "off",
     "unicorn/filename-case": "off",
+    // Worker.postMessage 仅接受 (message, transfer)，无 targetOrigin 参数；
+    // 该规则对 Web Worker 是误报（targetOrigin 是 window.postMessage 专属）
+    "unicorn/require-post-message-target-origin": "off",
     "no-console": "off"
   },
   "ignorePatterns": ["dist", "node_modules", "apps/web/src/components/ui/**"]

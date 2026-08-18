@@ -22,6 +22,7 @@ deepSea 是 DeepSeek Harness（dsh）插件生态聚合站：
 | UI | shadcn/ui（Radix + Tailwind CSS v4） |
 | 动效 | animejs（仅用于展示 / 落地页） |
 | 数据 | 无后端，全部通过 octokit 直连 GitHub API（REST + GraphQL） |
+| 鉴权 | Cloudflare Worker 仅做 OAuth（登录/回调/会话），不承载任何数据 API |
 | 包管理 | pnpm workspace monorepo |
 
 ## 硬性规则
@@ -29,9 +30,13 @@ deepSea 是 DeepSeek Harness（dsh）插件生态聚合站：
 1. **禁止修改 `src/components/ui/**`** —— 该目录由 shadcn CLI 管理。新增 UI 组件必须用
    `pnpm --filter @deepsea/web dlx shadcn add <name>`，不要手写或覆盖其中的文件。
 2. **禁止引入后端** —— 不建 server、不存数据库、不引入 SSR；一切数据来自 GitHub API。
-3. **路径别名 `@/*` 指向 `apps/web/src/*`**（见 `apps/web/tsconfig.app.json` 与 `vite.config.ts`）。
-4. animejs 只允许用于展示/落地页的动效，业务 UI 保持克制，避免影响可读性与性能。
-5. 新增共享代码（GitHub 客户端、类型、hooks）应放入 `packages/*`，通过 workspace 依赖引用。
+3. **【Worker 红线】`apps/worker` 只做 OAuth auth**（`/auth/login` `/auth/callback` `/auth/me` `/auth/logout`），
+   不承载任何业务数据代理。所有 GitHub 数据读写（搜索 / discussions 列表详情回复表情发帖 / issues / releases）
+   一律由前端 `lib/github/` 用 octokit 直调；前端 access token 由 `/auth/me` 返回（内存保存）。
+   新增功能时**禁止给 Worker 加 `/api/*` 代理路由**——能前端化的一定前端化。
+4. **路径别名 `@/*` 指向 `apps/web/src/*`**（见 `apps/web/tsconfig.app.json` 与 `vite.config.ts`）。
+5. animejs 只允许用于展示/落地页的动效，业务 UI 保持克制，避免影响可读性与性能。
+6. 新增共享代码（GitHub 客户端、类型、hooks）应放入 `packages/*`，通过 workspace 依赖引用。
 
 ## 目录结构约定
 

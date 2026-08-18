@@ -108,6 +108,10 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
   const [active, setActive] = useState(0)
   // hover 状态：hover 中由鼠标控制；离开容器自动顺序循环播放
   const [hovered, setHovered] = useState(false)
+  // 自动播放进度（0~1）：active tab 上从左往右的背景填充，与切换间隔同步，
+  // 表示距下次自动切换的进度（内部切换进度指示）
+  const [progress, setProgress] = useState(0)
+  const progressRef = useRef(0)
   const cardRefs = useRef<(HTMLDivElement | null)[]>([])
   // more 背面卡 ref
   const backCardRef = useRef<HTMLDivElement | null>(null)
@@ -135,14 +139,23 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
     hoveredRef.current = hovered
   }, [hovered])
 
-  // 无 hover → 自动顺序循环播放前 9 张（more 卡不参与自动循环）
+  // 无 hover → 自动顺序循环播放前 9 张（more 卡不参与自动循环）；
+  // 同时推进 progress（0→1 与 AUTO_PLAY_INTERVAL 同步），到 1 即切换并归零
   useEffect(() => {
     if (hovered || displayRepos.length === 0) {
       return
     }
+    progressRef.current = 0
+    setProgress(0)
+    const stepMs = 50 // 进度刷新粒度（~20fps，开销极低）
     const timer = setInterval(() => {
-      goTo((activeRef.current + 1) % REAL_CARD_COUNT)
-    }, AUTO_PLAY_INTERVAL)
+      progressRef.current += stepMs / AUTO_PLAY_INTERVAL
+      if (progressRef.current >= 1) {
+        progressRef.current = 0
+        goTo((activeRef.current + 1) % REAL_CARD_COUNT)
+      }
+      setProgress(progressRef.current)
+    }, stepMs)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hovered, displayRepos.length, signature])
@@ -361,6 +374,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
       >
         {displayRepos.map((repo, i) => {
           const [owner, name] = repo.full_name.split("/")
+          const isActive = i === active
           return (
             <Link
               key={repo.full_name}
@@ -368,13 +382,20 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
               onMouseEnter={() => goTo(i)}
               aria-label={`查看 ${repo.full_name}`}
               className={cn(
-                "rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
-                i === active
+                "relative overflow-hidden rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
+                isActive
                   ? "border-cyan-400/60 bg-cyan-400/10 text-cyan-200"
                   : "border-white/15 bg-slate-900/70 text-white/60 hover:border-cyan-400/40 hover:text-white"
               )}
             >
-              {i + 1}
+              {/* 自动播放进度填充：从左往右，跟随切换间隔（0→1） */}
+              {isActive && (
+                <span
+                  className="absolute inset-y-0 left-0 bg-cyan-400/25 transition-[width] duration-75 ease-linear"
+                  style={{ width: `${Math.min(progress, 1) * 100}%` }}
+                />
+              )}
+              <span className="relative z-10">{i + 1}</span>
             </Link>
           )
         })}
@@ -383,13 +404,20 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
           onMouseEnter={() => goTo(REAL_CARD_COUNT)}
           aria-label="浏览全部插件"
           className={cn(
-            "rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
+            "relative overflow-hidden rounded-md border px-2.5 py-1 font-mono text-xs transition-colors",
             active === REAL_CARD_COUNT
               ? "border-cyan-400/60 bg-cyan-400/10 text-cyan-200"
               : "border-white/15 bg-slate-900/70 text-white/60 hover:border-cyan-400/40 hover:text-white"
           )}
         >
-          more
+          {/* 自动播放进度填充（active 为 more 时也显示，但自动循环不进入 more） */}
+          {active === REAL_CARD_COUNT && (
+            <span
+              className="absolute inset-y-0 left-0 bg-cyan-400/25 transition-[width] duration-75 ease-linear"
+              style={{ width: `${Math.min(progress, 1) * 100}%` }}
+            />
+          )}
+          <span className="relative z-10">more</span>
         </Link>
       </div>
     </div>

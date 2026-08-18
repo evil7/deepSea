@@ -1,0 +1,22 @@
+{
+  "name": "@deepsea/worker",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "secret:list": "wrangler secret list",
+    "secret:put": "wrangler secret put",
+    "secret:del": "wrangler secret delete"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250801.0",
+    "typescript": "~6.0.3",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.18.0"
+  }
+}

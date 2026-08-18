@@ -160,10 +160,13 @@ export function FullscreenSlides({
                 className={cn("absolute inset-0 z-0", overlay)}
               />
             )}
-            {/* 内容屏统一收拢：左侧避让固定进度点（left-5 ≈30px），右侧对称收拢一丁点 */}
+            {/* 内容屏统一收拢：左侧避让固定进度点（left-5 ≈30px），右侧对称收拢一丁点。
+                包装 div 无条件 h-full：第一屏（无 overlay）也需占满 section 高度，
+                否则内部 slide node 的 h-full / 百分比定位会塌陷为 0 */}
             <div
               className={cn(
-                overlay && "relative z-10 h-full px-4 sm:px-12 lg:px-16"
+                "h-full",
+                overlay && "relative z-10 px-4 sm:px-12 lg:px-16"
               )}
             >
               {slide.node}
