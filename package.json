@@ -14,7 +14,8 @@
     "lint": "oxlint",
     "format": "oxfmt --write \"**/*.{ts,tsx}\"",
     "format:check": "oxfmt --check \"**/*.{ts,tsx}\"",
-    "preview": "pnpm --filter @deepsea/web preview"
+    "preview": "pnpm --filter @deepsea/web preview",
+    "search:plugins": "node scripts/search-deepseek-repos.mjs"
   },
   "devDependencies": {
     "oxfmt": "^0.63.0",
