@@ -10,7 +10,7 @@ import {
   User,
   Users,
 } from "lucide-react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { toast } from "sonner"
 
 import { useAuth } from "@/hooks/use-auth"
@@ -19,6 +19,7 @@ import {
   formatRelativeTime,
   loadDiscussionCategories,
   resolveCommunity,
+  resolveLiveLoader,
   resolveSeedLoader,
   sortDiscussionsHot,
   sortDiscussionsLatest,
@@ -152,7 +153,10 @@ function CommunityBackdrop({ image }: { image: string }) {
 export function CommunityPage() {
   const { user } = useAuth()
   // 社区来源：/community/dsh（蓝鲸社区，只读）| /community/dpc（浪尖酒馆，可互动）
-  const { source } = useParams<{ source: string }>()
+  // 路由为静态段（无 :source 参数），需从 pathname 解析来源
+  const { pathname } = useLocation()
+  const source: CommunitySource =
+    pathname.split("/")[2] === "dsh" ? "dsh" : "dpc"
   const info = useMemo(() => resolveCommunity(source), [source])
 
   // 背景图 + 自动取色（autoColor）：分析背景图色调推选三色 → 注入 CSS 变量，
@@ -202,13 +206,22 @@ export function CommunityPage() {
 
   useEffect(() => {
     let alive = true
-    const loadSeed = resolveSeedLoader(source)
+    // 登录态：直接 GraphQL 实时拉取（含 cursor 分页，拉全量）；未登录：读静态 seed。
+    // 订阅 worker 推送（登录后每 3 分钟同步主社区）也会触发重新拉取。
     const load = () => {
-      loadSeed().then((data) => {
-        if (alive) {
-          setList(data)
-        }
-      })
+      if (user) {
+        resolveLiveLoader(source)().then((data) => {
+          if (alive && data) {
+            setList(data)
+          }
+        })
+      } else {
+        resolveSeedLoader(source)().then((data) => {
+          if (alive) {
+            setList(data)
+          }
+        })
+      }
     }
     load()
     // 订阅数据刷新（登录用户由前端 worker 每 3 分钟同步最新列表；官方社区静态 seed）
@@ -217,7 +230,7 @@ export function CommunityPage() {
       alive = false
       unsubscribe()
     }
-  }, [source])
+  }, [source, user])
 
   // 登录后拉取 GitHub 真实分类（仅我们的社区；蓝鲸社区从 seed 推导）
   useEffect(() => {

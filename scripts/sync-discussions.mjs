@@ -4,11 +4,17 @@
 //   · 自家社区 evil7/deepSea（可互动）      → public/data/discussions.json
 //   · 官方社区 deepseek-ai/deepseek-harness → public/data/discussions-official.json
 //   · GitHub GraphQL API 必须带 token 认证（匿名浏览器请求 403）
-//   · 由 GitHub Actions（GITHUB_TOKEN）每小时同步一次
+//   · 两个社区独立容错：单个失败保留旧数据，不阻塞另一个 / workflow
+//
+// token 区分（关键）：
+//   · 自家用 GITHUB_TOKEN（Actions 自动注入，需 permissions: discussions: read）
+//   · 官方用 DEEPSEA_PAT（个人 PAT，带 public_repo/repo scope）——GITHUB_TOKEN 是
+//     integration token，无法读未安装 App 的外部仓库（deepseek-ai）的 discussions
+//     （报 "Resource not accessible by integration"）
 //
 // 用法（根目录）：
-//   GITHUB_TOKEN=ghp_xxx pnpm sync:discussions       # 默认各拉 50 条
-//   GITHUB_TOKEN=ghp_xxx pnpm sync:discussions -- 30 # 自定义条数
+//   GITHUB_TOKEN=ghp_xxx pnpm sync:discussions             # 两个社区都用 GITHUB_TOKEN
+//   GITHUB_TOKEN=ghp_xxx DEEPSEA_PAT=ghp_yyy pnpm sync:discussions  # 官方用 PAT
 //
 // 输出：scripts/output/*.json + 前端种子 public/data/*.json
 // ---------------------------------------------------------------------------
@@ -43,7 +49,7 @@ const LIST_QUERY = /* GraphQL */ `
           title
           url
           category { name }
-          comments(first: 100) {
+          comments(first: 50) {
             totalCount
             nodes { author { login } }
           }
@@ -89,6 +95,16 @@ async function fetchDiscussions(owner, repo, first, token) {
   }))
 }
 
+/** 抓取单个社区（失败返回 null，不抛错，交由调用方降级） */
+async function fetchDiscussionsSafe(owner, repo, first, token) {
+  try {
+    return await fetchDiscussions(owner, repo, first, token)
+  } catch (err) {
+    console.warn(`  ⚠ ${owner}/${repo} 抓取失败：${err.message}`)
+    return null
+  }
+}
+
 function writeJson(filePath, list) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8")
@@ -117,32 +133,48 @@ async function main() {
     console.error("请设置 GITHUB_TOKEN 环境变量（GitHub GraphQL 必须带 token 认证）")
     process.exit(1)
   }
+  // 官方社区：优先 DEEPSEA_PAT（个人 PAT），回退 GITHUB_TOKEN（本地无 PAT 时）
+  const officialToken = process.env.DEEPSEA_PAT || token
   const first = Number(process.argv[2] ?? 50) || 50
 
   console.log("octokit GraphQL 抓取两个社区 discussions…")
+  // 两个社区独立容错：单个失败不阻塞另一个，也不阻塞 workflow。
+  // 失败的社区保留旧数据（不写文件覆盖）。
   const [own, official] = await Promise.all([
-    fetchDiscussions(OWNER, REPO, first, token),
-    fetchDiscussions(OFFICIAL_OWNER, OFFICIAL_REPO, first, token),
+    fetchDiscussionsSafe(OWNER, REPO, first, token),
+    fetchDiscussionsSafe(OFFICIAL_OWNER, OFFICIAL_REPO, first, officialToken),
   ])
+
+  if (own === null && official === null) {
+    console.error("两个社区抓取均失败，放弃同步（保留旧数据）")
+    process.exit(1)
+  }
 
   const outDir = path.join(__dirname, "output")
   const frontendDir = path.join(
     __dirname, "..", "apps", "web", "public", "data"
   )
-  writeJson(path.join(outDir, "discussions.json"), own)
-  writeJson(path.join(outDir, "discussions-official.json"), official)
-  writeJson(path.join(frontendDir, "discussions.json"), own)
-  writeJson(path.join(frontendDir, "discussions-official.json"), official)
 
-  console.log(`\n同步完成：`)
-  console.log(`  自家社区 ${OWNER}/${REPO}：${own.length} 条 → discussions.json`)
-  console.log(
-    `  官方社区 ${OFFICIAL_OWNER}/${OFFICIAL_REPO}：${official.length} 条 → discussions-official.json`
-  )
-  console.log(`  前端种子目录：${frontendDir}\n`)
-
-  preview("自家社区", own)
-  preview("官方社区", official)
+  console.log(`\n同步结果：`)
+  if (own !== null) {
+    writeJson(path.join(outDir, "discussions.json"), own)
+    writeJson(path.join(frontendDir, "discussions.json"), own)
+    console.log(`  自家社区 ${OWNER}/${REPO}：${own.length} 条 → discussions.json`)
+    preview("自家社区", own)
+  } else {
+    console.warn(`  自家社区抓取失败，保留旧 discussions.json`)
+  }
+  if (official !== null) {
+    writeJson(path.join(outDir, "discussions-official.json"), official)
+    writeJson(path.join(frontendDir, "discussions-official.json"), official)
+    console.log(
+      `  官方社区 ${OFFICIAL_OWNER}/${OFFICIAL_REPO}：${official.length} 条 → discussions-official.json`
+    )
+    preview("官方社区", official)
+  } else {
+    console.warn(`  官方社区抓取失败，保留旧 discussions-official.json`)
+  }
+  console.log(`  前端种子目录：${frontendDir}`)
 }
 
 main().catch((err) => {

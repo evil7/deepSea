@@ -416,67 +416,98 @@ export async function loadDiscussionCategories(): Promise<
   }
 }
 
-/** 通用：登录后实时拉取某仓库 discussions 列表（octokit GraphQL 直调） */
+/** 单页讨论节点（GraphQL discussions 连接节点原始结构） */
+interface LiveDiscussionNode {
+  number: number
+  title: string
+  url: string
+  category: { name: string }
+  comments: {
+    totalCount: number
+    nodes?: { author: { login: string } }[]
+  }
+  author: { login: string; avatarUrl: string }
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * 通用：登录后实时拉取某仓库 discussions 列表（octokit GraphQL 直调）。
+ * 使用 cursor 分页循环拉全量（first 为每页大小 ≤100），避免 discussions
+ * 超过单页上限时丢数据。
+ */
 async function fetchDiscussionsLive(
   owner: string,
   repo: string,
   first: number
 ): Promise<DiscussionSummary[] | null> {
   try {
-    const data = await githubGraphQL<{
-      repository?: {
-        discussions?: {
-          nodes?: {
-            number: number
-            title: string
-            url: string
-            category: { name: string }
-            comments: {
-              totalCount: number
-              nodes?: { author: { login: string } }[]
-            }
-            author: { login: string; avatarUrl: string }
-            createdAt: string
-            updatedAt: string
-          }[]
+    const results: DiscussionSummary[] = []
+    let cursor: string | null = null
+    let hasNext = true
+    // 聚合站仅需最新讨论：超大社区截断到 MAX_PAGES×first（最多 500 条），
+    // 防止无限请求；comments nodes 是主要复杂度开销，见下方 first:50 注释。
+    const MAX_PAGES = 5
+
+    for (let page = 0; page < MAX_PAGES && hasNext; page++) {
+      // 分页需顺序翻页（后一页依赖前一页 cursor，无法并行）
+      // eslint-disable-next-line no-await-in-loop
+      const data = await githubGraphQL<{
+        repository?: {
+          discussions?: {
+            pageInfo: { hasNextPage: boolean; endCursor: string | null }
+            nodes?: LiveDiscussionNode[]
+          } | null
         } | null
-      } | null
-    }>(
-      `query ($owner: String!, $repo: String!, $first: Int!) {
-        repository(owner: $owner, name: $repo) {
-          discussions(first: $first, orderBy: { field: UPDATED_AT, direction: DESC }) {
-            nodes {
-              number title url
-              category { name }
-              comments(first: 100) {
-                totalCount
-                nodes { author { login } }
+      }>(
+        `query ($owner: String!, $repo: String!, $first: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            discussions(first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                number title url
+                category { name }
+                comments(first: 50) {
+                  totalCount
+                  nodes { author { login } }
+                }
+                author { login avatarUrl }
+                createdAt updatedAt
               }
-              author { login avatarUrl }
-              createdAt updatedAt
             }
           }
-        }
-      }`,
-      { owner, repo, first }
-    )
-    const nodes = data.repository?.discussions?.nodes
-    if (!nodes) return null
-    return nodes.map((d) => ({
-      number: d.number,
-      title: d.title,
-      url: d.url,
-      categoryName: d.category.name,
-      comments: d.comments.totalCount,
-      participants: countParticipants(
-        d.author.login,
-        (d.comments.nodes ?? []).map((c) => c.author.login)
-      ),
-      author: d.author.login,
-      avatarUrl: d.author.avatarUrl,
-      createdAt: d.createdAt,
-      updatedAt: d.updatedAt,
-    }))
+        }`,
+        { owner, repo, first, after: cursor }
+      )
+      const conn = data.repository?.discussions
+      if (!conn) {
+        return results.length > 0 ? results : null
+      }
+      const nodes = conn.nodes ?? []
+      for (const d of nodes) {
+        results.push({
+          number: d.number,
+          title: d.title,
+          url: d.url,
+          categoryName: d.category.name,
+          comments: d.comments.totalCount,
+          // 参与人数 = 发帖者 + 最近 50 条评论作者去重（近似下界）：不拉全量评论
+          // 作者（否则分页 first=100 时会累积超 GraphQL 复杂度），50 已覆盖绝大多数参与者
+          participants: countParticipants(
+            d.author.login,
+            (d.comments.nodes ?? []).map((c) => c.author.login)
+          ),
+          author: d.author.login,
+          avatarUrl: d.author.avatarUrl,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        })
+      }
+      hasNext = conn.pageInfo?.hasNextPage ?? false
+      cursor = conn.pageInfo?.endCursor ?? null
+      if (nodes.length === 0) break
+    }
+    return results
   } catch {
     return null
   }
@@ -484,14 +515,14 @@ async function fetchDiscussionsLive(
 
 /** 登录后实时拉取主社区讨论列表（octokit 直调，替换 seed 缓存） */
 export function loadDiscussionsLive(): Promise<DiscussionSummary[] | null> {
-  return fetchDiscussionsLive(COMMUNITY_OWNER, COMMUNITY_REPO, 50)
+  return fetchDiscussionsLive(COMMUNITY_OWNER, COMMUNITY_REPO, 100)
 }
 
 /** 登录后实时拉取官方社区讨论列表（octokit 直调，只读） */
 export function loadOfficialDiscussionsLive(): Promise<
   DiscussionSummary[] | null
 > {
-  return fetchDiscussionsLive(OFFICIAL_OWNER, OFFICIAL_REPO, 50)
+  return fetchDiscussionsLive(OFFICIAL_OWNER, OFFICIAL_REPO, 100)
 }
 
 /**

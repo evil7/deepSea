@@ -21,9 +21,10 @@ on:
     - cron: "15 * * * *"
   workflow_dispatch: {} # 手动触发（Actions 页面 "Run workflow"）
 
-# 允许 push cache 分支（contents: write 与现状相同，无新增 gists 权限）
+# 允许 push cache 分支（contents: write）+ 读自家仓库 discussions（discussions: read）
 permissions:
   contents: write
+  discussions: read
 
 concurrency:
   group: sync-plugin-seed
@@ -56,6 +57,9 @@ jobs:
       - name: 抓取插件与讨论数据
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 官方 deepseek-ai 讨论需个人 PAT（GITHUB_TOKEN 是 integration token，
+          # 无法读未安装 App 的外部仓库 discussions）
+          DEEPSEA_PAT: ${{ secrets.DEEPSEA_PAT }}
         # 脚本照常写 scripts/output/*.json，供 publish:cache 读取。
         # 默认参数：limit 1000/类型、star ≥ 10（查询语句 stars:>=10 过滤）；
         # 只收录官方指定 topic dsh-plugin；并发 6 + 全局限速 30 req/min。

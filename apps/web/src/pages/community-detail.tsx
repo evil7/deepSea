@@ -13,7 +13,7 @@ import {
   SmilePlus,
   User,
 } from "lucide-react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useLocation, useParams } from "react-router-dom"
 import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
@@ -422,7 +422,11 @@ function CommentItem({
 }
 
 export function CommunityDetailPage() {
-  const { source, number } = useParams<{ source: string; number: string }>()
+  const { number } = useParams<{ number: string }>()
+  // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
+  // 路由 source 段为静态段，需从 pathname 解析
+  const { pathname } = useLocation()
+  const source = pathname.split("/")[2] === "dsh" ? "dsh" : "dpc"
   const num = Number(number)
   const { user } = useAuth()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
