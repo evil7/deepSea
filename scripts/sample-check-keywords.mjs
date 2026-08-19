@@ -24,7 +24,8 @@ if (!token) {
 }
 const octokit = new Octokit({ auth: token })
 
-// 与 search-deepseek-repos.mjs 保持一致的关键词配置
+// 与 search-deepseek-repos.mjs 保持一致的关键词配置（2026-08-19 已收紧：
+//   移除 cordis/cordis-plugin topic 与裸 "dsh"、"harness plugin" 关键词）
 const PLUGIN_TOPICS = [
   "dsh",
   "dsh-plugin",
@@ -33,8 +34,6 @@ const PLUGIN_TOPICS = [
   "dsh-skill",
   "deepseek-harness",
   "deepseek-harness-plugin",
-  "cordis",
-  "cordis-plugin",
   "deepc-list",
 ]
 
@@ -42,12 +41,10 @@ const KEYWORD_TERMS = {
   nameDesc: [
     '"deepseek-harness"',
     '"deepseek harness"',
-    // "dsh" 缩写排除：用 NOT（-D 开头会被 GitHub 当日期 qualifier → 0 结果）；
-    // "dsh" 前缀匹配 "Dshell-plugins" 需引号精确排除
-    '"dsh" NOT Dshell NOT DsHidMini NOT "Dshell-plugins"',
     '"dsh-plugin"',
+    '"dsh-plugins"',
+    '"dsh-patch"',
     '"deepseek-harness plugin"',
-    '"harness plugin"',
   ],
   readme: [
     '"deepseek-harness"',

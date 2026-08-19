@@ -45,7 +45,13 @@ export const octokit = new Octokit({
         ? { type: "token" as const, token: t, tokenType: "oauth" }
         : { type: "unauthenticated" }
     },
-    async hook(request, route, parameters) {
+    // request 类型为 @octokit/types 的 RequestInterface（未直接依赖，用 any
+    // 规避幽灵依赖；octokit 的 authStrategy 本身也是 any 类型）
+    async hook(
+      request: any,
+      route: string,
+      parameters?: Record<string, unknown>
+    ) {
       const t = token
       const endpoint = request.endpoint.merge(route, parameters)
       if (t) {

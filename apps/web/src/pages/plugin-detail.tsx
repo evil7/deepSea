@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { usePageEnter } from "@/components/showcase/page-enter"
 import { PageHeader } from "@/components/layout/page-header"
+import { InstallCommand } from "@/components/home/install-command"
 
 // ---------------------------------------------------------------------------
 // /plugin/:owner/:repo —— 插件详情页
@@ -54,6 +55,31 @@ function formatDate(iso: string | null): string {
     month: "2-digit",
     day: "2-digit",
   })
+}
+
+/**
+ * 从 README markdown 提取安装命令（严格匹配 dsh 真实 CLI 子命令）
+ *
+ * dsh 真实命令（官方 deepseek-harness apps/cli/src/args.ts）：
+ *   `dsh plugin --profile <name> add <package>`  —— plugin 是子命令，
+ *   `--profile <name>` 是必填项，之后转发 pnpm 参数（add/remove/why...）。
+ *   ⚠️ 没有 `dsh skill add`（skill 是内部包，非 CLI 子命令）；
+ *   ⚠️ `dsh plugin add xxx` 缺 --profile 是错误写法。
+ *
+ * <package> 支持 git/npm/tarball 渠道：github:owner/repo#tag、git+https://...、
+ *   包名、./xxx.tgz 等。
+ *
+ * 仅当 README 明确给出有效安装命令时返回该命令；否则返回 null（调用方不显示）。
+ */
+function extractInstallCommand(markdown: string): string | null {
+  // --profile 必须在 plugin 之后、add/install 之前（commander requiredOption 顺序）
+  const re =
+    /dsh\s+plugin\s+--profile\s+(\S+)\s+(add|install)\s+([^\s`"<>\\|]+)/i
+  const m = markdown.match(re)
+  if (!m?.[1] || !m[3]) {
+    return null
+  }
+  return `dsh plugin --profile ${m[1]} ${m[2].toLowerCase()} ${m[3]}`
 }
 
 type DetailState =
@@ -98,6 +124,15 @@ export function PluginDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner, repo])
 
+  // 安装命令：README 加载后严格提取 `dsh plugin --profile <name> add <pkg>`；
+  // 未命中返回 null（header 不显示安装提示）
+  const installCommand = useMemo(() => {
+    if (state.status === "ready" && state.readme) {
+      return extractInstallCommand(state.readme.markdown)
+    }
+    return null
+  }, [state])
+
   const pageRef = usePageEnter<HTMLDivElement>()
 
   return (
@@ -129,6 +164,9 @@ export function PluginDetailPage() {
           <span className="font-mono">
             {owner}/{repo}
           </span>
+        }
+        actions={
+          installCommand ? <InstallCommand command={installCommand} inline /> : undefined
         }
       />
 
@@ -195,8 +233,10 @@ export function PluginDetailPage() {
             </div>
           </div>
 
-          {/* 右侧：about 信息（sticky 固定，滚动不消失） */}
-          <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          {/* 右侧：about 信息（sticky 固定，滚动不消失）
+              top-34.5(138px) = topbar 64 + stuck header ~58 + 间隔 16，
+              视觉间隔与未滚动时（header pb-6=24px）一致，不重叠不挤兑 */}
+          <aside className="space-y-4 lg:sticky lg:top-34.5 lg:self-start">
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">
                 <img

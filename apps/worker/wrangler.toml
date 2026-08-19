@@ -3,6 +3,18 @@
 name = "deepsea"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
+# nodejs_compat：crypto.ts 的 toBase64/fromBase64 用了 btoa()/atob()，
+# 生产 Workers 无此 flag 时二者为 undefined → 登录/token 解密抛 1101。
+compatibility_flags = ["nodejs_compat"]
+
+# ── 关闭 workers.dev（仅用自定义域名 deepc.cn，双入口易混淆） ─────────────
+workers_dev = false
+
+# ── 自定义域名：deepc.cn（Cloudflare 自动创建 DNS 记录与证书） ────────────
+# 前提：deepc.cn 的 zone 已托管在同一 Cloudflare 账户
+[[routes]]
+pattern = "deepc.cn"
+custom_domain = true
 
 # ── 静态资源：web 构建产物直接作为 worker 资产 ─────────────────────────────
 # 构建顺序：先 pnpm --filter @deepsea/web build，再 wrangler deploy
@@ -35,8 +47,10 @@ id = "a282b972ccde4838ac2bb101f5fb6e72"
 DEEPSEA_BASE = "https://deepc.cn"
 # GitHub OAuth 授权端点 / scope
 GITHUB_OAUTH_AUTHORIZE = "https://github.com/login/oauth/authorize"
-# 根据项目所需：基础用户信息 + 读写 issue/discussion（repo scope 覆盖二者）
-# 若只需公开仓库可改为 public_repo 以缩小权限
+# OAuth scope：基础用户信息（read:user user:email）+ repo（读写 discussions/issue）
+# ⚠️ write:discussion 是无效 scope（GitHub OAuth scope 清单不存在）；gist /
+#   notifications 本项目用不到，均已移除。discussions 写入在 OAuth 体系下只能
+#   走 repo（私有+公开）或 public_repo（仅公开），无法单独授予 discussion 权限。
 GITHUB_OAUTH_SCOPE = "read:user user:email repo"
 # 会话 / state 有效期（秒）
 SESSION_TTL_SECONDS = "2592000"

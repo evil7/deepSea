@@ -689,7 +689,7 @@ export function CommunityDetailPage() {
           </main>
 
           {/* ── 右栏：边栏（sticky 固定，滚动不消失；与插件详情页一致） ── */}
-          <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          <aside className="space-y-4 lg:sticky lg:top-34.5 lg:self-start">
             {/* 作者卡片 */}
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">

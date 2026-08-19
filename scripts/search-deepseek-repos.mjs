@@ -57,15 +57,16 @@ const OFFICIAL_REPOS = new Set(["deepseek-ai/deepseek-harness"])
 // Topic 全量收录：GitHub Search 不支持对 qualifier（如 topic:）使用 OR
 // （422：Logical operators only apply to text），必须逐条查询。
 // 新增生态 topic 直接追加到数组即可。
-// 注意：
-//   · cordis 为 dsh 核心依赖（everything is a plugin），其插件生态与 dsh
-//     兼容；但 ai-agents / agent-harness 等泛 AI 主题会引入大量无关噪音，
-//     不建议收录（噪音会淹没真正的 dsh 插件）。
+// 注意（2026-08-19 收紧）：
+//   · 已移除 cordis / cordis-plugin —— cordis 是 Koishi 框架的通用插件机制，
+//     topic:cordis 会引入大量纯 cordis 项目（shikitor 编辑器、SILI-agent
+//     聊天机器人、inpageedit wiki 编辑器等），与 dsh 生态无关。真正的 dsh
+//     插件必然同时打 dsh/dsh-plugin topic，去掉 cordis 不影响收录。
 //   · 已移除 plugin-marketplace / plugin-store（泛化“插件市场”主题，Claude /
-//     通用插件生态仓库大量混入：buildwithclaude、unihub、hauswerk 等）。
-//     这类噪音应直接在 topic 层剔除，而非事后维护黑名单。
+//     通用插件生态仓库大量混入）。
 //   · deepc-list —— 生态约定 topic：插件开发者若希望自己的插件库被 deepSea
 //     主动收录，可为仓库打上 `deepc-list` topic。deepSea 据此收录并展示。
+//   · 只保留 dsh 专属 topic，从源头杜绝无关项目混入。
 const PLUGIN_TOPICS = [
   "dsh",
   "dsh-plugin",
@@ -74,30 +75,29 @@ const PLUGIN_TOPICS = [
   "dsh-skill",
   "deepseek-harness",
   "deepseek-harness-plugin",
-  "cordis",
-  "cordis-plugin",
   "deepc-list",
 ]
 
 // 关键词精选（name/description 命中）：
-//   精选最匹配的 6 个核心关键词（默认 1 组查询；追加更多时自动按每组 ≤6 个
-//   term 拆成两次 OR 查询，至多 12 个）。GitHub 单查询最多 5 个布尔运算符。
+//   精选最匹配的核心关键词（默认 1 组查询；追加更多时自动按每组 ≤6 个
+//   term 拆成多次 OR 查询，至多 12 个）。GitHub 单查询最多 5 个布尔运算符。
 //   关键：term 必须用引号包裹（含空格/连字符的短语），否则 GitHub 的
 //   OR 优先级高于 AND，会把多词 term 拆成单次 OR（如 deepseek agent →
 //   deepseek OR agent），导致任何描述含 agent/harness/plugin 的无关仓库
-//   混入收录（ohmyzsh、vim-plug 等 star 巨头）。
+//   混入收录。
+//   ⚠️ 2026-08-19 移除裸 "dsh" 与 "harness plugin"：
+//   · "dsh" 是子串匹配，会撞上 Box2DSharp / DShot / DShield / 3DShape /
+//     DShimmer / d2dsharp 等海量含 "dsh" 字母的无关项目（NOT 无法枚举干净）。
+//   · "harness plugin" 太宽，命中各种 AI agent harness 插件。
+//   · 只保留 dsh 专属长词，确保收录精准。
 const KEYWORD_TERMS = {
   nameDesc: [
     '"deepseek-harness"',
     '"deepseek harness"',
-    // "dsh" 为缩写，会撞上无关项目（Dshell 网络取证、DsHidMini 手柄驱动）。
-    // 用 NOT 排除（不能用 -term：-D 开头会被 GitHub 解析为日期 qualifier，
-    // 导致整个查询返回 0 结果）。NOT 占 1 个布尔运算符，故该词单独一组。
-    // 注意："dsh" 会前缀匹配 "Dshell-plugins"（Dsh 开头），需引号精确排除。
-    '"dsh" NOT Dshell NOT DsHidMini NOT "Dshell-plugins"',
     '"dsh-plugin"',
+    '"dsh-plugins"',
+    '"dsh-patch"',
     '"deepseek-harness plugin"',
-    '"harness plugin"',
   ],
   readme: [
     '"deepseek-harness"',

@@ -122,11 +122,11 @@ export async function liveSearchReposByFilter(filter: {
   if (kw) {
     textParts.push(/\s/.test(kw) ? `"${kw}"` : kw)
   } else {
-    // 兜底：核心 dsh 关键词（4 个 term = 3 个 OR，未超 5 上限）
+    // 兜底：核心 dsh 专属长关键词（3 个 term = 2 个 OR，未超 5 上限）
+    // ⚠️ 不含裸 "dsh"（子串匹配撞 Box2DSharp/DShot/DShield 等无关项目）
     textParts.push(
       '"deepseek-harness"',
       '"deepseek harness"',
-      '"dsh"',
       '"dsh-plugin"'
     )
   }

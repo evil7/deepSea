@@ -132,7 +132,9 @@ export function PageHeader({
                 onClick={smoothScrollToTop}
                 aria-label="返回顶部"
                 className={cn(
-                  "items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-accent hover:text-foreground",
+                  // h-10.25(41px) 与右侧安装命令提示框（InstallCommand，其复制图标 size-6
+                  // 撑起的高度 41px）精确一致，消除同排操作区的视觉差异
+                  "h-10.25 items-center gap-1 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-foreground",
                   stuck ? "inline-flex" : "hidden"
                 )}
               >

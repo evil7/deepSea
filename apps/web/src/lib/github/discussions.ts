@@ -58,6 +58,11 @@ export function resolveCommunity(
       repo: OFFICIAL_REPO,
       label: "蓝鲸社区",
       description: "DeepSeek Harness 官方讨论 · 内容实时同步，仅浏览。",
+      // 官方 deepseek-ai 组织启用了 OAuth App access restrictions，第三方
+      // OAuth App 无法写入（addReaction/removeReaction/addDiscussionComment 均
+      // FORBIDDEN「data access to third-parties is limited」）。补充
+      // write:discussion scope 也无法绕过（这是组织级访问限制，非权限范围问题）。
+      // 读取完全正常；写入需组织管理员批准本 OAuth App，或换 GitHub App。
       replyEnable: false,
       createUrl: `https://github.com/${OFFICIAL_OWNER}/${OFFICIAL_REPO}/discussions/new`,
       counterpartLabel: "浪尖酒馆",

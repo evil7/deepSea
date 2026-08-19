@@ -23,9 +23,14 @@ user-invocable: true
 - 官方库：`deepseek-ai/deepseek-harness`（"Everything is a Plugin"）
 - 官方 topics：`dsh`、`dsh-plugin`、`cordis`、`ai-agents`
 - 官方库未开启 issues（`has_issues: false`），但**开启了 discussions**（`has_discussions: true`）
-- 生态常用 topics：`dsh`、`dsh-plugin`、`dsh-plugins`、`dsh-patch`、`dsh-skill`、`deepseek-harness`、`deepseek-harness-plugin`、`cordis-plugin`
+- 生态收录 topics（2026-08-19 收紧，只保留 dsh 专属）：`dsh`、`dsh-plugin`、`dsh-plugins`、`dsh-patch`、`dsh-skill`、`deepseek-harness`、`deepseek-harness-plugin`
 - **`deepc-list`（生态约定 topic，无条件收录）**：插件开发者若希望自己的插件库被 deepSea 主动收录，可为仓库打上 `deepc-list` topic。收录脚本对带该 topic 的仓库**跳过 star/age 质量门槛**直接收录（`scripts/search-deepseek-repos.mjs` 中 `is_deepc_list` 标记豁免）。
-- 泛化 topics（`plugin-marketplace`、`plugin-store` 等）经抽样验证噪音过大（Claude/通用插件生态仓库大量混入），**不应收录**——噪音直接在 topic 层剔除，不维护事后黑名单。
+- **已剔除的泛化 topic/关键词（噪音源）**：
+  - `cordis` / `cordis-plugin`：Koishi 框架通用插件机制，引入 shikitor 编辑器、SILI-agent 聊天机器人、inpageedit wiki 编辑器等纯 cordis 项目，与 dsh 无关。
+  - `plugin-marketplace` / `plugin-store`：Claude/通用插件生态仓库大量混入。
+  - 裸关键词 `"dsh"`：子串匹配撞上 Box2DSharp / DShot / DShield / 3DShape / DShimmer / d2dsharp 等海量含 "dsh" 字母的无关项目（NOT 无法枚举干净）。
+  - 关键词 `"harness plugin"`：太宽，命中各种 AI agent harness 插件。
+  - 噪音一律在 topic/关键词层直接剔除，不维护事后黑名单。
 
 ## 步骤
 

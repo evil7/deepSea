@@ -13,9 +13,7 @@ export const PLUGIN_TOPICS = [
   "dsh-skill",
   "deepseek-harness",
   "deepseek-harness-plugin",
-  "cordis-plugin",
-  "plugin-marketplace",
-  "plugin-store",
+  "deepc-list",
 ] as const
 
 /** 前端种子数据地址（脚本 scripts/search-deepseek-repos.mjs 同步产出） */
