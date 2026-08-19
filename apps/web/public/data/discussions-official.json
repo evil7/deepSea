@@ -1,14 +1,157 @@
 [
   {
+    "number": 3369,
+    "title": "Bug 反馈 / PR：浏览器自动填充把已保存的表单值注入侧边栏搜索框",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3369",
+    "categoryName": "General",
+    "comments": 0,
+    "participants": 1,
+    "author": "Carlkasa",
+    "createdAt": "2026-08-19T09:31:57Z",
+    "updatedAt": "2026-08-19T09:31:57Z"
+  },
+  {
+    "number": 2624,
+    "title": "桌面版，并且支持各种不需要node和dsh环境即可安装插件",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2624",
+    "categoryName": "General",
+    "comments": 0,
+    "participants": 1,
+    "author": "LongYu12",
+    "createdAt": "2026-08-17T03:02:33Z",
+    "updatedAt": "2026-08-19T09:33:12Z"
+  },
+  {
+    "number": 2397,
+    "title": "DeepSeek Harness 飞书交流群（扫码即进）· 社区插件目录",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2397",
+    "categoryName": "General",
+    "comments": 4,
+    "participants": 4,
+    "author": "shinjiyu",
+    "createdAt": "2026-08-16T11:36:15Z",
+    "updatedAt": "2026-08-19T09:30:26Z"
+  },
+  {
+    "number": 3290,
+    "title": "DeepSeek Harness 飞书交流群",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3290",
+    "categoryName": "Q&A",
+    "comments": 1,
+    "participants": 1,
+    "author": "oliblue-evan",
+    "createdAt": "2026-08-19T06:03:16Z",
+    "updatedAt": "2026-08-19T09:30:03Z"
+  },
+  {
+    "number": 3368,
+    "title": "一条命令把 DeepSeek Harness 免费部署到云端 ☁️",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3368",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "participants": 1,
+    "author": "pawaca",
+    "createdAt": "2026-08-19T09:29:49Z",
+    "updatedAt": "2026-08-19T09:29:49Z"
+  },
+  {
+    "number": 3367,
+    "title": "dsh-plugin-project-management",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3367",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "participants": 1,
+    "author": "Luke-Yong",
+    "createdAt": "2026-08-19T09:29:35Z",
+    "updatedAt": "2026-08-19T09:29:35Z"
+  },
+  {
+    "number": 3366,
+    "title": "DSH｜dsh-web-icon-indicator｜浏览器标签页 favicon 实时反映 DSH 会话状态",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3366",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "participants": 1,
+    "author": "waknow",
+    "createdAt": "2026-08-19T09:29:09Z",
+    "updatedAt": "2026-08-19T09:29:09Z"
+  },
+  {
+    "number": 2571,
+    "title": "Session log corruption from concurrent writers — 'corrupt session log: seq gap in committed region'",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2571",
+    "categoryName": "General",
+    "comments": 3,
+    "participants": 3,
+    "author": "Tang-mm95",
+    "createdAt": "2026-08-16T22:48:17Z",
+    "updatedAt": "2026-08-19T09:27:55Z"
+  },
+  {
+    "number": 1728,
+    "title": "加群 ： 微信 &QQ群超2000人，送DeepSeek Harness插件1836款，我己整理好了（咱们不要重复开发相同的插件）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1728",
+    "categoryName": "General",
+    "comments": 46,
+    "participants": 10,
+    "author": "leenkcool",
+    "createdAt": "2026-08-15T05:30:04Z",
+    "updatedAt": "2026-08-19T09:27:55Z"
+  },
+  {
+    "number": 523,
+    "title": "[Security] Web minimal preset allows unapproved writes outside workspace-write on Windows",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/523",
+    "categoryName": "Q&A",
+    "comments": 4,
+    "participants": 5,
+    "author": "alittleyoshi",
+    "createdAt": "2026-08-13T21:23:40Z",
+    "updatedAt": "2026-08-19T09:26:53Z"
+  },
+  {
+    "number": 3365,
+    "title": "一个DSH Web启动器，不想要desktop且免得每次都要开cmd，关闭页面自动清理，另外加了一个启动页做缓冲，只适用win，mac的还没做",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3365",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "participants": 1,
+    "author": "Polar-Zhang",
+    "createdAt": "2026-08-19T09:24:15Z",
+    "updatedAt": "2026-08-19T09:26:32Z"
+  },
+  {
+    "number": 3364,
+    "title": "[Bug] 极简模式：新建会话或切换提供商模型后无法识别当前工作区，引发大规模无效目录扫描。",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3364",
+    "categoryName": "General",
+    "comments": 0,
+    "participants": 1,
+    "author": "Qinhellen",
+    "createdAt": "2026-08-19T09:22:38Z",
+    "updatedAt": "2026-08-19T09:22:38Z"
+  },
+  {
     "number": 3362,
     "title": "?P0级的BUG都不修的？ 切模型用外源，跑了一小时回去看吃了我3亿官方deepseek工时token？？？？",
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3362",
     "categoryName": "Q&A",
-    "comments": 0,
+    "comments": 1,
     "participants": 1,
     "author": "mymetalseed",
     "createdAt": "2026-08-19T09:13:16Z",
-    "updatedAt": "2026-08-19T09:13:16Z"
+    "updatedAt": "2026-08-19T09:22:22Z"
+  },
+  {
+    "number": 3363,
+    "title": "llm-pi-ai: expose supportsDeveloperRole / maxTokensField in PiAiCompatProfile for OpenAI-compatible gateways",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3363",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "participants": 1,
+    "author": "dust617",
+    "createdAt": "2026-08-19T09:14:29Z",
+    "updatedAt": "2026-08-19T09:14:29Z"
   },
   {
     "number": 3332,
@@ -77,17 +220,6 @@
     "updatedAt": "2026-08-19T09:04:52Z"
   },
   {
-    "number": 2397,
-    "title": "DeepSeek Harness 飞书交流群（扫码即进）· 社区插件目录",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2397",
-    "categoryName": "General",
-    "comments": 4,
-    "participants": 4,
-    "author": "shinjiyu",
-    "createdAt": "2026-08-16T11:36:15Z",
-    "updatedAt": "2026-08-19T09:04:09Z"
-  },
-  {
     "number": 1989,
     "title": "dsh-compass 已发布,右侧文件夹面板和只读 git tree",
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1989",
@@ -108,17 +240,6 @@
     "author": "LAN-TINA-WS",
     "createdAt": "2026-08-19T09:03:40Z",
     "updatedAt": "2026-08-19T09:03:40Z"
-  },
-  {
-    "number": 3290,
-    "title": "DeepSeek Harness 飞书交流群",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3290",
-    "categoryName": "Q&A",
-    "comments": 1,
-    "participants": 1,
-    "author": "oliblue-evan",
-    "createdAt": "2026-08-19T06:03:16Z",
-    "updatedAt": "2026-08-19T09:00:04Z"
   },
   {
     "number": 3190,
@@ -374,17 +495,6 @@
     "updatedAt": "2026-08-19T08:28:28Z"
   },
   {
-    "number": 1728,
-    "title": "加群 ： 微信 &QQ群超2000人，送DeepSeek Harness插件1836款，我己整理好了（咱们不要重复开发相同的插件）",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1728",
-    "categoryName": "General",
-    "comments": 44,
-    "participants": 10,
-    "author": "leenkcool",
-    "createdAt": "2026-08-15T05:30:04Z",
-    "updatedAt": "2026-08-19T08:25:53Z"
-  },
-  {
     "number": 3345,
     "title": "我们开源了基于 DeepSeek Harness 的发行版 - Cocode",
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3345",
@@ -438,115 +548,5 @@
     "author": "HellowVirgil",
     "createdAt": "2026-08-19T08:17:00Z",
     "updatedAt": "2026-08-19T08:17:00Z"
-  },
-  {
-    "number": 3340,
-    "title": "Should DeepSeek launch an official plugin marketplace?",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3340",
-    "categoryName": "Ideas",
-    "comments": 0,
-    "participants": 1,
-    "author": "liuchuang2007",
-    "createdAt": "2026-08-19T08:14:11Z",
-    "updatedAt": "2026-08-19T08:14:11Z"
-  },
-  {
-    "number": 3339,
-    "title": "Feature Request: Support native /delete command to permanently delete sessions",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3339",
-    "categoryName": "Ideas",
-    "comments": 0,
-    "participants": 1,
-    "author": "zwj-lambda",
-    "createdAt": "2026-08-19T08:13:31Z",
-    "updatedAt": "2026-08-19T08:13:31Z"
-  },
-  {
-    "number": 3338,
-    "title": "429 with insufficient_quota is classified as terminal QUOTA and never retried, breaking gateway/relay API users",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3338",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "TheOnlyShuaiBoss",
-    "createdAt": "2026-08-19T08:12:55Z",
-    "updatedAt": "2026-08-19T08:12:55Z"
-  },
-  {
-    "number": 1754,
-    "title": "没有mcp的添加入口",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1754",
-    "categoryName": "Q&A",
-    "comments": 5,
-    "participants": 4,
-    "author": "kumakitty",
-    "createdAt": "2026-08-15T06:05:09Z",
-    "updatedAt": "2026-08-19T08:11:14Z"
-  },
-  {
-    "number": 3337,
-    "title": "dsh-llm-bailian-kimi — Kimi on Alibaba Cloud Bailian (DashScope), with image input",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3337",
-    "categoryName": "Show Your Plugins!",
-    "comments": 0,
-    "participants": 1,
-    "author": "sologuy",
-    "createdAt": "2026-08-19T08:09:12Z",
-    "updatedAt": "2026-08-19T08:09:12Z"
-  },
-  {
-    "number": 3224,
-    "title": "DSH｜dsh-wsl-net｜检查 WSL 代理和 Node 24 fetch 是否通",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3224",
-    "categoryName": "Show Your Plugins!",
-    "comments": 0,
-    "participants": 1,
-    "author": "173787247",
-    "createdAt": "2026-08-19T01:06:34Z",
-    "updatedAt": "2026-08-19T08:06:47Z"
-  },
-  {
-    "number": 3336,
-    "title": "欢迎加入DeepSeek Harness QQ交流群：960672669",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3336",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "Zx357",
-    "createdAt": "2026-08-19T08:05:57Z",
-    "updatedAt": "2026-08-19T08:05:57Z"
-  },
-  {
-    "number": 3335,
-    "title": "pi-ai: expose `supportsDeveloperRole` in `PiAiCompatProfile` (gateways that reject `role: developer` are currently unconfigurable)",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3335",
-    "categoryName": "Ideas",
-    "comments": 0,
-    "participants": 1,
-    "author": "sologuy",
-    "createdAt": "2026-08-19T08:02:08Z",
-    "updatedAt": "2026-08-19T08:02:08Z"
-  },
-  {
-    "number": 1046,
-    "title": "但是这个免费的限制很大，最大上下文131072，dsh默认设置256000报错",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1046",
-    "categoryName": "General",
-    "comments": 8,
-    "participants": 4,
-    "author": "leenkcool",
-    "createdAt": "2026-08-14T07:06:42Z",
-    "updatedAt": "2026-08-19T08:00:56Z"
-  },
-  {
-    "number": 2815,
-    "title": "怎么配置MCP服务器给harness用？",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2815",
-    "categoryName": "Q&A",
-    "comments": 3,
-    "participants": 3,
-    "author": "MaoJianwei",
-    "createdAt": "2026-08-17T11:51:59Z",
-    "updatedAt": "2026-08-19T07:59:39Z"
   }
 ]
