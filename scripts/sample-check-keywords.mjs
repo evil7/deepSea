@@ -24,17 +24,10 @@ if (!token) {
 }
 const octokit = new Octokit({ auth: token })
 
-// 与 search-deepseek-repos.mjs 保持一致的关键词配置（2026-08-19 已收紧：
-//   移除 cordis/cordis-plugin topic 与裸 "dsh"、"harness plugin" 关键词）
+// 与 search-deepseek-repos.mjs 保持一致的关键词配置（2026-08-19 定稿：
+//   topic 只保留官方指定 dsh-plugin，移除 deepc-list）
 const PLUGIN_TOPICS = [
-  "dsh",
   "dsh-plugin",
-  "dsh-plugins",
-  "dsh-patch",
-  "dsh-skill",
-  "deepseek-harness",
-  "deepseek-harness-plugin",
-  "deepc-list",
 ]
 
 const KEYWORD_TERMS = {

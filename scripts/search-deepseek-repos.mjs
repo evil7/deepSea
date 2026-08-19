@@ -9,7 +9,6 @@
 // 用法（根目录）：
 //   GITHUB_TOKEN=ghp_xxx pnpm search:plugins          # 带 token（限流 30/min）
 //   pnpm search:plugins -- --min-stars 0               # 放宽 star 门槛（默认 ≥10）
-//   pnpm search:plugins -- --min-age-days 0            # 关闭发布时间门槛（默认 ≥5 天）
 //   pnpm search:plugins -- --sort updated --limit 200  # 按更新时间、每类型最多 200 条（默认 1000）
 //   pnpm search:plugins -- --concurrency 10            # 并发查询数（默认 6，受 30 req/min 限速）
 //   pnpm search:plugins -- --merge                     # 拼接输出目录下其它 JSON 结果
@@ -18,13 +17,12 @@
 //   pnpm search:plugins -- --readme                    # 额外收录 README 全文命中
 //   pnpm search:plugins -- -v                          # 打印每轮查询进度
 //
-// 默认缓存参数：limit 1000/类型（拉满单查询上限），star ≥ 10，创建时间距今 ≥ 5 天（质量门槛）。
-// 专属收录：带 deepc-list topic 的仓库无条件收录（跳过 star/age 门槛）。
-// 关键词精选 6 个核心词（1 组 OR 查询；追加时自动拆分，至多 12 个分 2 次）。
+// 默认参数：limit 1000/类型（拉满单查询上限），star ≥ 10（查询语句 stars:>=N 直接过滤）。
+// 不再按创建时间过滤（age 已移除）。topic 只保留官方指定 `dsh-plugin`。
+// 关键词精选 6 个核心词，每个词单独成一条查询（不用 OR 合并，避免冷门词被热门词挤压截断）。
 //
-// 搜索优化（减少请求、防触顶、提速）：
-//   · 关键词按 OR 合并分组（每 6 term 一组 = GitHub 单查询布尔上限）
-//   · topic 无法合并（qualifier 不支持 OR，422），保持逐条
+// 搜索优化：
+//   · 关键词逐词查询、topic 逐条查询（topic qualifier 不支持 OR，422）
 //   · 并发：多查询并行执行（--concurrency，默认 6），全局限速器保证不超过
 //     官方 30 req/min（请求间隔 ≥2s），但请求发出后不等响应（流水线）——
 //     把网络等待时间隐藏，总墙钟时间 ≈ 请求数/30/min，而非串行累加
@@ -57,25 +55,11 @@ const OFFICIAL_REPOS = new Set(["deepseek-ai/deepseek-harness"])
 // Topic 全量收录：GitHub Search 不支持对 qualifier（如 topic:）使用 OR
 // （422：Logical operators only apply to text），必须逐条查询。
 // 新增生态 topic 直接追加到数组即可。
-// 注意（2026-08-19 收紧）：
-//   · 已移除 cordis / cordis-plugin —— cordis 是 Koishi 框架的通用插件机制，
-//     topic:cordis 会引入大量纯 cordis 项目（shikitor 编辑器、SILI-agent
-//     聊天机器人、inpageedit wiki 编辑器等），与 dsh 生态无关。真正的 dsh
-//     插件必然同时打 dsh/dsh-plugin topic，去掉 cordis 不影响收录。
-//   · 已移除 plugin-marketplace / plugin-store（泛化“插件市场”主题，Claude /
-//     通用插件生态仓库大量混入）。
-//   · deepc-list —— 生态约定 topic：插件开发者若希望自己的插件库被 deepSea
-//     主动收录，可为仓库打上 `deepc-list` topic。deepSea 据此收录并展示。
-//   · 只保留 dsh 专属 topic，从源头杜绝无关项目混入。
+// 注意（2026-08-19 定稿）：只保留官方指定 topic `dsh-plugin`（官方库
+//   deepseek-ai/deepseek-harness 自标的生态 topic）。deepc-list 等自定义
+//   topic 暂不收录，等 deepc 插件开发完成后再敲定与增补。
 const PLUGIN_TOPICS = [
-  "dsh",
   "dsh-plugin",
-  "dsh-plugins",
-  "dsh-patch",
-  "dsh-skill",
-  "deepseek-harness",
-  "deepseek-harness-plugin",
-  "deepc-list",
 ]
 
 // 关键词精选（name/description 命中）：
@@ -105,24 +89,6 @@ const KEYWORD_TERMS = {
     '"dsh-plugin"',
     '"@deepseek-ai/dsh"',
   ],
-}
-
-// GitHub Search 布尔运算符上限：5 个 OR = 6 个 term 为一组。
-// 注意：含 NOT 的 term（如 "dsh" NOT Dshell NOT DsHidMini）会额外占用
-// 2 个运算符，故每组最大有效 term 数需按运算符数重新计算：
-//   · 普通 term 组：≤6 term（5 个 OR）
-//   · 含 1 个 NOT 的 term：相当于 3 个运算符（1 AND + 2 NOT），该组最多容纳
-//     2 个 term（1 OR + 2 NOT = 3）
-const MAX_OR_TERMS = 6
-
-/** 把 term 列表按每组 ≤6 个拆组，用 OR 合并为查询字符串 */
-function groupByOr(terms, qualifier) {
-  const groups = []
-  for (let i = 0; i < terms.length; i += MAX_OR_TERMS) {
-    const chunk = terms.slice(i, i + MAX_OR_TERMS)
-    groups.push(`${chunk.join(" OR ")} ${qualifier}`)
-  }
-  return groups
 }
 
 // ---------------------------------------------------------------------------
@@ -185,36 +151,14 @@ async function runPool(tasks, concurrency) {
   return results
 }
 
-/**
- * 关键词拆组（运算符感知）：term 内含 NOT 的单独成组，避免整组超 5 运算符。
- * GitHub 单查询最多 5 个 AND/OR/NOT：
- *   · 普通 term：6 个 OR 连接（5 运算符）
- *   · 含 1 个 NOT 的 term："a" NOT b NOT c = 2 个 NOT + 0 个 OR = 2 运算符，
- *     单独成组最安全（不与其他 term 混 OR）
- */
-function splitKeywordGroups(terms, qualifier) {
-  const plain = terms.filter((t) => !/\sNOT\s/i.test(t))
-  const withNot = terms.filter((t) => /\sNOT\s/i.test(t))
-  const groups = []
-  for (let i = 0; i < plain.length; i += MAX_OR_TERMS) {
-    const chunk = plain.slice(i, i + MAX_OR_TERMS)
-    groups.push(`${chunk.join(" OR ")} ${qualifier}`)
-  }
-  for (const t of withNot) {
-    groups.push(`${t} ${qualifier}`)
-  }
-  return groups
-}
-
 // ══════════════════════════════════════════════════════════════════════════
 // ② CLI 参数解析
 // ══════════════════════════════════════════════════════════════════════════
 function parseArgs(argv) {
   const args = {
     token: process.env.GITHUB_TOKEN,
-    // 缓存默认质量门槛：star ≥ 10、创建时间距今 ≥ 5 天（排除刷星/垃圾新库）
+    // 质量门槛：star ≥ 10（查询语句 stars:>=N 直接过滤，不再按创建时间过滤）
     minStars: 10,
-    minAgeDays: 5,
     sort: "stars", // stars | updated | created
     // 单查询收录上限：GitHub Search API 每查询最多返回 1000 条
     // 缓存默认每类型 1000 个（关键词组 / 每个 topic 各 1000，即拉满）
@@ -235,8 +179,6 @@ function parseArgs(argv) {
     else if (a.startsWith("--token=")) args.token = a.slice(8)
     else if (a === "--min-stars") args.minStars = Number(next()) || 0
     else if (a.startsWith("--min-stars=")) args.minStars = Number(a.slice(12)) || 0
-    else if (a === "--min-age-days") args.minAgeDays = Number(next()) || 0
-    else if (a.startsWith("--min-age-days=")) args.minAgeDays = Number(a.slice(15)) || 0
     else if (a === "--sort") args.sort = next()
     else if (a.startsWith("--sort=")) args.sort = a.slice(7)
     else if (a === "--limit") args.limit = Number(next()) || 1000
@@ -254,18 +196,25 @@ function parseArgs(argv) {
 }
 
 // —— 构造查询集合 ——
-// 关键词：按 OR 合并分组（每 6 term 一组，节约请求）；topic 逐条。
-// 注意：GitHub Search 的 OR 只能用于文本，不能用于 qualifier（topic: 等），
-//       且单查询最多 5 个布尔运算符（6 个 term）。匿名 10/min 建议带 token。
-function buildQueries({ topicsOnly, readme }) {
+// 每个关键词 term / topic 都单独成一条查询（不用 OR 合并）：
+//   · 避免 OR 合并后按 star 排序的前 1000 条里，冷门 term 的仓库被热门
+//     term 挤压截断，保证每个 term 都能完整拉取
+//   · GitHub Search 的 topic 本就无法 OR（qualifier 不支持，422），保持逐条
+// star 门槛（minStars）直接在查询语句 stars:>=N 过滤；官方库单独一条
+//   repo: 精确查询兜底（不带 star，任何门槛下都必收录）。
+function buildQueries({ topicsOnly, readme, minStars }) {
+  const starQ = minStars > 0 ? ` stars:>=${minStars}` : ""
   const queries = []
   if (!topicsOnly) {
-    queries.push(...splitKeywordGroups(KEYWORD_TERMS.nameDesc, "in:name,description"))
+    queries.push(
+      ...KEYWORD_TERMS.nameDesc.map((t) => `${t} in:name,description${starQ}`)
+    )
     if (readme) {
-      queries.push(...groupByOr(KEYWORD_TERMS.readme, "in:readme"))
+      queries.push(...KEYWORD_TERMS.readme.map((t) => `${t} in:readme${starQ}`))
     }
   }
-  queries.push(...PLUGIN_TOPICS.map((t) => `topic:${t}`))
+  queries.push(...PLUGIN_TOPICS.map((t) => `topic:${t}${starQ}`))
+  queries.push(...[...OFFICIAL_REPOS].map((r) => `repo:${r}`))
   return queries
 }
 
@@ -362,8 +311,6 @@ function aggregate(items, seen) {
       license: it.license?.spdx_id ?? null,
       archived: it.archived ?? false,
       is_official: OFFICIAL_REPOS.has(it.full_name),
-      // 带 deepc-list topic → 无条件收录（跳过 star/age 质量门槛）
-      is_deepc_list: Array.isArray(it.topics) && it.topics.includes("deepc-list"),
       // 命中关键词：记录来源（topic / keyword），便于追溯
       sources: [it.sources?.[0] ?? "search"],
     })
@@ -387,7 +334,7 @@ async function logRateLimit(octokit) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   console.log(`octokit 仓库搜索：token=${args.token ? "已提供" : "匿名"} ` +
-    `minStars=${args.minStars} minAgeDays=${args.minAgeDays} sort=${args.sort} ` +
+    `minStars=${args.minStars} sort=${args.sort} ` +
     `limit=${args.limit} concurrency=${args.concurrency}`)
 
   const octokit = new Octokit({ auth: args.token || undefined })
@@ -457,25 +404,12 @@ async function main() {
     }
   }
 
-  // —— 过滤（质量门槛：star / 创建时间距今；官方库与 deepc-list 始终保留）+ 排序 ——
-  const minAgeMs = args.minAgeDays * 86400000
+  // —— 过滤（质量门槛：star 已在查询语句过滤，此处双保险 + 官方库豁免）+ 排序 ——
   const repos = [...seen.values()]
     .filter(
       (r) =>
-        r.is_deepc_list ||
-        r.stargazers_count >= args.minStars ||
-        OFFICIAL_REPOS.has(r.full_name)
+        r.stargazers_count >= args.minStars || OFFICIAL_REPOS.has(r.full_name)
     )
-    .filter((r) => {
-      // 官方库与 deepc-list 仓库豁免发布时间门槛（无条件收录）
-      if (OFFICIAL_REPOS.has(r.full_name) || r.is_deepc_list) {
-        return true
-      }
-      if (!args.minAgeDays || !r.created_at) {
-        return !args.minAgeDays // 无创建时间且要求年龄时剔除
-      }
-      return Date.now() - Date.parse(r.created_at) >= minAgeMs
-    })
     .toSorted((a, b) => {
       if (args.sort === "updated") return (b.pushed_at ?? "").localeCompare(a.pushed_at ?? "")
       if (args.sort === "created") return (b.created_at ?? "").localeCompare(a.created_at ?? "")

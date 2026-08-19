@@ -57,8 +57,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 脚本照常写 scripts/output/*.json，供 publish:cache 读取。
-        # 默认参数：limit 1000/类型、star ≥ 10、创建距今 ≥ 5 天；
-        # deepc-list topic 无条件收录；并发 6 + 全局限速 30 req/min。
+        # 默认参数：limit 1000/类型、star ≥ 10（查询语句 stars:>=10 过滤）；
+        # 只收录官方指定 topic dsh-plugin；并发 6 + 全局限速 30 req/min。
         run: pnpm search:plugins && pnpm sync:discussions
 
       - name: 发布到 cache 分支（洁癖单 commit + force push）

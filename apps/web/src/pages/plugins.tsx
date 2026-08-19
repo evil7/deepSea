@@ -46,9 +46,9 @@ import { cn } from "@/lib/utils"
 // ---------------------------------------------------------------------------
 // /plugins —— 插件生态快速搜索页
 //   挑选渔获（过滤本地缓存种子）/ 自行捕捞（按条件实时查询 GitHub）双模式：
-//   · 挑选渔获：搜索框即时过滤缓存；star/创建时间默认对齐缓存脚本门槛
-//     （minStars=10 / minAgeDays=5）；手动把任一条件设为「不限」即突破缓存
-//     门槛 → 自动切到自行捕捞
+//   · 挑选渔获：搜索框即时过滤缓存；star 默认对齐缓存脚本门槛（minStars=10），
+//     创建时间默认「不限」（缓存不再按创建时间收录）；把 star 设为「不限」即
+//     突破缓存门槛 → 自动切到自行捕捞
 //   · 自行捕捞：搜索框后显示搜索按钮，按当前过滤条件实时查询（需登录 token）
 // ---------------------------------------------------------------------------
 
@@ -58,7 +58,7 @@ const PAGE_SIZE = 12
 const SKELETON_KEYS = Array.from({ length: 6 }, (_, i) => `skeleton-${i}`)
 
 // 挑选渔获模式下 star 默认对齐缓存脚本门槛（search-deepseek-repos.mjs 默认
-// minStars=10 / minAgeDays=5）：缓存即按「≥10 star 且创建距今 ≥5 天」捕捞的。
+// minStars=10，查询语句 stars:>=10 过滤）：缓存即按「≥10 star」捕捞的。
 // 选「不限」= 突破缓存门槛 → 自动切到自行捕捞（实时查询 GitHub）。
 const STAR_LEVELS = [
   { label: "≥ 10", value: 10 },
@@ -68,12 +68,13 @@ const STAR_LEVELS = [
   { label: "不限", value: 0 },
 ]
 
-/** 创建时间限制（created_at 距今 ≥ 该天数，与脚本 minAgeDays 门槛一致；0 = 不限） */
+/** 创建时间限制（created_at 距今 ≥ 该天数；0 = 不限）。
+ *  缓存脚本不再按创建时间过滤，故默认「不限」；仅作额外筛选器供用户主动收紧。 */
 const CREATED_LEVELS = [
+  { label: "不限", value: 0 },
   { label: "≥ 5 天", value: 5 },
   { label: "≥ 15 天", value: 15 },
   { label: "≥ 30 天", value: 30 },
-  { label: "不限", value: 0 },
 ]
 
 /** Action 同步分钟（每小时第 23 分钟 UTC，与 sync-plugin-seed.yml 一致） */
@@ -107,9 +108,9 @@ export function PluginsPage() {
   const seedRef = useRef<PluginRepo[]>([]) // 缓存种子（挑选渔获数据源）
   const [keyword, setKeyword] = useState("")
   const [language, setLanguage] = useState<string | null>(null)
-  // 默认对齐缓存脚本门槛（minStars=10 / minAgeDays=5），如实反映缓存数据来源
+  // 默认对齐缓存脚本门槛（minStars=10）；创建时间不再设门槛（默认不限）
   const [starLevel, setStarLevel] = useState(10)
-  const [createdWithin, setCreatedWithin] = useState(5)
+  const [createdWithin, setCreatedWithin] = useState(0)
   const [mode, setMode] = useState<ViewMode>("hot")
   const [sourceMode, setSourceMode] = useState<SourceMode>("cache")
   const [searching, setSearching] = useState(false)
@@ -216,12 +217,9 @@ export function PluginsPage() {
     }
   }
 
-  /** 发布时间过滤点击：挑选渔获模式下选「不限」→ 自动切换到自行捕捞 */
+  /** 发布时间过滤点击：缓存不再按创建时间收录，「不限」是默认态、不触发切换 */
   const handleCreatedClick = (value: number) => {
     setCreatedWithin(value)
-    if (sourceMode === "cache" && value === 0) {
-      switchToLive()
-    }
   }
 
   const pageNumbers = useMemo(() => {

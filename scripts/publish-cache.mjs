@@ -58,8 +58,10 @@ function main() {
   tryGit(["worktree", "remove", "--force", WT_PATH])
   tryGit(["branch", "-D", BRANCH])
 
-  // ② 新建孤儿 worktree（无 parent，独立历史，不触碰当前工作分支）
-  git(["worktree", "add", "--orphan", WT_PATH, BRANCH])
+  // ② 新建孤儿 worktree（无 parent，独立历史，不触碰当前工作分支）。
+  //    ⚠️ `--orphan` 必须用 `-b <branch>` 指定分支名，不能传 commit-ish
+  //    （`git worktree add --orphan <path> cache` 会把 cache 当 commit-ish 报错）
+  git(["worktree", "add", "--orphan", "-b", BRANCH, WT_PATH])
 
   // ③ 复制数据到 worktree（缺文件则跳过，不中断）
   let copied = 0

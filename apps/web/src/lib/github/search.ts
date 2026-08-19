@@ -112,8 +112,7 @@ export async function liveSearchRepos(): Promise<PluginRepo[]> {
  *   · keyword        → 文本（多词自动加引号，避免 OR 拆词） + in:name,description
  *   · language       → language:xxx
  *   · minStars       → stars:>=n
- *   · createdWithinDays → created:<YYYY-MM-DD（创建距今 ≥ N 天，与缓存脚本
- *                          minAgeDays 门槛一致；0 = 不限）
+ *   · createdWithinDays → created:<YYYY-MM-DD（创建距今 ≥ N 天；0 = 不限）
  * 无关键词时用核心 dsh 关键词 OR 兜底（避免空查询 422）。
  * 限流敏感：需登录 token（30 req/min），匿名 10 req/min；异常向上抛出。
  */
@@ -220,7 +219,7 @@ export function filterPlugins(
     }
     if (cutoff > 0) {
       const created = r.created_at ? Date.parse(r.created_at) : NaN
-      // 仅收录创建距今 ≥ N 天（与脚本 minAgeDays 门槛一致；缺失创建时间无法判断 → 剔除）
+      // 仅收录创建距今 ≥ N 天（用户主动筛选；缺失创建时间无法判断 → 剔除）
       if (Number.isNaN(created) || created > cutoff) {
         return false
       }
