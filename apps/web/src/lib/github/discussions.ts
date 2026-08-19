@@ -432,6 +432,21 @@ interface LiveDiscussionNode {
 }
 
 /**
+ * 单页讨论查询结果（分页游标 + 节点）。
+ * ⚠️ 必须提取为命名 interface 并给 `data` 显式类型注解：TS 6.0 会对「循环内
+ * cursor 被 data 派生的 endCursor 重新赋值、且 data 初始化引用 cursor」的内联
+ * 泛型字面量报 TS7022 循环引用（data/conn 推断为 any）。
+ */
+interface DiscussionsPageResult {
+  repository?: {
+    discussions?: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null }
+      nodes?: LiveDiscussionNode[]
+    } | null
+  } | null
+}
+
+/**
  * 通用：登录后实时拉取某仓库 discussions 列表（octokit GraphQL 直调）。
  * 使用 cursor 分页循环拉全量（first 为每页大小 ≤100），避免 discussions
  * 超过单页上限时丢数据。
@@ -452,14 +467,7 @@ async function fetchDiscussionsLive(
     for (let page = 0; page < MAX_PAGES && hasNext; page++) {
       // 分页需顺序翻页（后一页依赖前一页 cursor，无法并行）
       // eslint-disable-next-line no-await-in-loop
-      const data = await githubGraphQL<{
-        repository?: {
-          discussions?: {
-            pageInfo: { hasNextPage: boolean; endCursor: string | null }
-            nodes?: LiveDiscussionNode[]
-          } | null
-        } | null
-      }>(
+      const data: DiscussionsPageResult = await githubGraphQL<DiscussionsPageResult>(
         `query ($owner: String!, $repo: String!, $first: Int!, $after: String) {
           repository(owner: $owner, name: $repo) {
             discussions(first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
