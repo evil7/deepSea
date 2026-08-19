@@ -130,7 +130,7 @@ scope.watch((next) => { /* 热更新 */ })
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ deepc 入口：dsh 插件（组合包）· 被 dsh plugin add deepc 安装   │
+│ deepc 入口：dsh 插件（组合包）· 被 dsh plugin --profile web add deepc 安装   │
 ├────────────────────────────────────────────────────────────┤
 │ 能力层（三个特色功能，各自独立组合包/服务）                    │
 │   deepc-theme（主题）  deepc-plugins（管理）  deepc-peer（互联）│
@@ -211,7 +211,7 @@ export const Config = z.object({
 
 ## 6. 完成标准（架构级）
 
-- [ ] deepc 作为组合包可被 `dsh plugin add deepc` 安装、可被 `--dump-config` 看到独立层
+- [ ] deepc 作为组合包可被 `dsh plugin --profile web add deepc` 安装、可被 `--dump-config` 看到独立层
 - [ ] 底座服务（settings/storage/credentials/security）可被能力插件正确 `inject`
 - [ ] 三个能力插件互不依赖、可独立卸载且不残留注册（Fiber dispose 语义）
 - [ ] 所有写入走 `ctx.security` 白名单 + 二次验证，操作落 `audit.log`

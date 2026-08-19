@@ -23,3 +23,16 @@ export function loginUrl(redirect = "/"): string {
   const qs = params.toString()
   return `/auth/login${qs ? `?${qs}` : ""}`
 }
+
+/**
+ * 重新授权入口：强制再次走 GitHub OAuth（用于申请 / 更新 scope）。
+ * 与 loginUrl 的区别是带 `reauthorize=1`，Worker 会跳过「已登录直接回跳」短路。
+ */
+export function reauthUrl(redirect = "/"): string {
+  const params = new URLSearchParams()
+  params.set("reauthorize", "1")
+  if (redirect !== "/") {
+    params.set("redirect", redirect)
+  }
+  return `/auth/login?${params.toString()}`
+}

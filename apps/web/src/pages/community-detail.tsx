@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import {
   ArrowLeft,
+  ArrowUp,
+  CheckCircle2,
   CornerDownRight,
   ExternalLink,
   Home,
@@ -11,7 +13,7 @@ import {
   SmilePlus,
   User,
 } from "lucide-react"
-import { Link, useParams, useSearchParams } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
 import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
@@ -29,8 +31,10 @@ import {
   toggleReaction,
   REACTION_CONTENTS,
   REACTION_EMOJI,
+  type DiscussionComment,
   type DiscussionDetail,
   type ReactionGroup,
+  type WriteFailure,
 } from "@/lib/github/discussions"
 import { loginUrl } from "@/lib/auth"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -80,13 +84,16 @@ function UserAvatar({
   )
 }
 
-/** 表情反应条：已有反应 pill + 内联表情选择器（登录后可交互） */
+/** 表情反应条：投票数（最前）+ 已有反应 pill + 内联表情选择器（登录后可交互） */
 function ReactionBar({
   reactions,
+  upvoteCount = 0,
   canInteract,
   onToggle,
 }: {
   reactions: ReactionGroup[]
+  /** 投票数（帖子与评论均独立持有） */
+  upvoteCount?: number
   canInteract: boolean
   onToggle: (content: string, active: boolean) => void
 }) {
@@ -99,6 +106,12 @@ function ReactionBar({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      {/* 投票数：最前第一个（帖/评论各自持有） */}
+      <span className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+        <ArrowUp className="size-3" />
+        <span className="font-mono">{upvoteCount}</span>
+      </span>
+
       {/* 已有反应 */}
       {reactions
         .filter((r) => r.count > 0)
@@ -201,7 +214,7 @@ function ReplyEditor({
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="写下你的回复…（支持 Markdown）"
+            placeholder="且慢，我有话要说…"
             rows={3}
             className="w-full resize-y bg-transparent px-3.5 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
@@ -229,114 +242,208 @@ function ReplyEditor({
   )
 }
 
-/** 楼帖条目：左侧头像 + timeline 竖线，右侧内容卡片（含表情反应条） */
-function PostItem({
-  avatarUrl,
-  name,
-  time,
-  floor,
-  isOp,
-  isAuthor,
-  last,
-  subjectId,
-  reactions,
+/** 评论排序方式（作用于顶层评论；子回复恒按时间正序） */
+type SortMode = "oldest" | "newest" | "top"
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: "oldest", label: "Oldest" },
+  { value: "newest", label: "Newest" },
+  { value: "top", label: "Top" },
+]
+
+/** 评论树节点（含已排序子回复） */
+interface CommentNode {
+  comment: DiscussionComment
+  depth: number
+  children: CommentNode[]
+}
+
+/** 最大视觉缩进层级：更深层回复不再继续缩进，避免内容被压扁 */
+const MAX_VISUAL_DEPTH = 3
+
+/**
+ * 构建评论树：按 replyToId 挂子回复；顶层按 sortMode 排序，
+ * 子回复恒按时间正序（自然对话顺序）。
+ */
+/** 按时间正序排序（子回复对话顺序，恒正序） */
+function sortByTimeAsc(list: DiscussionComment[]): DiscussionComment[] {
+  return list.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+function buildCommentTree(
+  comments: DiscussionComment[],
+  sortMode: SortMode
+): CommentNode[] {
+  const byId = new Map<string, DiscussionComment>()
+  for (const c of comments) byId.set(c.id, c)
+
+  const childrenOf = new Map<string, DiscussionComment[]>()
+  const roots: DiscussionComment[] = []
+  for (const c of comments) {
+    if (c.replyToId && byId.has(c.replyToId)) {
+      const arr = childrenOf.get(c.replyToId) ?? []
+      arr.push(c)
+      childrenOf.set(c.replyToId, arr)
+    } else {
+      roots.push(c)
+    }
+  }
+
+  const sortRoots = (list: DiscussionComment[]) => {
+    if (sortMode === "newest") {
+      return list.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+    }
+    if (sortMode === "top") {
+      return list.toSorted(
+        (a, b) =>
+          b.upvoteCount - a.upvoteCount ||
+          b.createdAt.localeCompare(a.createdAt)
+      )
+    }
+    return list.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
+  const build = (c: DiscussionComment, depth: number): CommentNode => ({
+    comment: c,
+    depth,
+    children: sortByTimeAsc(childrenOf.get(c.id) ?? []).map((ch) =>
+      build(ch, depth + 1)
+    ),
+  })
+
+  return sortRoots(roots).map((r) => build(r, 0))
+}
+
+/**
+ * 单条评论（递归渲染其子回复）
+ * 树状层级：depth 1~3 每层「缩进 + 左侧竖线」，更深层不再缩进（防压扁）；
+ * 回复他人时显示「回复 @xxx」引用；被采纳显示「已采纳答案」徽章。
+ */
+function CommentItem({
+  node,
+  discussionAuthor,
   canInteract,
   onToggleReaction,
-  children,
 }: {
-  avatarUrl?: string
-  name: string
-  time: string
-  /** 楼层号（OP 不传） */
-  floor?: number
-  /** OP 主帖（发起者徽章） */
-  isOp?: boolean
-  /** 评论者是发起者（GitHub 风格 Author 徽章） */
-  isAuthor?: boolean
-  /** 是否为最后一条（不画竖线） */
-  last?: boolean
-  /** 表情反应对象 id（discussion / comment 的 node id） */
-  subjectId: string
-  reactions: ReactionGroup[]
+  node: CommentNode
+  discussionAuthor: string
   canInteract: boolean
   onToggleReaction: (subjectId: string, content: string, active: boolean) => void
-  children: React.ReactNode
 }) {
-  return (
-    <div className="flex gap-3">
-      {/* 头像列 + 竖线 */}
-      <div className="relative flex shrink-0 flex-col items-center">
-        <UserAvatar url={avatarUrl} name={name} />
-        {!last && (
-          <span
-            aria-hidden="true"
-            className="mt-2 w-px flex-1 rounded-full bg-border"
-          />
-        )}
-      </div>
+  const { comment, depth, children } = node
+  const indented = depth > 0 && depth <= MAX_VISUAL_DEPTH
 
-      {/* 内容 */}
-      <div className="min-w-0 flex-1 pb-7">
-        {/* 头部：作者 · 徽章 · 时间 · 楼层 */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold text-foreground">{name}</span>
-          {isOp && (
-            <Badge className="border-cyan-400/40 bg-cyan-400/10 font-mono text-[10px] text-cyan-300">
-              发起者
-            </Badge>
-          )}
-          {isAuthor && (
-            <Badge className="border-violet-400/40 bg-violet-400/10 font-mono text-[10px] text-violet-300">
-              作者
-            </Badge>
-          )}
-          <span className="text-xs text-muted-foreground">· {time}</span>
-          {floor !== undefined && (
-            <span className="ml-auto font-mono text-xs text-muted-foreground">
-              #{floor}
-            </span>
-          )}
+  return (
+    <div
+      className={cn(
+        indented && "relative ml-6 border-l-2 border-border pl-4 sm:ml-8 sm:pl-5"
+      )}
+    >
+      <div className="flex gap-3">
+        {/* 头像（子回复用更小尺寸，降低视觉重量） */}
+        <div className="shrink-0 pt-0.5">
+          <UserAvatar
+            url={comment.avatarUrl}
+            name={comment.author}
+            size={indented ? "sm" : "lg"}
+          />
         </div>
 
-        {/* 内容卡片 */}
-        <div
-          className={cn(
-            "mt-2 rounded-xl border border-border bg-card transition-colors",
-            "hover:border-border hover:bg-accent"
-          )}
-        >
-          {children}
+        {/* 内容 */}
+        <div className="min-w-0 flex-1 pb-5">
+          {/* 头部：作者 · 徽章 · 时间 */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-semibold text-foreground">
+              {comment.author}
+            </span>
+            {comment.author === discussionAuthor && (
+              <Badge className="border-violet-400/40 bg-violet-400/10 font-mono text-[10px] text-violet-300">
+                作者
+              </Badge>
+            )}
+            {comment.isAnswer && (
+              <Badge className="border-emerald-400/40 bg-emerald-400/10 font-mono text-[10px] text-emerald-300">
+                <CheckCircle2 className="mr-1 size-3" />
+                已采纳答案
+              </Badge>
+            )}
+            <span className="text-xs text-muted-foreground">
+              · {formatRelativeTime(comment.createdAt)}
+            </span>
+          </div>
 
-          {/* 底部：表情反应条 */}
-          <div className="border-t border-border px-4 py-2.5">
-            <ReactionBar
-              reactions={reactions}
-              canInteract={canInteract}
-              onToggle={(content, active) =>
-                onToggleReaction(subjectId, content, active)
-              }
+          {/* 回复引用（回复他人时显示） */}
+          {comment.replyToAuthor && (
+            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+              <CornerDownRight className="size-3" />
+              回复
+              <span className="font-medium text-cyan-300">
+                @{comment.replyToAuthor}
+              </span>
+            </div>
+          )}
+
+          {/* 内容卡片 */}
+          <div className="mt-2 rounded-xl border border-border bg-card">
+            <div
+              className="readme-body markdown-body p-4"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(renderMarkdown(comment.body), {
+                  ADD_ATTR: ["target"],
+                }),
+              }}
             />
+            <div className="border-t border-border px-4 py-2.5">
+              <ReactionBar
+                reactions={comment.reactions}
+                upvoteCount={comment.upvoteCount}
+                canInteract={canInteract}
+                onToggle={(content, active) =>
+                  onToggleReaction(comment.id, content, active)
+                }
+              />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* 子回复递归 */}
+      {children.map((child) => (
+        <CommentItem
+          key={child.comment.id}
+          node={child}
+          discussionAuthor={discussionAuthor}
+          canInteract={canInteract}
+          onToggleReaction={onToggleReaction}
+        />
+      ))}
     </div>
   )
 }
 
 export function CommunityDetailPage() {
-  const { number } = useParams<{ number: string }>()
+  const { source, number } = useParams<{ source: string; number: string }>()
   const num = Number(number)
   const { user } = useAuth()
-  const [searchParams] = useSearchParams()
-  // 社区来源 + 回复开关（蓝鲸社区只读；回复开关由社区身份决定，不允许 URL 控制）
-  const source = searchParams.get("source")
+  // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
   const info = useMemo(() => resolveCommunity(source), [source])
-  const replyEnable = info.replyEnable
   const [detail, setDetail] = useState<DiscussionDetail | null>(null)
   const [state, setState] = useState<"loading" | "unauthorized" | "error" | "ok">(
     "loading"
   )
   const [submitting, setSubmitting] = useState(false)
+  // 评论排序方式（默认 oldest = 时间正序，符合「时间线」语义）
+  const [sortMode, setSortMode] = useState<SortMode>("oldest")
+
+  // 是否可回复：由 discussion 实际状态动态判定（非硬编码社区开关）
+  // 管理员锁定（locked）或关闭（closed）的讨论均不可回复
+  const canReply = !!detail && !detail.locked && !detail.closed
+
+  // 评论树（按排序方式构建；子回复恒按时间正序）
+  const commentTree = useMemo(
+    () => (detail ? buildCommentTree(detail.comments, sortMode) : []),
+    [detail, sortMode]
+  )
 
   useEffect(() => {
     let alive = true
@@ -407,8 +514,25 @@ export function CommunityDetailPage() {
     })
   }
 
-  /** 写操作失败时的降级：提示 + 引导跳转 GitHub */
-  const handleWriteFallback = () => {
+  /** 写操作失败时的降级：按失败原因针对性提示 + 引导跳转 GitHub */
+  const handleWriteFallback = (failure?: WriteFailure) => {
+    if (failure?.kind === "forbidden") {
+      toast.error("没有写入权限", {
+        description: "该讨论所在组织限制了第三方应用的写入权限，请在 GitHub 上操作",
+        action: {
+          label: "前往 GitHub",
+          onClick: () =>
+            detail && window.open(detail.url, "_blank", "noopener,noreferrer"),
+        },
+      })
+      return
+    }
+    if (failure?.kind === "rate_limited") {
+      toast.error("触发 GitHub 限流", {
+        description: "操作过于频繁，请稍后再试",
+      })
+      return
+    }
     toast.error("操作未成功", {
       description: "可在 GitHub 上完成该操作",
       action: {
@@ -425,8 +549,8 @@ export function CommunityDetailPage() {
     content: string,
     active: boolean
   ) => {
-    if (!replyEnable) {
-      toast.info("蓝鲸社区为只读，无法表态")
+    if (!canReply) {
+      toast.info("该讨论已锁定或关闭，无法表态")
       return
     }
     if (!user) {
@@ -434,26 +558,30 @@ export function CommunityDetailPage() {
       return
     }
     updateReactions(subjectId, content, active)
-    const ok = await toggleReaction(subjectId, content, active)
-    if (!ok) {
+    const result = await toggleReaction(subjectId, content, active)
+    if (!result.ok) {
       updateReactions(subjectId, content, !active)
-      handleWriteFallback()
+      handleWriteFallback(result.failure)
     }
   }
 
   /** 发表回复（成功后追加到评论列表；失败降级跳转 GitHub） */
   const handleSubmitComment = async (body: string) => {
-    if (!detail || !replyEnable) return
+    if (!detail || !canReply) return
     setSubmitting(true)
     try {
-      const comment = await postDiscussionComment(detail.number, detail.id, body)
+      const { comment, failure } = await postDiscussionComment(
+        detail.number,
+        detail.id,
+        body
+      )
       if (comment) {
         setDetail((prev) =>
           prev ? { ...prev, comments: [...prev.comments, comment] } : prev
         )
         toast.success("回复已发布")
       } else {
-        handleWriteFallback()
+        handleWriteFallback(failure)
       }
     } finally {
       setSubmitting(false)
@@ -466,10 +594,12 @@ export function CommunityDetailPage() {
   const pageRef = usePageEnter<HTMLDivElement>()
 
   return (
-    <div
-      ref={pageRef}
-      className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
-    >
+    <>
+      <style>{COMMUNITY_MARKDOWN_CSS}</style>
+      <div
+        ref={pageRef}
+        className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
+      >
       {/* 页头：面包屑 + 讨论编号（共享 PageHeader） */}
       <PageHeader
         breadcrumb={
@@ -483,14 +613,26 @@ export function CommunityDetailPage() {
             </Link>
             <span>/</span>
             <Link
-              to={`/community?source=${source ?? "dpc"}`}
+              to={`/community/${info.source}`}
               className="transition-colors hover:text-foreground"
             >
               {info.label}
             </Link>
           </>
         }
-        title={<span className="font-mono">#{num}</span>}
+        title={
+          detail ? (
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate">{detail.title}</span>
+              <span className="shrink-0 font-mono text-base font-normal text-muted-foreground">
+                #{num}
+              </span>
+            </span>
+          ) : (
+            // 数据加载前用占位骨架，避免把「# 编号」当临时标题映射
+            <Skeleton className="h-8 w-72 bg-muted" />
+          )
+        }
       />
 
       {state === "loading" && (
@@ -514,7 +656,7 @@ export function CommunityDetailPage() {
           </p>
           <Button asChild size="sm" className="mt-2">
             {/* 真实导航：/auth/login 由 Worker 处理，无前端路由 */}
-            <a href={loginUrl(`/community/${num}?source=${source ?? "dpc"}`)}>
+            <a href={loginUrl(`/community/${info.source}/${num}`)}>
               <User className="size-4" />
               登录
             </a>
@@ -532,165 +674,156 @@ export function CommunityDetailPage() {
             className="mt-2 border-border bg-card text-foreground hover:bg-accent"
           >
             <ArrowLeft className="size-3.5" />
-            <Link to={`/community?source=${source ?? "dpc"}`}>返回{info.label}</Link>
+            <Link to={`/community/${info.source}`}>返回{info.label}</Link>
           </Button>
         </div>
       )}
 
       {detail && state === "ok" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          {/* ── 左栏：楼帖主列（README 风格容器） ── */}
-          <main className="min-w-0 rounded-xl border border-border bg-card">
-            {/* 容器头栏 */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <MessagesSquare className="size-4 text-cyan-300" />
-                <span className="truncate">讨论 #{detail.number}</span>
-                <Badge
-                  className={cn(
-                    "shrink-0 font-mono text-[10px]",
-                    CATEGORY_STYLES[detail.categoryName] ??
-                      "border-border bg-accent text-foreground"
-                  )}
+          {/* ── 左栏：主贴卡片 + 评论卡片（两卡片分离） ── */}
+          <main className="min-w-0 space-y-6">
+            {/* 主贴卡片（OP 独立卡片，标题已上移到页头） */}
+            <section className="rounded-xl border border-border bg-card">
+              {/* 卡片头：左作者信息 / 右分类标签 + 在 GitHub 查看 */}
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <UserAvatar url={detail.authorAvatarUrl} name={detail.author} />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {detail.author}
+                      </span>
+                      <Badge className="border-cyan-400/40 bg-cyan-400/10 font-mono text-[10px] text-cyan-300">
+                        发起者
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {formatRelativeTime(detail.createdAt)} 发起
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href={detail.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  {detail.categoryName}
-                </Badge>
+                  在 GitHub 查看
+                  <ExternalLink className="size-3" />
+                </a>
               </div>
-              <a
-                href={detail.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                在 GitHub 查看
-                <ExternalLink className="size-3" />
-              </a>
+
+              <div
+                className="readme-body markdown-body p-5 sm:p-6"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(renderMarkdown(detail.body), {
+                    ADD_ATTR: ["target"],
+                  }),
+                }}
+              />
+
+              <div className="border-t border-border px-5 py-2.5">
+                <ReactionBar
+                  reactions={detail.reactions}
+                  upvoteCount={detail.upvoteCount}
+                  canInteract={!!user && canReply}
+                  onToggle={(content, active) =>
+                    handleToggleReaction(detail.id, content, active)
+                  }
+                />
+              </div>
+            </section>
+
+            {/* 评论 bar：{n} comments（左）+ outline 排序 tabs（右），左右分布 */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+              <span className="text-sm font-medium text-foreground">
+                {detail.commentTotalCount} comments
+              </span>
+              <div className="flex items-center gap-1">
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setSortMode(opt.value)}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      sortMode === opt.value
+                        ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200"
+                        : "border-border text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* 容器内容 */}
-            <div className="p-4 sm:p-6">
-              {/* 标题区 */}
-              <header>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                  {detail.title}
-                </h1>
-                {/* 作者行（移动端；桌面端在右侧边栏展示作者卡片） */}
-                <div className="mt-4 flex items-center gap-2.5 lg:hidden">
-                  <UserAvatar
-                    url={detail.authorAvatarUrl}
-                    name={detail.author}
-                    size="sm"
-                  />
-                  <div className="text-xs">
-                    <p className="font-medium text-foreground">
-                      {detail.author}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {formatRelativeTime(detail.createdAt)} 发起 ·{" "}
-                      {detail.comments.length} 条评论
-                    </p>
-                  </div>
-                </div>
-              </header>
-
-              {/* 楼帖：OP + 评论 timeline */}
-              <div className="mt-7">
-                <PostItem
-                  avatarUrl={detail.authorAvatarUrl}
-                  name={detail.author}
-                  time={formatRelativeTime(detail.createdAt)}
-                  isOp
-                  last={detail.comments.length === 0}
-                  subjectId={detail.id}
-                  reactions={detail.reactions}
-                  canInteract={!!user && replyEnable}
-                  onToggleReaction={handleToggleReaction}
-                >
-                  <div
-                    className="readme-body markdown-body p-4 sm:p-5"
-                    dangerouslySetInnerHTML={{
-                      __html: DOMPurify.sanitize(
-                        renderMarkdown(detail.body),
-                        { ADD_ATTR: ["target"] }
-                      ),
-                    }}
-                  />
-                </PostItem>
-
-                {/* 评论楼层 */}
-                {detail.comments.length === 0 ? (
-                  <div className="ml-1 flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                    <CornerDownRight className="size-4" />
-                    还没有评论，来抢沙发
-                  </div>
-                ) : (
-                  detail.comments.map((c, i) => (
-                    <PostItem
-                      key={c.id}
-                      avatarUrl={c.avatarUrl}
-                      name={c.author}
-                      time={formatRelativeTime(c.createdAt)}
-                      floor={i + 1}
-                      isAuthor={c.author === detail.author}
-                      last={i === detail.comments.length - 1}
-                      subjectId={c.id}
-                      reactions={c.reactions}
-                      canInteract={!!user && replyEnable}
-                      onToggleReaction={handleToggleReaction}
-                    >
-                      <div
-                        className="readme-body markdown-body p-4"
-                        dangerouslySetInnerHTML={{
-                          __html: DOMPurify.sanitize(
-                            renderMarkdown(c.body),
-                            { ADD_ATTR: ["target"] }
-                          ),
-                        }}
-                      />
-                    </PostItem>
-                  ))
-                )}
-
-                {/* 站内回复编辑器（登录 + 开启回复后可用） */}
-                <div className="mt-2 ml-12">
-                  {!replyEnable ? (
-                    <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
-                      <span>蓝鲸社区为只读，无法在站内回复</span>
-                      <Button asChild size="sm" variant="outline">
-                        <a href={detail.url} target="_blank" rel="noreferrer">
-                          <ExternalLink className="size-4" />
-                          前往 GitHub 参与
-                        </a>
-                      </Button>
-                    </div>
-                  ) : user ? (
-                    <ReplyEditor
-                      avatarUrl={user.avatar_url}
-                      name={user.login}
-                      submitting={submitting}
-                      onSubmit={handleSubmitComment}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
-                      <span>登录后即可参与回复</span>
-                      <Button asChild size="sm" variant="outline">
-                        <a
-                          href={loginUrl(`/community/${num}?source=${source ?? "dpc"}`)}
-                        >
-                          <User className="size-4" />
-                          登录
-                        </a>
-                      </Button>
-                    </div>
-                  )}
-                </div>
+            {/* 回复内容平展（每条独立，不套大卡片） */}
+            {commentTree.length === 0 ? (
+              <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                <CornerDownRight className="size-4" />
+                还没有评论，来抢沙发
               </div>
+            ) : (
+              <div className="space-y-4">
+                {commentTree.map((node) => (
+                  <CommentItem
+                    key={node.comment.id}
+                    node={node}
+                    discussionAuthor={detail.author}
+                    canInteract={!!user && canReply}
+                    onToggleReaction={handleToggleReaction}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* 回复编辑器（登录 + 未锁定且开放时可用） */}
+            <div className="mt-2">
+              {!canReply ? (
+                <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
+                  <span>
+                    {detail.locked
+                      ? "该讨论已被管理员锁定，无法回复"
+                      : detail.closed
+                      ? "该讨论已关闭，无法回复"
+                      : "当前无法回复"}
+                  </span>
+                  <Button asChild size="sm" variant="outline">
+                    <a href={detail.url} target="_blank" rel="noreferrer">
+                      <ExternalLink className="size-4" />
+                      前往 GitHub 参与
+                    </a>
+                  </Button>
+                </div>
+              ) : user ? (
+                <ReplyEditor
+                  avatarUrl={user.avatar_url}
+                  name={user.login}
+                  submitting={submitting}
+                  onSubmit={handleSubmitComment}
+                />
+              ) : (
+                <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
+                  <span>登录后即可参与回复</span>
+                  <Button asChild size="sm" variant="outline">
+                    <a
+                      href={loginUrl(`/community/${info.source}/${num}`)}
+                    >
+                      <User className="size-4" />
+                      登录
+                    </a>
+                  </Button>
+                </div>
+              )}
             </div>
           </main>
 
           {/* ── 右栏：边栏（sticky 固定，滚动不消失；与插件详情页一致） ── */}
           <aside className="space-y-4 lg:sticky lg:top-34.5 lg:self-start">
-            {/* 作者卡片 */}
+            {/* 作者卡片（3 行：头像占前两行 / 名字 / 时间 / 评论数+投票数） */}
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">
                 <UserAvatar url={detail.authorAvatarUrl} name={detail.author} />
@@ -699,31 +832,20 @@ export function CommunityDetailPage() {
                     {detail.author}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatRelativeTime(detail.createdAt)} 发起
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-                <MessagesSquare className="size-3.5 text-cyan-300/80" />
-                讨论 #{detail.number} · {detail.comments.length} 条评论
-              </div>
-            </div>
-
-            {/* 统计（评论数 / 最近更新） */}
-            <div className="rounded-xl border border-border bg-card p-5">
-              <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="rounded-lg bg-muted py-3">
-                  <p className="text-lg font-semibold text-foreground">
-                    {detail.comments.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground">评论</p>
-                </div>
-                <div className="rounded-lg bg-muted py-3">
-                  <p className="text-sm font-semibold text-foreground">
+                    {formatRelativeTime(detail.createdAt)} 发起 · 最新更新{" "}
                     {formatRelativeTime(detail.updatedAt)}
                   </p>
-                  <p className="text-xs text-muted-foreground">最近更新</p>
                 </div>
+              </div>
+              <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <MessagesSquare className="size-3.5 text-cyan-300/80" />
+                  {detail.commentTotalCount} 条评论
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <ArrowUp className="size-3.5 text-cyan-300/80" />
+                  {detail.upvoteCount} 个投票
+                </span>
               </div>
             </div>
 
@@ -745,6 +867,34 @@ export function CommunityDetailPage() {
               </div>
             </div>
 
+            {/* 发起人的其他帖子（若有则列举最近 10 条） */}
+            {detail.authorPosts.length > 0 && (
+              <div className="rounded-xl border border-border bg-card p-5">
+                <p className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground">
+                  MORE DISCUSSIONS
+                </p>
+                <ul className="mt-3 space-y-0.5">
+                  {detail.authorPosts.map((p) => (
+                    <li key={p.number}>
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-accent"
+                      >
+                        <span className="shrink-0 font-mono text-muted-foreground group-hover:text-foreground">
+                          #{p.number}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-foreground">
+                          {p.title}
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* GitHub 参与 */}
             <Button asChild className="w-full">
               <a href={detail.url} target="_blank" rel="noreferrer">
@@ -755,9 +905,24 @@ export function CommunityDetailPage() {
           </aside>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
+
+/** 社区 markdown 覆盖样式：背景透明融入卡片圆角（github-markdown-css dark 为 #0d1117 实底） */
+const COMMUNITY_MARKDOWN_CSS = `
+  .readme-body.markdown-body {
+    background-color: transparent;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .readme-body.markdown-body a { color: #67e8f9; }
+  .readme-body.markdown-body a:hover { color: #a5f3fc; }
+  .readme-body.markdown-body img { display: inline; vertical-align: baseline; height: auto; }
+  .readme-body.markdown-body pre { background-color: rgba(2, 6, 23, 0.9); }
+`
 
 /** 渲染 markdown → HTML（GFM + raw HTML，供 DOMPurify 消毒后注入） */
 function renderMarkdown(md: string): string {

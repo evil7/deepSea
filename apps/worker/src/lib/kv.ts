@@ -33,5 +33,5 @@ export const GITHUB_TOKEN_ENDPOINT =
 /** 用户档案端点 */
 export const GITHUB_USER_ENDPOINT = "https://api.github.com/user"
 
-/** 默认 OAuth scope：基础用户信息 + repo（读写 issue / discussion） */
-export const DEFAULT_OAUTH_SCOPE = "read:user user:email repo"
+/** 默认 OAuth scope：用户资料 + public_repo（公开仓库写 discussions，最小授权） */
+export const DEFAULT_OAUTH_SCOPE = "read:user public_repo"

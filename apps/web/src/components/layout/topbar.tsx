@@ -1,10 +1,12 @@
 import {
   Compass,
+  ExternalLink,
   Layers,
   Loader2,
   LogOut,
   MessagesSquare,
   Package,
+  RefreshCw,
   UserCircle,
   Waves,
 } from "lucide-react"
@@ -15,13 +17,10 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/hooks/use-auth"
-import { loginUrl } from "@/lib/auth"
+import { loginUrl, reauthUrl } from "@/lib/auth"
 
 const menuItems = [
   // 与首页 view 逐一对应（不做直接进入页面的动作，全部滚动定位）：
@@ -34,6 +33,18 @@ const menuItems = [
   { label: "讨论交流", to: "/#dsh-community", icon: MessagesSquare },
   { label: "深海套装", to: "/#dsh-deepsea-kit", icon: Package },
 ]
+
+/** 名片统计格（关注者 / 关注中 / 公开仓库） */
+function ProfileStat({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="flex-1 px-2 py-2.5 text-center">
+      <p className="text-sm font-semibold tabular-nums">
+        {value.toLocaleString()}
+      </p>
+      <p className="mt-0.5 text-[10px] text-muted-foreground">{label}</p>
+    </div>
+  )
+}
 
 export function Topbar() {
   const { user, loading, logout } = useAuth()
@@ -72,7 +83,7 @@ export function Topbar() {
                   variant="ghost"
                   size="sm"
                   className="flex items-center gap-2 px-1.5 hover:bg-accent/60"
-                  aria-label={`已登录：${user.login}`}
+                  aria-label={`已登录：${user.name?.trim() || user.login}`}
                 >
                   <Avatar className="size-7 border border-border/60">
                     <AvatarImage
@@ -85,29 +96,75 @@ export function Topbar() {
                     </AvatarFallback>
                   </Avatar>
                   <span className="hidden max-w-28 truncate text-sm sm:inline">
-                    {user.login}
+                    {user.name?.trim() || user.login}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="font-normal">
-                  <p className="text-sm leading-none font-medium">
-                    {user.login}
-                  </p>
-                  {user.email && (
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {user.email}
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
+                className="w-72 p-0 overflow-hidden"
+              >
+                {/* 名片头部：头像 + 姓名 + 主页链接 + 简介 */}
+                <div className="relative bg-linear-to-br from-primary/12 via-transparent to-transparent px-4 pt-4 pb-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="size-14 shrink-0 border border-border/60 shadow-sm">
+                      <AvatarImage
+                        src={user.avatar_url}
+                        alt={user.login}
+                        referrerPolicy="no-referrer"
+                      />
+                      <AvatarFallback className="text-lg">
+                        {user.login.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base font-semibold tracking-tight">
+                        {user.name?.trim() || user.login}
+                      </p>
+                      <a
+                        href={user.html_url || `https://github.com/${user.login}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-0.5 inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <span className="truncate">@{user.login}</span>
+                        <ExternalLink className="size-3 shrink-0" />
+                      </a>
+                    </div>
+                  </div>
+                  {user.bio?.trim() && (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      {user.bio.trim()}
                     </p>
                   )}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={() => void logout()}
-                >
-                  <LogOut className="size-4" />
-                  登出
-                </DropdownMenuItem>
+                </div>
+
+                {/* 统计条 */}
+                <div className="flex divide-x divide-border/60 border-y border-border/60 bg-muted/30">
+                  <ProfileStat value={user.followers ?? 0} label="关注者" />
+                  <ProfileStat value={user.following ?? 0} label="关注中" />
+                  <ProfileStat value={user.public_repos ?? 0} label="公开仓库" />
+                </div>
+
+                {/* 底部栏：重新授权 + 登出账号（等宽按钮组） */}
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <Button asChild variant="outline" size="sm" className="flex-1">
+                    <a href={reauthUrl()}>
+                      <RefreshCw className="size-4" />
+                      重新授权
+                    </a>
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => void logout()}
+                  >
+                    <LogOut className="size-4" />
+                    登出账号
+                  </Button>
+                </div>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (

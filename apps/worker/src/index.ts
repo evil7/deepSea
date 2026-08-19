@@ -33,7 +33,7 @@ export interface Env {
   GITHUB_CLIENT_SECRET: string
   /** GitHub OAuth 授权端点（默认 github.com） */
   GITHUB_OAUTH_AUTHORIZE?: string
-  /** 申请 scope（默认 "read:user user:email repo"：含读写 issue/discussion） */
+  /** 申请 scope（默认 "read:user public_repo"：公开仓库写 discussions，最小授权） */
   GITHUB_OAUTH_SCOPE?: string
   /** token 加密派生密钥（secret 注入） */
   TOKEN_ENC_KEY?: string

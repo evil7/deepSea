@@ -18,6 +18,12 @@ export interface AuthUser {
   login: string
   email: string | null
   avatar_url: string
+  name: string | null
+  bio: string | null
+  html_url: string
+  followers: number
+  following: number
+  public_repos: number
 }
 
 interface MeResponse {

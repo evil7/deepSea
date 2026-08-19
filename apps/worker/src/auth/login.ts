@@ -2,7 +2,7 @@
 // GET /auth/login —— 发起 GitHub OAuth 授权
 //   1. 若已登录（session cookie 有效）→ 直接 302 回 {redirect}，不再走 GitHub
 //   2. 未登录：生成一次性 state 存 KV（防 CSRF，TTL 7min）→ 302 GitHub authorize
-// 参数：?redirect=/xxx（可选，回跳路径，默认 /）
+// 参数：?redirect=/xxx（可选，回跳路径，默认 /）；?reauthorize=1（强制重新走授权）
 // ---------------------------------------------------------------------------
 
 import type { Env } from "../index"
@@ -20,6 +20,7 @@ export async function handleLogin(
 ): Promise<Response> {
   const url = new URL(request.url)
   const redirect = url.searchParams.get("redirect") ?? "/"
+  const reauthorize = url.searchParams.get("reauthorize") === "1"
 
   // 只允许站内相对路径，防开放重定向
   if (!redirect.startsWith("/") || redirect.startsWith("//")) {
@@ -27,9 +28,10 @@ export async function handleLogin(
   }
 
   // 已登录：直接回跳（不再触发 GitHub 授权）
+  // 但 reauthorize=1 时强制重新走 GitHub 授权（用于申请 / 更新 scope）
   const cookies = parseCookies(request.headers.get("Cookie"))
   const sessionId = cookies[SESSION_COOKIE]
-  if (sessionId) {
+  if (!reauthorize && sessionId) {
     const raw = await env.DEEPSEA_KV.get(kvKeys.session(sessionId))
     if (raw) {
       return Response.redirect(`${env.DEEPSEA_BASE}${redirect}`, 302)

@@ -44,6 +44,12 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
       email: string | null
       avatar_url: string
       tokenEnc: string
+      name?: string | null
+      bio?: string | null
+      html_url?: string
+      followers?: number
+      following?: number
+      public_repos?: number
     }
     // 解密 token 供前端 octokit 直调（不落盘，仅本次响应）
     const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
@@ -56,6 +62,12 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
         login: user.login,
         email: user.email,
         avatar_url: user.avatar_url,
+        name: user.name ?? null,
+        bio: user.bio ?? null,
+        html_url: user.html_url ?? `https://github.com/${user.login}`,
+        followers: user.followers ?? 0,
+        following: user.following ?? 0,
+        public_repos: user.public_repos ?? 0,
       },
       token,
     })

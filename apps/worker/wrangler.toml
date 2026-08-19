@@ -47,11 +47,8 @@ id = "a282b972ccde4838ac2bb101f5fb6e72"
 DEEPSEA_BASE = "https://deepc.cn"
 # GitHub OAuth 授权端点 / scope
 GITHUB_OAUTH_AUTHORIZE = "https://github.com/login/oauth/authorize"
-# OAuth scope：基础用户信息（read:user user:email）+ repo（读写 discussions/issue）
-# ⚠️ write:discussion 是无效 scope（GitHub OAuth scope 清单不存在）；gist /
-#   notifications 本项目用不到，均已移除。discussions 写入在 OAuth 体系下只能
-#   走 repo（私有+公开）或 public_repo（仅公开），无法单独授予 discussion 权限。
-GITHUB_OAUTH_SCOPE = "read:user user:email repo"
+# OAuth scope：read:user（用户资料）+ public_repo（公开仓库写 discussions）
+GITHUB_OAUTH_SCOPE = "read:user public_repo"
 # 会话 / state 有效期（秒）
 SESSION_TTL_SECONDS = "2592000"
 STATE_TTL_SECONDS = "420"

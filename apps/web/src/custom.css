@@ -300,8 +300,8 @@ body {
   filter: brightness(1.3) saturate(1.15);
 }
 
-/* —— 评论徽章：accent 渐变浸入（顶部浓、底部淡） —— */
-.community-comment-chip {
+/* —— 统计徽章：accent 渐变浸入（顶部浓、底部淡） —— */
+.community-stat-chip {
   background:
     linear-gradient(
       180deg,

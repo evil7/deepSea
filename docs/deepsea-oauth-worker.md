@@ -50,7 +50,7 @@
 **GitHub OAuth App 配置（一次性）**：
 
 - 授权回调 URL：`https://deepc.cn/auth/callback`
-- 权限 scope：`read:user user:email repo`（用户信息 + 读写 issue / discussion）
+- 权限 scope：`read:user public_repo`（用户资料 + 公开仓库写 discussions，最小授权）
 - `client_secret` 只存 Worker 环境变量 Secret，不进前端代码
 
 ## 3. Worker 路由设计
@@ -128,7 +128,7 @@ deepsea/
 ## 8. 与 deepSea 前端的对接点（现状）
 
 - 已落地：`apps/web/src/lib/auth.ts` 导出 `githubOAuthUrl(state)`，topbar「登录」已改为指向
-  `https://github.com/login/oauth/authorize?client_id=...&redirect_uri=https://deepc.cn/auth/callback&scope=read:user%20user:email%20repo&state=...`
+  `https://github.com/login/oauth/authorize?client_id=...&redirect_uri=https://deepc.cn/auth/callback&scope=read:user%20public_repo&state=...`
   （`client_id` 由 `VITE_GITHUB_OAUTH_CLIENT_ID` 注入，未配置时为占位值）
 - Worker 已实现（apps/worker，M1 完成）：/auth/login、/auth/callback、/auth/me、/auth/logout + KV + ASSETS 静态托管
 - 待开发（M2 前端对接）：调 /auth/me 渲染头像/昵称，登录按钮 → 用户菜单

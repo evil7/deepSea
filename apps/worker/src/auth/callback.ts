@@ -63,6 +63,12 @@ export async function handleCallback(
       login: user.login,
       email: user.email,
       avatar_url: user.avatar_url,
+      name: user.name,
+      bio: user.bio,
+      html_url: user.html_url,
+      followers: user.followers,
+      following: user.following,
+      public_repos: user.public_repos,
       tokenEnc,
       updatedAt: Date.now(),
     })

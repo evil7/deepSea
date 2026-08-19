@@ -5,12 +5,18 @@
 import type { Env } from "../index"
 import { GITHUB_TOKEN_ENDPOINT, GITHUB_USER_ENDPOINT } from "./kv"
 
-/** GitHub 用户档案（scope: read:user user:email repo） */
+/** GitHub 用户档案（scope: read:user public_repo） */
 export interface GitHubUser {
   id: number
   login: string
   email: string | null
   avatar_url: string
+  name: string | null
+  bio: string | null
+  html_url: string
+  followers: number
+  following: number
+  public_repos: number
 }
 
 /** code 换 access_token（GitHub OAuth Web Flow） */
@@ -69,11 +75,23 @@ export async function fetchGitHubUser(
     login: string
     email: string | null
     avatar_url: string
+    name: string | null
+    bio: string | null
+    html_url: string
+    followers: number
+    following: number
+    public_repos: number
   }
   return {
     id: data.id,
     login: data.login,
     email: data.email,
     avatar_url: data.avatar_url,
+    name: data.name ?? null,
+    bio: data.bio ?? null,
+    html_url: data.html_url ?? `https://github.com/${data.login}`,
+    followers: data.followers ?? 0,
+    following: data.following ?? 0,
+    public_repos: data.public_repos ?? 0,
   }
 }

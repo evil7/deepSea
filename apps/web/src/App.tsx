@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Routes, Route, useLocation } from "react-router-dom"
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom"
 
 import { Toaster } from "@/components/ui/sonner"
 import { Topbar } from "@/components/layout/topbar"
@@ -14,6 +14,12 @@ import { PluginDetailPage } from "@/pages/plugin-detail"
 import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
+
+/** 旧路由 /community/:number → 跳转到 /community/dpc/:number（默认社区） */
+function CommunityNumberRedirect() {
+  const { number } = useParams<{ number: string }>()
+  return <Navigate to={`/community/dpc/${number}`} replace />
+}
 
 export function App() {
   // 海洋参数配置（调试面板 #sea-debug 调整；也可以直接写 JSON 对象）
@@ -84,8 +90,21 @@ export function App() {
         />
         <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/plugin/:owner/:repo" element={<PluginDetailPage />} />
-        <Route path="/community" element={<CommunityPage />} />
-        <Route path="/community/:number" element={<CommunityDetailPage />} />
+        <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
+        <Route path="/community/dsh" element={<CommunityPage />} />
+        <Route path="/community/dpc" element={<CommunityPage />} />
+        <Route
+          path="/community/dsh/:number"
+          element={<CommunityDetailPage />}
+        />
+        <Route
+          path="/community/dpc/:number"
+          element={<CommunityDetailPage />}
+        />
+        <Route
+          path="/community/:number"
+          element={<CommunityNumberRedirect />}
+        />
         <Route
           path="*"
           element={
@@ -97,8 +116,11 @@ export function App() {
         />
       </Routes>
 
-      {/* 全局提示（自行捕捞需登录等） */}
-      <Toaster position="bottom-right" />
+      {/* 全局提示（自行捕捞需登录等）
+           · richColors：开启后 success/info/warning/error 各自醒目配色
+             （否则所有类型同色，仅图标不同，告警不醒目）
+           · theme="dark"：站点为深色海洋视觉，固定暗色避免浅色系统下白底突兀 */}
+      <Toaster position="bottom-right" richColors theme="dark" />
     </div>
   )
 }

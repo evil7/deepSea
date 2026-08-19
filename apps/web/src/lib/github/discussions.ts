@@ -22,13 +22,13 @@ export const DISCUSSIONS_SEED_URL = "/data/discussions.json"
 export const OFFICIAL_DISCUSSIONS_SEED_URL = "/data/discussions-official.json"
 
 /**
- * 社区来源标识（URL `?source=` 取值）：
+ * 社区来源标识（URL 路径段 `/community/{source}` 取值）：
  *   · dsh = 蓝鲸社区（官方 deepseek-ai/deepseek-harness，只读）
  *   · dpc = 浪尖酒馆（我们 evil7/deepSea，可互动，默认）
  */
 export type CommunitySource = "dsh" | "dpc"
 
-/** 单个社区的配置（owner/repo/名称/简介/回复开关/发帖入口/对侧社区） */
+/** 单个社区的配置（owner/repo/名称/简介/发帖入口/对侧社区） */
 export interface CommunityInfo {
   source: CommunitySource
   owner: string
@@ -37,8 +37,6 @@ export interface CommunityInfo {
   label: string
   /** 社区简介（页头副标题） */
   description: string
-  /** 是否开启站内回复/表情（蓝鲸社区无法站外调接口写，显式 false） */
-  replyEnable: boolean
   /** 发起讨论的 GitHub 跳转链接 */
   createUrl: string
   /** 对侧社区名称（用于「前往xxxx」按钮） */
@@ -57,13 +55,9 @@ export function resolveCommunity(
       owner: OFFICIAL_OWNER,
       repo: OFFICIAL_REPO,
       label: "蓝鲸社区",
-      description: "DeepSeek Harness 官方讨论 · 内容实时同步，仅浏览。",
-      // 官方 deepseek-ai 组织启用了 OAuth App access restrictions，第三方
-      // OAuth App 无法写入（addReaction/removeReaction/addDiscussionComment 均
-      // FORBIDDEN「data access to third-parties is limited」）。补充
-      // write:discussion scope 也无法绕过（这是组织级访问限制，非权限范围问题）。
-      // 读取完全正常；写入需组织管理员批准本 OAuth App，或换 GitHub App。
-      replyEnable: false,
+      description: "DeepSeek Harness 官方讨论 · 内容实时同步。",
+      // 是否可回复不再在此硬编码：详情页通过 GraphQL 探测每个 discussion 的
+      // locked / state 动态判断（仅当管理员锁定或关闭该讨论时才显示只读）。
       createUrl: `https://github.com/${OFFICIAL_OWNER}/${OFFICIAL_REPO}/discussions/new`,
       counterpartLabel: "浪尖酒馆",
       counterpartSource: "dpc",
@@ -75,7 +69,6 @@ export function resolveCommunity(
     repo: COMMUNITY_REPO,
     label: "浪尖酒馆",
     description: "深海的自家酒馆，畅聊插件、Q&A 与创意 · 回复与表态都从这里开始。",
-    replyEnable: true,
     createUrl: `https://github.com/${COMMUNITY_OWNER}/${COMMUNITY_REPO}/discussions/new`,
     counterpartLabel: "蓝鲸社区",
     counterpartSource: "dsh",
@@ -161,12 +154,29 @@ export interface DiscussionDetail {
   authorAvatarUrl?: string
   createdAt: string
   updatedAt: string
+  /** 是否被管理员锁定（锁定后无法回复 / 表态） */
+  locked: boolean
+  /** 是否已关闭（关闭后无法回复） */
+  closed: boolean
+  /** 投票数（upvote） */
+  upvoteCount: number
+  /** 发起人的其他帖子（不含当前帖，最多 10 条） */
+  authorPosts: AuthorPost[]
+  /** 评论总数（含嵌套回复；列表可能因 first 截断而少于总数） */
+  commentTotalCount: number
   /** 讨论主体的表情反应 */
   reactions: ReactionGroup[]
   comments: DiscussionComment[]
 }
 
-/** 评论（含表情反应） */
+/** 发起人的其他帖子（边栏「发起人的其他帖子」卡片，最多 10 条） */
+export interface AuthorPost {
+  number: number
+  title: string
+  url: string
+}
+
+/** 评论（含表情反应与回复树字段） */
 export interface DiscussionComment {
   id: string
   author: string
@@ -174,6 +184,14 @@ export interface DiscussionComment {
   avatarUrl?: string
   body: string
   createdAt: string
+  /** 是否被标记为答案（管理员采纳） */
+  isAnswer: boolean
+  /** 评论投票数 */
+  upvoteCount: number
+  /** 被回复的父评论 node id（null = 顶层评论） */
+  replyToId: string | null
+  /** 被回复的父评论作者 login（用于「回复 @xxx」引用，null = 顶层） */
+  replyToAuthor: string | null
   reactions: ReactionGroup[]
 }
 
@@ -184,6 +202,8 @@ export interface DiscussionSummary {
   categoryName: string
   /** 评论数（热门排序依据） */
   comments: number
+  /** 参与人数（发帖者 + 评论作者去重；旧 seed 可能缺失 → 可选，渲染时兜底） */
+  participants?: number
   author: string
   /** 发起者头像（seed 可能没有 → 可选，渲染时用 fallback） */
   avatarUrl?: string
@@ -322,6 +342,16 @@ export function sortDiscussionsHot(
   )
 }
 
+/** 参与人数：发帖者 + 评论作者去重（评论作者可能为空，发帖者恒计入） */
+export function countParticipants(
+  author: string,
+  commentAuthors: string[]
+): number {
+  const set = new Set(commentAuthors)
+  set.add(author)
+  return set.size
+}
+
 /** 相对时间（如 "3 分钟前"、"2 小时前"、"5 天前"） */
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso)
@@ -394,7 +424,10 @@ async function fetchDiscussionsLive(
             title: string
             url: string
             category: { name: string }
-            comments: { totalCount: number }
+            comments: {
+              totalCount: number
+              nodes?: { author: { login: string } }[]
+            }
             author: { login: string; avatarUrl: string }
             createdAt: string
             updatedAt: string
@@ -408,7 +441,10 @@ async function fetchDiscussionsLive(
             nodes {
               number title url
               category { name }
-              comments { totalCount }
+              comments(first: 100) {
+                totalCount
+                nodes { author { login } }
+              }
               author { login avatarUrl }
               createdAt updatedAt
             }
@@ -425,6 +461,10 @@ async function fetchDiscussionsLive(
       url: d.url,
       categoryName: d.category.name,
       comments: d.comments.totalCount,
+      participants: countParticipants(
+        d.author.login,
+        (d.comments.nodes ?? []).map((c) => c.author.login)
+      ),
       author: d.author.login,
       avatarUrl: d.author.avatarUrl,
       createdAt: d.createdAt,
@@ -459,23 +499,31 @@ async function fetchDiscussionDetail(
   try {
     const data = await githubGraphQL<{
       repository?: {
+        id: string
         discussion?: {
           id: string
           number: number
           title: string
           body: string
           url: string
+          locked: boolean
+          closed: boolean
+          upvoteCount: number
           category: { name: string }
           author: { login: string; avatarUrl: string }
           createdAt: string
           updatedAt: string
           reactionGroups?: RawReactionGroup[]
           comments: {
+            totalCount: number
             nodes: {
               id: string
               author: { login: string; avatarUrl: string }
               body: string
               createdAt: string
+              isAnswer: boolean
+              upvoteCount: number
+              replyTo?: { id: string; author: { login: string } } | null
               reactionGroups?: RawReactionGroup[]
             }[]
           }
@@ -484,17 +532,21 @@ async function fetchDiscussionDetail(
     }>(
       `query ($owner: String!, $repo: String!, $number: Int!) {
         repository(owner: $owner, name: $repo) {
+          id
           discussion(number: $number) {
-            id number title body url
+            id number title body url locked closed upvoteCount
             category { name }
             author { login avatarUrl }
             createdAt updatedAt
             reactionGroups { content users { totalCount } viewerHasReacted }
-            comments(first: 50) {
+            comments(first: 100) {
+              totalCount
               nodes {
                 id
                 author { login avatarUrl }
                 body createdAt
+                isAnswer upvoteCount
+                replyTo { id author { login } }
                 reactionGroups { content users { totalCount } viewerHasReacted }
               }
             }
@@ -503,8 +555,15 @@ async function fetchDiscussionDetail(
       }`,
       { owner, repo, number }
     )
-    const d = data.repository?.discussion
-    if (!d) return null
+    const repoNode = data.repository
+    const d = repoNode?.discussion
+    if (!d || !repoNode) return null
+    // 发起人的其他帖子（排除当前帖，最多 10 条；失败降级为空数组）
+    const authorPosts = await fetchAuthorPosts(
+      d.author.login,
+      repoNode.id,
+      number
+    )
     return {
       id: d.id,
       number: d.number,
@@ -516,6 +575,11 @@ async function fetchDiscussionDetail(
       authorAvatarUrl: d.author.avatarUrl,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
+      locked: d.locked,
+      closed: d.closed,
+      upvoteCount: d.upvoteCount,
+      authorPosts,
+      commentTotalCount: d.comments.totalCount,
       reactions: mapReactions(d.reactionGroups),
       comments: (d.comments.nodes ?? []).map((c) => ({
         id: c.id,
@@ -523,11 +587,55 @@ async function fetchDiscussionDetail(
         avatarUrl: c.author.avatarUrl,
         body: c.body,
         createdAt: c.createdAt,
+        isAnswer: c.isAnswer,
+        upvoteCount: c.upvoteCount,
+        replyToId: c.replyTo?.id ?? null,
+        replyToAuthor: c.replyTo?.author?.login ?? null,
         reactions: mapReactions(c.reactionGroups),
       })),
     }
   } catch {
     return null
+  }
+}
+
+/**
+ * 查询发起人的其他帖子（User.repositoryDiscussions，按仓库过滤）。
+ * 排除当前讨论本身，最多返回 10 条（按最近更新倒序）。
+ * 失败返回空数组（不抛错；边栏仅在非空时展示该卡片）。
+ */
+async function fetchAuthorPosts(
+  login: string,
+  repositoryId: string,
+  excludeNumber: number
+): Promise<AuthorPost[]> {
+  try {
+    const data = await githubGraphQL<{
+      user?: {
+        repositoryDiscussions?: {
+          nodes?: { number: number; title: string; url: string }[]
+        } | null
+      } | null
+    }>(
+      `query ($login: String!, $repositoryId: ID!, $first: Int!) {
+        user(login: $login) {
+          repositoryDiscussions(
+            first: $first
+            repositoryId: $repositoryId
+            orderBy: { field: UPDATED_AT, direction: DESC }
+          ) {
+            nodes { number title url }
+          }
+        }
+      }`,
+      { login, repositoryId, first: 11 }
+    )
+    return (data.user?.repositoryDiscussions?.nodes ?? [])
+      .filter((p) => p.number !== excludeNumber)
+      .slice(0, 10)
+      .map((p) => ({ number: p.number, title: p.title, url: p.url }))
+  } catch {
+    return []
   }
 }
 
@@ -547,13 +655,13 @@ export function loadOfficialDiscussionDetail(
 
 /**
  * 发表回复（前端 octokit addDiscussionComment mutation，需登录）。
- * 成功返回新评论，失败返回 null（不抛错）。
+ * 成功返回 comment；失败 comment=null + failure 分类（不抛错）。
  */
 export async function postDiscussionComment(
   _number: number,
   discussionId: string,
   body: string
-): Promise<DiscussionComment | null> {
+): Promise<{ comment: DiscussionComment | null; failure?: WriteFailure }> {
   try {
     const data = await githubGraphQL<{
       addDiscussionComment?: {
@@ -579,29 +687,76 @@ export async function postDiscussionComment(
       { discussionId, body }
     )
     const c = data.addDiscussionComment?.comment
-    if (!c) return null
+    if (!c) return { comment: null }
     return {
-      id: c.id,
-      author: c.author.login,
-      avatarUrl: c.author.avatarUrl,
-      body: c.body,
-      createdAt: c.createdAt,
-      reactions: mapReactions(c.reactionGroups),
+      comment: {
+        id: c.id,
+        author: c.author.login,
+        avatarUrl: c.author.avatarUrl,
+        body: c.body,
+        createdAt: c.createdAt,
+        // 新发布的评论恒为顶层、非答案、零票
+        isAnswer: false,
+        upvoteCount: 0,
+        replyToId: null,
+        replyToAuthor: null,
+        reactions: mapReactions(c.reactionGroups),
+      },
     }
-  } catch {
-    return null
+  } catch (err) {
+    return { comment: null, failure: classifyWriteError(err) }
   }
+}
+
+/** 写操作失败原因分类（供 UI 针对性提示） */
+export type WriteFailureKind = "forbidden" | "rate_limited" | "unknown"
+
+export interface WriteFailure {
+  kind: WriteFailureKind
+  /** 原始错误信息（调试用，非必须展示） */
+  message?: string
+}
+
+/** 将捕获的异常归类为可展示的失败原因（识别权限不足 / 限流 / 其它） */
+function classifyWriteError(err: unknown): WriteFailure {
+  const e = err as {
+    message?: string
+    errors?: Array<{ type?: string; message?: string }>
+  }
+  const parts: string[] = []
+  if (e.errors) {
+    for (const gqlErr of e.errors) {
+      parts.push(gqlErr.type ?? "", gqlErr.message ?? "")
+    }
+  }
+  if (e.message) parts.push(e.message)
+  const full = parts.join(" ")
+
+  // 权限不足：组织 OAuth App 访问限制 / 无写权限
+  if (
+    /FORBIDDEN/i.test(full) ||
+    /access restrictions/i.test(full) ||
+    /third-parties is limited/i.test(full) ||
+    /required permissions/i.test(full)
+  ) {
+    return { kind: "forbidden", message: e.message }
+  }
+  // 限流（含 secondary rate limit / abuse detection）
+  if (/rate limit|abuse detection/i.test(full)) {
+    return { kind: "rate_limited", message: e.message }
+  }
+  return { kind: "unknown", message: e.message }
 }
 
 /**
  * 切换表情反应（前端 octokit addReaction / removeReaction，需登录）。
- * active=true 添加，false 移除。成功返回 true，失败返回 false。
+ * active=true 添加，false 移除。成功 ok=true；失败 ok=false + failure 分类。
  */
 export async function toggleReaction(
   subjectId: string,
   content: string,
   active: boolean
-): Promise<boolean> {
+): Promise<{ ok: boolean; failure?: WriteFailure }> {
   try {
     const mutation = active
       ? `mutation ($subjectId: ID!, $content: ReactionContent!) {
@@ -611,9 +766,9 @@ export async function toggleReaction(
           removeReaction(input: { subjectId: $subjectId, content: $content }) { reaction { content } }
         }`
     await githubGraphQL(mutation, { subjectId, content })
-    return true
-  } catch {
-    return false
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, failure: classifyWriteError(err) }
   }
 }
 

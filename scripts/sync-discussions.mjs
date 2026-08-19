@@ -43,7 +43,10 @@ const LIST_QUERY = /* GraphQL */ `
           title
           url
           category { name }
-          comments { totalCount }
+          comments(first: 100) {
+            totalCount
+            nodes { author { login } }
+          }
           author { login }
           createdAt
           updatedAt
@@ -52,6 +55,13 @@ const LIST_QUERY = /* GraphQL */ `
     }
   }
 `
+
+/** 参与人数：发帖者 + 评论作者去重 */
+function countParticipants(author, commentAuthors) {
+  const set = new Set(commentAuthors)
+  set.add(author)
+  return set.size
+}
 
 async function fetchDiscussions(owner, repo, first, token) {
   const data = await graphql({
@@ -69,6 +79,10 @@ async function fetchDiscussions(owner, repo, first, token) {
     url: it.url,
     categoryName: it.category?.name ?? "未分类",
     comments: it.comments?.totalCount ?? 0,
+    participants: countParticipants(
+      it.author?.login ?? "unknown",
+      (it.comments?.nodes ?? []).map((c) => c.author?.login ?? "unknown")
+    ),
     author: it.author?.login ?? "unknown",
     createdAt: it.createdAt,
     updatedAt: it.updatedAt,

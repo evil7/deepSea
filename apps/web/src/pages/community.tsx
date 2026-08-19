@@ -8,8 +8,9 @@ import {
   PenLine,
   Search,
   User,
+  Users,
 } from "lucide-react"
-import { Link, useSearchParams } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { useAuth } from "@/hooks/use-auth"
@@ -150,9 +151,8 @@ function CommunityBackdrop({ image }: { image: string }) {
 
 export function CommunityPage() {
   const { user } = useAuth()
-  const [searchParams] = useSearchParams()
-  // 社区来源：?source=dsh（蓝鲸社区，只读）| dpc（浪尖酒馆，可互动，默认）
-  const source = searchParams.get("source")
+  // 社区来源：/community/dsh（蓝鲸社区，只读）| /community/dpc（浪尖酒馆，可互动）
+  const { source } = useParams<{ source: string }>()
   const info = useMemo(() => resolveCommunity(source), [source])
 
   // 背景图 + 自动取色（autoColor）：分析背景图色调推选三色 → 注入 CSS 变量，
@@ -298,12 +298,12 @@ export function CommunityPage() {
             <Badge
               className={cn(
                 "shrink-0 font-mono text-[10px]",
-                info.replyEnable
+                info.source === "dpc"
                   ? "border-theme-soft bg-theme-soft text-theme"
                   : "border-amber-400/40 bg-amber-400/10 text-amber-300"
               )}
             >
-              {info.replyEnable ? "可互动" : "只读"}
+              {info.source === "dpc" ? "自家社区" : "官方社区"}
             </Badge>
             <p className="text-muted-foreground">{info.description}</p>
           </div>
@@ -315,7 +315,7 @@ export function CommunityPage() {
               variant="outline"
               className="border-border bg-card text-foreground hover:bg-accent"
             >
-              <Link to={`/community?source=${info.counterpartSource}`}>
+              <Link to={`/community/${info.counterpartSource}`}>
                 <ArrowLeft className="size-4" />
                 前往{info.counterpartLabel}
               </Link>
@@ -408,7 +408,7 @@ export function CommunityPage() {
           pageItems.map((d) => (
             <Link
               key={d.number}
-              to={`/community/${d.number}?source=${source ?? "dpc"}`}
+              to={`/community/${info.source}/${d.number}`}
               className="community-card group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border py-3 pr-4 pl-4 hover-theme-border"
             >
               {/* 左侧分类色条 */}
@@ -444,13 +444,20 @@ export function CommunityPage() {
                   {formatRelativeTime(d.updatedAt)}
                 </p>
               </div>
-              {/* 评论数徽章（accent 渐变浸入） */}
-              <div className="community-comment-chip flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-3 py-2">
-                <span className="flex items-center gap-1 text-sm font-semibold text-foreground">
+              {/* 尾部统计：评论数 + 参与人数（icon + 数字，无文字） */}
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
                   <MessagesSquare className="size-3.5 text-theme-accent" />
-                  {d.comments}
-                </span>
-                <span className="text-[10px] text-muted-foreground">评论</span>
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                    {d.comments}
+                  </span>
+                </div>
+                <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
+                  <Users className="size-3.5 text-theme-accent" />
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                    {d.participants ?? d.comments + 1}
+                  </span>
+                </div>
               </div>
             </Link>
           ))

@@ -575,9 +575,9 @@ export function CommunitySlide() {
     const rect = el.getBoundingClientRect()
     const ratio = (e.clientX - rect.left) / rect.width
     if (ratio < 0.5) {
-      navigate("/community?source=dsh")
+      navigate("/community/dsh")
     } else {
-      navigate("/community?source=dpc")
+      navigate("/community/dpc")
     }
   }
 
