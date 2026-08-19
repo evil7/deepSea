@@ -1,35 +1,41 @@
 import { octokit } from "@/lib/github/client"
+import { CACHE_FILES, loadCacheFile } from "@/lib/github/cache"
 import { PLUGIN_TOPICS } from "@/lib/github/topics"
 import type { PluginRepo } from "@/lib/github/types"
 
 // ---------------------------------------------------------------------------
 // 插件仓库搜索
-//   · 前端主路径：加载种子数据（public/data/...json）→ 内存过滤/排序/分页，
+//   · 前端主路径：加载缓存数据（cache 分支 → 仓库 seed 兜底）→ 内存过滤/排序/分页，
 //     不消耗 API 配额
 //   · 实时刷新：手动触发 octokit 搜索（限流敏感，需要 token），结果归一化
 // ---------------------------------------------------------------------------
 
-// —— 种子数据加载 ——
+// —— 缓存数据加载 ——
 
 let seedCache: PluginRepo[] | null = null
 let seedLoading: Promise<PluginRepo[]> | null = null
 
-/** 加载插件种子数据（内存缓存；失败返回空数组） */
+/**
+ * 加载插件缓存数据（内存缓存；cache 分支优先，仓库 seed 兜底，失败返回空数组）。
+ * @param url 仓库兜底 seed 地址（cache 分支不可用时回退到它）
+ */
 export function loadPluginSeed(url: string): Promise<PluginRepo[]> {
   if (seedCache) {
     return Promise.resolve(seedCache)
   }
   if (!seedLoading) {
-    seedLoading = fetch(url)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`seed ${res.status}`)
-        }
-        return res.json()
-      })
+    seedLoading = loadCacheFile<PluginRepo[]>(CACHE_FILES.repos)
+      .catch(() =>
+        fetch(url).then((res) => {
+          if (!res.ok) {
+            throw new Error(`seed ${res.status}`)
+          }
+          return res.json()
+        })
+      )
       .then((data: PluginRepo[]) => {
-        seedCache = data
-        return data
+        seedCache = Array.isArray(data) ? data : []
+        return seedCache
       })
       .catch(() => {
         seedCache = []

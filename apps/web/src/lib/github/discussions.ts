@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { githubGraphQL, getToken } from "@/lib/github/client"
+import { CACHE_FILES, loadCacheFile } from "@/lib/github/cache"
 
 /** 主社区（自有仓库，可互动） */
 export const COMMUNITY_OWNER = "evil7"
@@ -260,19 +261,21 @@ export function getDiscussionsCache(): DiscussionSummary[] | null {
   return seedCache
 }
 
-/** 加载 discussions 种子（内存缓存；失败返回空数组，不抛错） */
+/** 加载 discussions 缓存（内存缓存；cache 分支优先，仓库 seed 兜底，失败返回空数组） */
 export function loadDiscussionsSeed(): Promise<DiscussionSummary[]> {
   if (seedCache) {
     return Promise.resolve(seedCache)
   }
   if (!seedLoading) {
-    seedLoading = fetch(DISCUSSIONS_SEED_URL)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`seed ${res.status}`)
-        }
-        return res.json()
-      })
+    seedLoading = loadCacheFile<DiscussionSummary[]>(CACHE_FILES.discussions)
+      .catch(() =>
+        fetch(DISCUSSIONS_SEED_URL).then((res) => {
+          if (!res.ok) {
+            throw new Error(`seed ${res.status}`)
+          }
+          return res.json()
+        })
+      )
       .then((data: DiscussionSummary[]) => {
         seedCache = Array.isArray(data) ? data : []
         return seedCache
@@ -288,19 +291,23 @@ export function loadDiscussionsSeed(): Promise<DiscussionSummary[]> {
 let officialSeedCache: DiscussionSummary[] | null = null
 let officialSeedLoading: Promise<DiscussionSummary[]> | null = null
 
-/** 加载官方社区 discussions 种子（内存缓存；失败返回空数组，不抛错） */
+/** 加载官方社区 discussions 缓存（内存缓存；cache 分支优先，仓库 seed 兜底） */
 export function loadOfficialDiscussionsSeed(): Promise<DiscussionSummary[]> {
   if (officialSeedCache) {
     return Promise.resolve(officialSeedCache)
   }
   if (!officialSeedLoading) {
-    officialSeedLoading = fetch(OFFICIAL_DISCUSSIONS_SEED_URL)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`official seed ${res.status}`)
-        }
-        return res.json()
-      })
+    officialSeedLoading = loadCacheFile<DiscussionSummary[]>(
+      CACHE_FILES.officialDiscussions
+    )
+      .catch(() =>
+        fetch(OFFICIAL_DISCUSSIONS_SEED_URL).then((res) => {
+          if (!res.ok) {
+            throw new Error(`official seed ${res.status}`)
+          }
+          return res.json()
+        })
+      )
       .then((data: DiscussionSummary[]) => {
         officialSeedCache = Array.isArray(data) ? data : []
         return officialSeedCache

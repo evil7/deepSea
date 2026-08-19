@@ -18,6 +18,8 @@
     "preview": "pnpm --filter @deepsea/web preview",
     "search:plugins": "node scripts/search-deepseek-repos.mjs",
     "sync:discussions": "node scripts/sync-discussions.mjs",
+    "publish:cache": "node scripts/publish-cache.mjs",
+    "sync:cache": "pnpm search:plugins && pnpm sync:discussions && pnpm publish:cache",
     "dev:worker": "pnpm --filter @deepsea/worker dev",
     "deploy": "pnpm typegen && pnpm build && pnpm --filter @deepsea/worker deploy",
     "secret:list": "pnpm --filter @deepsea/worker secret:list",

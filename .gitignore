@@ -36,3 +36,6 @@ dist-ssr
 
 # 临时计划/工作区（不进版本库）
 tmp/
+
+# cache 分支发布用的临时 worktree（scripts/publish-cache.mjs 生成）
+.cache-worktree/
