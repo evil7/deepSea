@@ -203,8 +203,8 @@ export interface DiscussionSummary {
   categoryName: string
   /** 评论数（热门排序依据） */
   comments: number
-  /** 参与人数（发帖者 + 评论作者去重；旧 seed 可能缺失 → 可选，渲染时兜底） */
-  participants?: number
+  /** 投票数（API 直接提供的 Discussion.upvoteCount；旧 seed 可能缺失 → 可选，兜底 0） */
+  upvoteCount?: number
   author: string
   /** 发起者头像（seed 可能没有 → 可选，渲染时用 fallback） */
   avatarUrl?: string
@@ -349,16 +349,6 @@ export function sortDiscussionsHot(
   )
 }
 
-/** 参与人数：发帖者 + 评论作者去重（评论作者可能为空，发帖者恒计入） */
-export function countParticipants(
-  author: string,
-  commentAuthors: string[]
-): number {
-  const set = new Set(commentAuthors)
-  set.add(author)
-  return set.size
-}
-
 /** 相对时间（如 "3 分钟前"、"2 小时前"、"5 天前"） */
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso)
@@ -422,13 +412,11 @@ interface LiveDiscussionNode {
   title: string
   url: string
   category: { name: string }
-  comments: {
-    totalCount: number
-    nodes?: { author: { login: string } }[]
-  }
+  comments: { totalCount: number }
   author: { login: string; avatarUrl: string }
   createdAt: string
   updatedAt: string
+  upvoteCount: number
 }
 
 /**
@@ -461,7 +449,8 @@ async function fetchDiscussionsLive(
     let cursor: string | null = null
     let hasNext = true
     // 聚合站仅需最新讨论：超大社区截断到 MAX_PAGES×first（最多 500 条），
-    // 防止无限请求；comments nodes 是主要复杂度开销，见下方 first:50 注释。
+    // 防止无限请求。列表只拉 API 直接提供的标量字段（comments.totalCount /
+    // upvoteCount），不再为「参与人数」拉评论作者节点，单页请求最轻。
     const MAX_PAGES = 5
 
     for (let page = 0; page < MAX_PAGES && hasNext; page++) {
@@ -475,12 +464,10 @@ async function fetchDiscussionsLive(
               nodes {
                 number title url
                 category { name }
-                comments(first: 50) {
-                  totalCount
-                  nodes { author { login } }
-                }
+                comments { totalCount }
                 author { login avatarUrl }
                 createdAt updatedAt
+                upvoteCount
               }
             }
           }
@@ -499,12 +486,7 @@ async function fetchDiscussionsLive(
           url: d.url,
           categoryName: d.category.name,
           comments: d.comments.totalCount,
-          // 参与人数 = 发帖者 + 最近 50 条评论作者去重（近似下界）：不拉全量评论
-          // 作者（否则分页 first=100 时会累积超 GraphQL 复杂度），50 已覆盖绝大多数参与者
-          participants: countParticipants(
-            d.author.login,
-            (d.comments.nodes ?? []).map((c) => c.author.login)
-          ),
+          upvoteCount: d.upvoteCount,
           author: d.author.login,
           avatarUrl: d.author.avatarUrl,
           createdAt: d.createdAt,
@@ -523,14 +505,16 @@ async function fetchDiscussionsLive(
 
 /** 登录后实时拉取主社区讨论列表（octokit 直调，替换 seed 缓存） */
 export function loadDiscussionsLive(): Promise<DiscussionSummary[] | null> {
-  return fetchDiscussionsLive(COMMUNITY_OWNER, COMMUNITY_REPO, 100)
+  // first=50：本地实测单次请求 first=50≈1.7s vs first=100≈2.4s。官方社区约 50 条
+  // 一次即可拉全（更少往返更快）；超过 50 条由 fetchDiscussionsLive 内部分页补齐。
+  return fetchDiscussionsLive(COMMUNITY_OWNER, COMMUNITY_REPO, 50)
 }
 
 /** 登录后实时拉取官方社区讨论列表（octokit 直调，只读） */
 export function loadOfficialDiscussionsLive(): Promise<
   DiscussionSummary[] | null
 > {
-  return fetchDiscussionsLive(OFFICIAL_OWNER, OFFICIAL_REPO, 100)
+  return fetchDiscussionsLive(OFFICIAL_OWNER, OFFICIAL_REPO, 50)
 }
 
 /**

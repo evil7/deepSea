@@ -1,14 +1,25 @@
 [
   {
-    "number": 3371,
-    "title": "反馈一个问题: 调用 Pwsh Error: tool call aborted",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3371",
-    "categoryName": "Q&A",
+    "number": 1728,
+    "title": "加群 ： 微信 &QQ群超2000人，送DeepSeek Harness插件1836款，我己整理好了（咱们不要重复开发相同的插件）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1728",
+    "categoryName": "General",
+    "comments": 41,
+    "upvoteCount": 9,
+    "author": "leenkcool",
+    "createdAt": "2026-08-15T05:30:04Z",
+    "updatedAt": "2026-08-19T11:00:20Z"
+  },
+  {
+    "number": 3383,
+    "title": "DeepSeek Harness 飞书交流群（扫码即进）· 社区插件目录",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3383",
+    "categoryName": "General",
     "comments": 0,
-    "participants": 1,
-    "author": "wang2766157",
-    "createdAt": "2026-08-19T09:46:12Z",
-    "updatedAt": "2026-08-19T09:46:12Z"
+    "upvoteCount": 1,
+    "author": "shinjiyu",
+    "createdAt": "2026-08-19T10:33:10Z",
+    "updatedAt": "2026-08-19T11:00:03Z"
   },
   {
     "number": 3290,
@@ -16,10 +27,65 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3290",
     "categoryName": "Q&A",
     "comments": 1,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "oliblue-evan",
     "createdAt": "2026-08-19T06:03:16Z",
-    "updatedAt": "2026-08-19T09:45:03Z"
+    "updatedAt": "2026-08-19T11:00:03Z"
+  },
+  {
+    "number": 2699,
+    "title": "Bug：`pnpm dsh web` 启动失败，报错 \"--expose-internals is required for HMR service\"",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2699",
+    "categoryName": "Q&A",
+    "comments": 32,
+    "upvoteCount": 4,
+    "author": "XuJianrui",
+    "createdAt": "2026-08-17T06:31:02Z",
+    "updatedAt": "2026-08-19T10:46:06Z"
+  },
+  {
+    "number": 1989,
+    "title": "dsh-compass 已发布,右侧文件夹面板和只读 git tree",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1989",
+    "categoryName": "Show Your Plugins!",
+    "comments": 13,
+    "upvoteCount": 1,
+    "author": "Happy2Git",
+    "createdAt": "2026-08-15T14:35:26Z",
+    "updatedAt": "2026-08-19T10:44:06Z"
+  },
+  {
+    "number": 2423,
+    "title": "https://dsh-hub.cc 插件商店上线。收录超过7000+插件，支持搜索、按类检索、一键安装与发布",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2423",
+    "categoryName": "General",
+    "comments": 48,
+    "upvoteCount": 5,
+    "author": "sliverp",
+    "createdAt": "2026-08-16T12:55:00Z",
+    "updatedAt": "2026-08-19T10:40:53Z"
+  },
+  {
+    "number": 3073,
+    "title": "Bug: pi-ai adapter misclassifies 401/403 in error text as AUTH, surfacing misleading \"API key is invalid\"",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3073",
+    "categoryName": "General",
+    "comments": 1,
+    "upvoteCount": 1,
+    "author": "heming-gmh",
+    "createdAt": "2026-08-18T09:05:19Z",
+    "updatedAt": "2026-08-19T10:39:29Z"
+  },
+  {
+    "number": 3384,
+    "title": "[Bug Fix] Guard tool call name and id against null stream deltas in llm-deepseek",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3384",
+    "categoryName": "General",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "kolawong",
+    "createdAt": "2026-08-19T10:36:32Z",
+    "updatedAt": "2026-08-19T10:36:32Z"
   },
   {
     "number": 2397,
@@ -27,21 +93,208 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2397",
     "categoryName": "General",
     "comments": 4,
-    "participants": 4,
+    "upvoteCount": 3,
     "author": "shinjiyu",
     "createdAt": "2026-08-16T11:36:15Z",
-    "updatedAt": "2026-08-19T09:38:32Z"
+    "updatedAt": "2026-08-19T10:33:42Z"
   },
   {
-    "number": 2423,
-    "title": "https://dsh-hub.cc 插件商店上线。收录超过7000+插件，支持搜索、按类检索、一键安装与发布",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2423",
+    "number": 3382,
+    "title": "建议加一个安全模式，不加载任何第三方插件",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3382",
+    "categoryName": "Ideas",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "jinsiyu",
+    "createdAt": "2026-08-19T10:31:29Z",
+    "updatedAt": "2026-08-19T10:31:29Z"
+  },
+  {
+    "number": 2610,
+    "title": "非electron类型的桌面端(Non-Electron desktop client)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2610",
     "categoryName": "General",
-    "comments": 47,
-    "participants": 5,
-    "author": "sliverp",
-    "createdAt": "2026-08-16T12:55:00Z",
-    "updatedAt": "2026-08-19T09:37:47Z"
+    "comments": 3,
+    "upvoteCount": 3,
+    "author": "tsdaer",
+    "createdAt": "2026-08-17T02:28:12Z",
+    "updatedAt": "2026-08-19T10:28:43Z"
+  },
+  {
+    "number": 294,
+    "title": "大家是装在windows还是在wsl上啊",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/294",
+    "categoryName": "Q&A",
+    "comments": 5,
+    "upvoteCount": 1,
+    "author": "Soliloquistx",
+    "createdAt": "2026-08-13T15:29:52Z",
+    "updatedAt": "2026-08-19T10:28:25Z"
+  },
+  {
+    "number": 3381,
+    "title": "插件分享：dsh-provider-probe v0.2.0 —— 模型连通性与能力诊断",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3381",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "Wanbinyu",
+    "createdAt": "2026-08-19T10:25:01Z",
+    "updatedAt": "2026-08-19T10:25:01Z"
+  },
+  {
+    "number": 3380,
+    "title": "dsh-tarot-arcana：可复现的三张牌反思工具（无网络、可测试）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3380",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "medisean",
+    "createdAt": "2026-08-19T10:24:22Z",
+    "updatedAt": "2026-08-19T10:24:22Z"
+  },
+  {
+    "number": 3379,
+    "title": "接入火山方舟（Ark, volces.com）报 400：pi-ai 将系统提示词以 developer 角色发出，方舟只接受 system/assistant/user/tool",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3379",
+    "categoryName": "General",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "Yn4brns",
+    "createdAt": "2026-08-19T10:19:50Z",
+    "updatedAt": "2026-08-19T10:20:24Z"
+  },
+  {
+    "number": 3118,
+    "title": "桌面版来了，给 DSH 补了个 Electron 桌面版（file:// + IPC，无需本地服务）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3118",
+    "categoryName": "Show Your Plugins!",
+    "comments": 6,
+    "upvoteCount": 1,
+    "author": "imlx",
+    "createdAt": "2026-08-18T11:56:05Z",
+    "updatedAt": "2026-08-19T10:16:38Z"
+  },
+  {
+    "number": 3378,
+    "title": "dsh-mini-games: 猜数字 / 2048 / 扫雷 — details 面板的纯前端小游戏合集",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3378",
+    "categoryName": "Show Your Plugins!",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "aga-j",
+    "createdAt": "2026-08-19T10:12:45Z",
+    "updatedAt": "2026-08-19T10:12:45Z"
+  },
+  {
+    "number": 3191,
+    "title": "[Proposal] Session event registration for out-of-tree plugins — unknown event types refuse resume (dsh-click/observed|action crashes rc.6/rc.7)",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3191",
+    "categoryName": "Ideas",
+    "comments": 9,
+    "upvoteCount": 1,
+    "author": "Mchsd",
+    "createdAt": "2026-08-18T17:12:10Z",
+    "updatedAt": "2026-08-19T10:11:34Z"
+  },
+  {
+    "number": 3377,
+    "title": "子 agent 使用的是父 agent 创建时快照的模型,不跟随 Web UI 里切换后的当前模型",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3377",
+    "categoryName": "Q&A",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "Ryze-T",
+    "createdAt": "2026-08-19T10:10:29Z",
+    "updatedAt": "2026-08-19T10:10:29Z"
+  },
+  {
+    "number": 2225,
+    "title": "建议加大或可自定义重试次数",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2225",
+    "categoryName": "Ideas",
+    "comments": 1,
+    "upvoteCount": 3,
+    "author": "zhongjianhua163",
+    "createdAt": "2026-08-16T04:12:52Z",
+    "updatedAt": "2026-08-19T10:09:50Z"
+  },
+  {
+    "number": 3376,
+    "title": "BUG：[Windows] ACL 受限令牌沙箱下所有 pwsh 工具调用以 0xC0000142（STATUS_DLL_INIT_FAILED）死亡——无探测、无回退、无错误分类",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3376",
+    "categoryName": "General",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "linxiecoder",
+    "createdAt": "2026-08-19T10:08:59Z",
+    "updatedAt": "2026-08-19T10:08:59Z"
+  },
+  {
+    "number": 3373,
+    "title": "BUG: 持久 bash 工具会把单引号参数里的 ! 触发历史展开，整条命令被拒绝执行（macOS 上表现为 300s 超时）",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3373",
+    "categoryName": "General",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "stultuss",
+    "createdAt": "2026-08-19T09:54:35Z",
+    "updatedAt": "2026-08-19T09:58:46Z"
+  },
+  {
+    "number": 3375,
+    "title": "[Bug] 重启后侧栏所有会话标题显示为工作区文件夹名，点开会话后才恢复",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3375",
+    "categoryName": "Q&A",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "OSSKn4w7",
+    "createdAt": "2026-08-19T09:56:20Z",
+    "updatedAt": "2026-08-19T09:56:20Z"
+  },
+  {
+    "number": 3374,
+    "title": "[bug] dsh-llm-deepseek：流式工具调用的 name/id 为 null 时覆盖首个 delta，导致 DeepSeek 推理模型所有工具调用失败",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3374",
+    "categoryName": "Q&A",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "WjhhhhY",
+    "createdAt": "2026-08-19T09:56:01Z",
+    "updatedAt": "2026-08-19T09:56:01Z"
+  },
+  {
+    "number": 3372,
+    "title": "Bug: llm-pi-ai 丢弃 supportsDeveloperRole，SGLang/Qwen 收到 developer role 后返回 400",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3372",
+    "categoryName": "General",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "Anothers",
+    "createdAt": "2026-08-19T09:52:02Z",
+    "updatedAt": "2026-08-19T09:52:02Z"
+  },
+  {
+    "number": 3196,
+    "title": "建议：ToolArgsError 报错带上工具名，并考虑放宽 run_code 的 description 必填",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3196",
+    "categoryName": "Ideas",
+    "comments": 3,
+    "upvoteCount": 1,
+    "author": "xiedongqingxiao-ops",
+    "createdAt": "2026-08-18T17:55:59Z",
+    "updatedAt": "2026-08-19T09:49:21Z"
+  },
+  {
+    "number": 3371,
+    "title": "反馈一个问题: 调用 Pwsh Error: tool call aborted",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3371",
+    "categoryName": "Q&A",
+    "comments": 0,
+    "upvoteCount": 1,
+    "author": "wang2766157",
+    "createdAt": "2026-08-19T09:46:12Z",
+    "updatedAt": "2026-08-19T09:46:12Z"
   },
   {
     "number": 3370,
@@ -49,7 +302,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3370",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "linghengqian",
     "createdAt": "2026-08-19T09:37:32Z",
     "updatedAt": "2026-08-19T09:37:32Z"
@@ -60,7 +313,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3369",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "Carlkasa",
     "createdAt": "2026-08-19T09:31:57Z",
     "updatedAt": "2026-08-19T09:31:57Z"
@@ -71,7 +324,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2624",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "LongYu12",
     "createdAt": "2026-08-17T03:02:33Z",
     "updatedAt": "2026-08-19T09:33:12Z"
@@ -82,7 +335,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3368",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 2,
     "author": "pawaca",
     "createdAt": "2026-08-19T09:29:49Z",
     "updatedAt": "2026-08-19T09:29:49Z"
@@ -93,7 +346,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3367",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "Luke-Yong",
     "createdAt": "2026-08-19T09:29:35Z",
     "updatedAt": "2026-08-19T09:29:35Z"
@@ -104,7 +357,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3366",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "waknow",
     "createdAt": "2026-08-19T09:29:09Z",
     "updatedAt": "2026-08-19T09:29:09Z"
@@ -115,20 +368,9 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2571",
     "categoryName": "General",
     "comments": 3,
-    "participants": 3,
+    "upvoteCount": 1,
     "author": "Tang-mm95",
     "createdAt": "2026-08-16T22:48:17Z",
-    "updatedAt": "2026-08-19T09:27:55Z"
-  },
-  {
-    "number": 1728,
-    "title": "加群 ： 微信 &QQ群超2000人，送DeepSeek Harness插件1836款，我己整理好了（咱们不要重复开发相同的插件）",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1728",
-    "categoryName": "General",
-    "comments": 46,
-    "participants": 10,
-    "author": "leenkcool",
-    "createdAt": "2026-08-15T05:30:04Z",
     "updatedAt": "2026-08-19T09:27:55Z"
   },
   {
@@ -137,7 +379,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/523",
     "categoryName": "Q&A",
     "comments": 4,
-    "participants": 5,
+    "upvoteCount": 2,
     "author": "alittleyoshi",
     "createdAt": "2026-08-13T21:23:40Z",
     "updatedAt": "2026-08-19T09:26:53Z"
@@ -148,7 +390,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3365",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "Polar-Zhang",
     "createdAt": "2026-08-19T09:24:15Z",
     "updatedAt": "2026-08-19T09:26:32Z"
@@ -159,7 +401,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3364",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "Qinhellen",
     "createdAt": "2026-08-19T09:22:38Z",
     "updatedAt": "2026-08-19T09:22:38Z"
@@ -170,7 +412,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3362",
     "categoryName": "Q&A",
     "comments": 1,
-    "participants": 1,
+    "upvoteCount": 2,
     "author": "mymetalseed",
     "createdAt": "2026-08-19T09:13:16Z",
     "updatedAt": "2026-08-19T09:22:22Z"
@@ -181,7 +423,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3363",
     "categoryName": "Ideas",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 2,
     "author": "dust617",
     "createdAt": "2026-08-19T09:14:29Z",
     "updatedAt": "2026-08-19T09:14:29Z"
@@ -192,7 +434,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3332",
     "categoryName": "Ideas",
     "comments": 1,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "zealotchen0",
     "createdAt": "2026-08-19T07:53:16Z",
     "updatedAt": "2026-08-19T09:11:38Z"
@@ -203,7 +445,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3361",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "sirinath",
     "createdAt": "2026-08-19T09:10:31Z",
     "updatedAt": "2026-08-19T09:10:31Z"
@@ -214,7 +456,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3360",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "TecFancy",
     "createdAt": "2026-08-19T09:09:30Z",
     "updatedAt": "2026-08-19T09:09:30Z"
@@ -225,7 +467,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3359",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 2,
     "author": "LAN-TINA-WS",
     "createdAt": "2026-08-19T09:06:40Z",
     "updatedAt": "2026-08-19T09:06:40Z"
@@ -236,7 +478,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3358",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "Stringadmin",
     "createdAt": "2026-08-19T09:06:08Z",
     "updatedAt": "2026-08-19T09:06:08Z"
@@ -247,21 +489,10 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3357",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "LoongSerpent9Realms",
     "createdAt": "2026-08-19T09:04:52Z",
     "updatedAt": "2026-08-19T09:04:52Z"
-  },
-  {
-    "number": 1989,
-    "title": "dsh-compass 已发布,右侧文件夹面板和只读 git tree",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1989",
-    "categoryName": "Show Your Plugins!",
-    "comments": 12,
-    "participants": 4,
-    "author": "Happy2Git",
-    "createdAt": "2026-08-15T14:35:26Z",
-    "updatedAt": "2026-08-19T09:04:03Z"
   },
   {
     "number": 3356,
@@ -269,7 +500,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3356",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "LAN-TINA-WS",
     "createdAt": "2026-08-19T09:03:40Z",
     "updatedAt": "2026-08-19T09:03:40Z"
@@ -280,7 +511,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3190",
     "categoryName": "General",
     "comments": 2,
-    "participants": 3,
+    "upvoteCount": 1,
     "author": "changingwang",
     "createdAt": "2026-08-18T17:10:51Z",
     "updatedAt": "2026-08-19T08:59:26Z"
@@ -291,7 +522,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3203",
     "categoryName": "General",
     "comments": 1,
-    "participants": 2,
+    "upvoteCount": 1,
     "author": "MMiao79",
     "createdAt": "2026-08-18T19:33:57Z",
     "updatedAt": "2026-08-19T08:59:13Z"
@@ -302,7 +533,7 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3355",
     "categoryName": "Show Your Plugins!",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "ywleeo",
     "createdAt": "2026-08-19T08:58:06Z",
     "updatedAt": "2026-08-19T08:58:06Z"
@@ -313,240 +544,9 @@
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3354",
     "categoryName": "General",
     "comments": 0,
-    "participants": 1,
+    "upvoteCount": 1,
     "author": "rockmelodies",
     "createdAt": "2026-08-19T08:58:03Z",
     "updatedAt": "2026-08-19T08:58:03Z"
-  },
-  {
-    "number": 2699,
-    "title": "Bug：`pnpm dsh web` 启动失败，报错 \"--expose-internals is required for HMR service\"",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2699",
-    "categoryName": "Q&A",
-    "comments": 32,
-    "participants": 3,
-    "author": "XuJianrui",
-    "createdAt": "2026-08-17T06:31:02Z",
-    "updatedAt": "2026-08-19T08:58:03Z"
-  },
-  {
-    "number": 2833,
-    "title": "Claude Code 兼容支持，DSH使用零迁移，支持 .claude/  支持claude原生插件市场",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2833",
-    "categoryName": "Show Your Plugins!",
-    "comments": 3,
-    "participants": 1,
-    "author": "biedongbin",
-    "createdAt": "2026-08-17T13:11:55Z",
-    "updatedAt": "2026-08-19T08:56:34Z"
-  },
-  {
-    "number": 942,
-    "title": "Bug: crypto.randomUUID is not a function when accessing Web GUI over plain HTTP (LAN/phone)",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/942",
-    "categoryName": "General",
-    "comments": 1,
-    "participants": 2,
-    "author": "TYBLHQY",
-    "createdAt": "2026-08-14T05:33:06Z",
-    "updatedAt": "2026-08-19T08:55:26Z"
-  },
-  {
-    "number": 3353,
-    "title": "core 里面的插件能部署到cf上么，我看里面有很多依赖node方面的依赖，没有一一排查",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3353",
-    "categoryName": "Q&A",
-    "comments": 0,
-    "participants": 1,
-    "author": "tianshangwuyun",
-    "createdAt": "2026-08-19T08:54:23Z",
-    "updatedAt": "2026-08-19T08:54:23Z"
-  },
-  {
-    "number": 455,
-    "title": "[Bug Report] 子代理继承父代理的\"创建时默认模型\"而非\"会话当前模型\"，第三方 provider 会话中 subagent 必报 no API key for provider route \"deepseek-official\"",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/455",
-    "categoryName": "General",
-    "comments": 2,
-    "participants": 3,
-    "author": "DRAG0NM",
-    "createdAt": "2026-08-13T18:36:20Z",
-    "updatedAt": "2026-08-19T08:54:11Z"
-  },
-  {
-    "number": 3344,
-    "title": "Fork 分享：归档会话可见、取消归档与彻底删除",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3344",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "NieRMHY",
-    "createdAt": "2026-08-19T08:24:26Z",
-    "updatedAt": "2026-08-19T08:50:07Z"
-  },
-  {
-    "number": 3347,
-    "title": "【BUG】登录微信PC版时安装，可能会导致封号",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3347",
-    "categoryName": "Q&A",
-    "comments": 2,
-    "participants": 2,
-    "author": "858622025",
-    "createdAt": "2026-08-19T08:27:01Z",
-    "updatedAt": "2026-08-19T08:48:46Z"
-  },
-  {
-    "number": 3188,
-    "title": "【bug report】打开工作区选择目录的时候，目录名字里【开发】之后的字符串会被截断",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3188",
-    "categoryName": "Ideas",
-    "comments": 6,
-    "participants": 4,
-    "author": "zhengwx1995",
-    "createdAt": "2026-08-18T17:10:37Z",
-    "updatedAt": "2026-08-19T08:48:44Z"
-  },
-  {
-    "number": 1605,
-    "title": "[缺陷] Harness 存在缺陷极可能诱导 PTC 模式(Code Mode)下工具调用频繁失败",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1605",
-    "categoryName": "General",
-    "comments": 2,
-    "participants": 3,
-    "author": "lithium-chamber",
-    "createdAt": "2026-08-14T21:47:08Z",
-    "updatedAt": "2026-08-19T08:41:30Z"
-  },
-  {
-    "number": 3349,
-    "title": "【BUG】真多的bug",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3349",
-    "categoryName": "Q&A",
-    "comments": 1,
-    "participants": 1,
-    "author": "chengchangan",
-    "createdAt": "2026-08-19T08:35:54Z",
-    "updatedAt": "2026-08-19T08:38:54Z"
-  },
-  {
-    "number": 534,
-    "title": "[BUG]会话/思考过长导致的：历史加载失败：history unavailable for session \"session-2063f7c0-01dd-4892-ad90-9a2068c4f95d\": RangeError: Maximum call stack size exceeded（internal）",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/534",
-    "categoryName": "General",
-    "comments": 2,
-    "participants": 2,
-    "author": "FOURusers",
-    "createdAt": "2026-08-13T22:50:48Z",
-    "updatedAt": "2026-08-19T08:36:22Z"
-  },
-  {
-    "number": 3351,
-    "title": "[Community Experiment] dshlib — DSH Plugin Library: see trust, scans, and real usage before installing (echoing #3192)",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3351",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "wwumit",
-    "createdAt": "2026-08-19T08:36:05Z",
-    "updatedAt": "2026-08-19T08:36:05Z"
-  },
-  {
-    "number": 3350,
-    "title": "「社区实验」dshlib —— DSH 插件图书馆：装前可见\"可信几级、扫描过没有、多少人真在用\"（呼应 #3192）",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3350",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "wwumit",
-    "createdAt": "2026-08-19T08:36:03Z",
-    "updatedAt": "2026-08-19T08:36:03Z"
-  },
-  {
-    "number": 1762,
-    "title": "docker部署dsh，在线体验：https://visovala-dsh.hf.space  账号密码：admin / admin",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/1762",
-    "categoryName": "General",
-    "comments": 2,
-    "participants": 3,
-    "author": "smanx",
-    "createdAt": "2026-08-15T06:12:36Z",
-    "updatedAt": "2026-08-19T08:34:50Z"
-  },
-  {
-    "number": 408,
-    "title": "web_search 固定请求官方端点，导致自配网关的用户搜索必现认证失败",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/408",
-    "categoryName": "General",
-    "comments": 7,
-    "participants": 7,
-    "author": "rxh1999",
-    "createdAt": "2026-08-13T17:30:49Z",
-    "updatedAt": "2026-08-19T08:34:20Z"
-  },
-  {
-    "number": 201,
-    "title": "[BUG] spamming Error: sandbox escalation to \"workspace-write\" is not strictly wider than this call's current \"danger-full-access\" mode",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/201",
-    "categoryName": "General",
-    "comments": 11,
-    "participants": 11,
-    "author": "zimixvx",
-    "createdAt": "2026-08-13T14:35:58Z",
-    "updatedAt": "2026-08-19T08:33:22Z"
-  },
-  {
-    "number": 3348,
-    "title": "deepseek-harness 功能及优化建议",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3348",
-    "categoryName": "Ideas",
-    "comments": 0,
-    "participants": 1,
-    "author": "aqingGitHub",
-    "createdAt": "2026-08-19T08:29:12Z",
-    "updatedAt": "2026-08-19T08:29:50Z"
-  },
-  {
-    "number": 3346,
-    "title": "Markdown: render mermaid / mmd fences as diagrams in the Web chat",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3346",
-    "categoryName": "Ideas",
-    "comments": 1,
-    "participants": 1,
-    "author": "yishu-ziyu",
-    "createdAt": "2026-08-19T08:25:54Z",
-    "updatedAt": "2026-08-19T08:28:28Z"
-  },
-  {
-    "number": 3345,
-    "title": "我们开源了基于 DeepSeek Harness 的发行版 - Cocode",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3345",
-    "categoryName": "Show Your Plugins!",
-    "comments": 0,
-    "participants": 1,
-    "author": "huangzhhui",
-    "createdAt": "2026-08-19T08:25:21Z",
-    "updatedAt": "2026-08-19T08:25:21Z"
-  },
-  {
-    "number": 3343,
-    "title": "欢迎加入DeepSeek Harness QQ交流群：960672669",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3343",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "Zx357",
-    "createdAt": "2026-08-19T08:21:18Z",
-    "updatedAt": "2026-08-19T08:21:18Z"
-  },
-  {
-    "number": 3274,
-    "title": "[Plugin] DSH Get — Search and install DSH plugins inside DeepSeek Harness",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3274",
-    "categoryName": "Show Your Plugins!",
-    "comments": 1,
-    "participants": 2,
-    "author": "bobby-sheng",
-    "createdAt": "2026-08-19T04:19:54Z",
-    "updatedAt": "2026-08-19T08:18:35Z"
   }
 ]

@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { animate } from "animejs"
 import {
   ArrowLeft,
+  ArrowUp,
   Flame,
   Link2,
   MessagesSquare,
   PenLine,
   Search,
   User,
-  Users,
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 import { toast } from "sonner"
@@ -206,18 +206,25 @@ export function CommunityPage() {
 
   useEffect(() => {
     let alive = true
-    // 登录态：直接 GraphQL 实时拉取（含 cursor 分页，拉全量）；未登录：读静态 seed。
+    // 切换社区 / 登录态变化 → 立即重置为占位状态（Skeleton），避免新数据加载期间
+    // 卡在上一社区 / 上一登录态的旧数据上。
+    setList(null)
+    setCategories([])
+
+    // 分层加载（先缓存/骨架 → 后实时内容）：
+    //   ① 先读静态 seed（本地缓存/静态 JSON，瞬时）立即渲染——切换社区不转圈、
+    //      不卡上一社区数据，登录态也先有内容可看；
+    //   ② 登录态再拉 GraphQL live（后台，全量替换 seed 为最新，失败静默保留 seed）。
     // 订阅 worker 推送（登录后每 3 分钟同步主社区）也会触发重新拉取。
     const load = () => {
+      resolveSeedLoader(source)().then((seed) => {
+        if (alive) {
+          setList(seed)
+        }
+      })
       if (user) {
         resolveLiveLoader(source)().then((data) => {
           if (alive && data) {
-            setList(data)
-          }
-        })
-      } else {
-        resolveSeedLoader(source)().then((data) => {
-          if (alive) {
             setList(data)
           }
         })
@@ -457,7 +464,7 @@ export function CommunityPage() {
                   {formatRelativeTime(d.updatedAt)}
                 </p>
               </div>
-              {/* 尾部统计：评论数 + 参与人数（icon + 数字，无文字） */}
+              {/* 尾部统计：评论数 + 投票数（icon + 数字，无文字，均为 API 直接提供的标量） */}
               <div className="flex shrink-0 items-center gap-2">
                 <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
                   <MessagesSquare className="size-3.5 text-theme-accent" />
@@ -466,9 +473,9 @@ export function CommunityPage() {
                   </span>
                 </div>
                 <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
-                  <Users className="size-3.5 text-theme-accent" />
+                  <ArrowUp className="size-3.5 text-theme-accent" />
                   <span className="text-sm font-semibold tabular-nums text-foreground">
-                    {d.participants ?? d.comments + 1}
+                    {d.upvoteCount ?? 0}
                   </span>
                 </div>
               </div>
