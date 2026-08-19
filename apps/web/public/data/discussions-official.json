@@ -1,5 +1,60 @@
 [
   {
+    "number": 3371,
+    "title": "反馈一个问题: 调用 Pwsh Error: tool call aborted",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3371",
+    "categoryName": "Q&A",
+    "comments": 0,
+    "participants": 1,
+    "author": "wang2766157",
+    "createdAt": "2026-08-19T09:46:12Z",
+    "updatedAt": "2026-08-19T09:46:12Z"
+  },
+  {
+    "number": 3290,
+    "title": "DeepSeek Harness 飞书交流群",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3290",
+    "categoryName": "Q&A",
+    "comments": 1,
+    "participants": 1,
+    "author": "oliblue-evan",
+    "createdAt": "2026-08-19T06:03:16Z",
+    "updatedAt": "2026-08-19T09:45:03Z"
+  },
+  {
+    "number": 2397,
+    "title": "DeepSeek Harness 飞书交流群（扫码即进）· 社区插件目录",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2397",
+    "categoryName": "General",
+    "comments": 4,
+    "participants": 4,
+    "author": "shinjiyu",
+    "createdAt": "2026-08-16T11:36:15Z",
+    "updatedAt": "2026-08-19T09:38:32Z"
+  },
+  {
+    "number": 2423,
+    "title": "https://dsh-hub.cc 插件商店上线。收录超过7000+插件，支持搜索、按类检索、一键安装与发布",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2423",
+    "categoryName": "General",
+    "comments": 47,
+    "participants": 5,
+    "author": "sliverp",
+    "createdAt": "2026-08-16T12:55:00Z",
+    "updatedAt": "2026-08-19T09:37:47Z"
+  },
+  {
+    "number": 3370,
+    "title": "Provides a global installation method via `npm`/`pnpm`",
+    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3370",
+    "categoryName": "General",
+    "comments": 0,
+    "participants": 1,
+    "author": "linghengqian",
+    "createdAt": "2026-08-19T09:37:32Z",
+    "updatedAt": "2026-08-19T09:37:32Z"
+  },
+  {
     "number": 3369,
     "title": "Bug 反馈 / PR：浏览器自动填充把已保存的表单值注入侧边栏搜索框",
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3369",
@@ -20,28 +75,6 @@
     "author": "LongYu12",
     "createdAt": "2026-08-17T03:02:33Z",
     "updatedAt": "2026-08-19T09:33:12Z"
-  },
-  {
-    "number": 2397,
-    "title": "DeepSeek Harness 飞书交流群（扫码即进）· 社区插件目录",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2397",
-    "categoryName": "General",
-    "comments": 4,
-    "participants": 4,
-    "author": "shinjiyu",
-    "createdAt": "2026-08-16T11:36:15Z",
-    "updatedAt": "2026-08-19T09:30:26Z"
-  },
-  {
-    "number": 3290,
-    "title": "DeepSeek Harness 飞书交流群",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3290",
-    "categoryName": "Q&A",
-    "comments": 1,
-    "participants": 1,
-    "author": "oliblue-evan",
-    "createdAt": "2026-08-19T06:03:16Z",
-    "updatedAt": "2026-08-19T09:30:03Z"
   },
   {
     "number": 3368,
@@ -396,17 +429,6 @@
     "updatedAt": "2026-08-19T08:38:54Z"
   },
   {
-    "number": 2423,
-    "title": "https://dsh-hub.cc 插件商店上线。收录超过7000+插件，支持搜索、按类检索、一键安装与发布",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/2423",
-    "categoryName": "General",
-    "comments": 46,
-    "participants": 5,
-    "author": "sliverp",
-    "createdAt": "2026-08-16T12:55:00Z",
-    "updatedAt": "2026-08-19T08:37:00Z"
-  },
-  {
     "number": 534,
     "title": "[BUG]会话/思考过长导致的：历史加载失败：history unavailable for session \"session-2063f7c0-01dd-4892-ad90-9a2068c4f95d\": RangeError: Maximum call stack size exceeded（internal）",
     "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/534",
@@ -526,27 +548,5 @@
     "author": "bobby-sheng",
     "createdAt": "2026-08-19T04:19:54Z",
     "updatedAt": "2026-08-19T08:18:35Z"
-  },
-  {
-    "number": 3342,
-    "title": "你好，能官方支持agnes-2.5-pro吗？现在自定义模型提供商agnes，但是调用write或code总是出现失败",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3342",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "LegendZDY",
-    "createdAt": "2026-08-19T08:18:14Z",
-    "updatedAt": "2026-08-19T08:18:14Z"
-  },
-  {
-    "number": 3341,
-    "title": "[BUG]dsh 自身的 package.json 没有声明 cordis-plugin-group 为依赖导致 dsh-app-boot 报错 ERR_MODULE_NOT_FOUND",
-    "url": "https://github.com/deepseek-ai/deepseek-harness/discussions/3341",
-    "categoryName": "General",
-    "comments": 0,
-    "participants": 1,
-    "author": "HellowVirgil",
-    "createdAt": "2026-08-19T08:17:00Z",
-    "updatedAt": "2026-08-19T08:17:00Z"
   }
 ]

@@ -6,6 +6,9 @@
 //   「洁癖更新」：每次用 git worktree 建孤儿分支 → 复制数据 → 单 commit →
 //   `git push origin cache --force` 覆盖远端，cache 分支永远只有 1 个 commit。
 //
+//   cache 分支内容：孤儿 worktree 工作树初始为空，只把 3 个 json 复制到根目录，
+//   **不放任何代码文件**。commit 信息统一为 `cached at <ISO时间>`。
+//
 //   前端通过 raw.githubusercontent.com/{owner}/{repo}/cache/<file> 读取（零 API
 //   配额 + CORS 允许），失败回退仓库 /data/*.json。详见 tmp/deepsea-cache-branch.md。
 //
@@ -63,7 +66,8 @@ function main() {
   //    （`git worktree add --orphan <path> cache` 会把 cache 当 commit-ish 报错）
   git(["worktree", "add", "--orphan", "-b", BRANCH, WT_PATH])
 
-  // ③ 复制数据到 worktree（缺文件则跳过，不中断）
+  // ③ 复制数据到 worktree（孤儿 worktree 初始为空 → cache 分支根目录只含这些 json，
+  //    不带任何代码文件；缺文件则跳过，不中断）
   let copied = 0
   for (const f of FILES) {
     const src = path.join(OUT_DIR, f)
@@ -79,7 +83,7 @@ function main() {
   // ④ 洁癖单 commit（--allow-empty 避免「nothing to commit」中断流程）
   git(["add", "-A"], WT_PATH)
   git(
-    ["commit", "-m", `chore(cache): sync ${new Date().toISOString()}`, "--allow-empty"],
+    ["commit", "-m", `cached at ${new Date().toISOString()}`, "--allow-empty"],
     WT_PATH
   )
 
