@@ -64,11 +64,11 @@ export function App() {
 
   return (
     <div id="top" className="min-h-dvh">
-      {/* 3D 海面背景：统一海洋状态驱动下潜/上浮动画；二级页叠加 20% 虚化 */}
-      <Ocean conf={conf} state={seaState} blur={isSubPage} />
+      {/* 3D 海面背景：仅首页渲染（子路由页面使用 shadcn 默认背景，不叠加海洋 3D） */}
+      {!isSubPage && <Ocean conf={conf} state={seaState} blur={false} />}
 
-      {/* 调试面板：地址 #sea-debug 显示，滑块调参 + 复制 JSON */}
-      <SeaDebugPanel conf={conf} onChange={setConf} />
+      {/* 调试面板：仅首页（地址 #sea-debug 显示，滑块调参 + 复制 JSON） */}
+      {!isSubPage && <SeaDebugPanel conf={conf} onChange={setConf} />}
 
       <Topbar />
 

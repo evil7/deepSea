@@ -99,7 +99,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                         variant="outline"
                         className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                       >
-                        <Link to="/#dsh-chatbar">
+                        <Link to="/#dsh-community">
                           <MessagesSquare className="size-4" />
                           讨论交流
                         </Link>
@@ -125,7 +125,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
             },
             {
               // 讨论交流：官方 discussions 最热/最新帖子（GraphQL 抓取）；深雾遮罩
-              id: "dsh-chatbar",
+              id: "dsh-community",
               label: "讨论交流",
               overlayClassName: "bg-slate-950/65 backdrop-blur-md",
               node: <CommunitySlide />,

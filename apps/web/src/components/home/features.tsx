@@ -50,7 +50,7 @@ const features: Feature[] = [
     description:
       "基于官方 discussions 包装的更顺滑社区：最热与最新话题一目了然，一键直达官方讨论。",
     tag: "dsh-discussions-hub",
-    to: "/#dsh-chatbar",
+    to: "/#dsh-community",
   },
   {
     id: "feature-install",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import {
   ArrowLeft,
@@ -11,7 +11,7 @@ import {
   SmilePlus,
   User,
 } from "lucide-react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
@@ -23,7 +23,9 @@ import { useAuth } from "@/hooks/use-auth"
 import {
   formatRelativeTime,
   loadDiscussionDetail,
+  loadOfficialDiscussionDetail,
   postDiscussionComment,
+  resolveCommunity,
   toggleReaction,
   REACTION_CONTENTS,
   REACTION_EMOJI,
@@ -67,9 +69,9 @@ function UserAvatar({
   size?: "default" | "sm" | "lg"
 }) {
   return (
-    <Avatar size={size} className="border border-white/10 bg-slate-800">
+    <Avatar size={size} className="border border-border bg-muted">
       {url ? <AvatarImage src={url} alt={name} /> : null}
-      <AvatarFallback className="bg-slate-800 text-white/45">
+      <AvatarFallback className="bg-muted text-muted-foreground">
         <User className={size === "lg" ? "size-5" : "size-3.5"} />
       </AvatarFallback>
     </Avatar>
@@ -109,7 +111,7 @@ function ReactionBar({
               "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors",
               r.viewerHasReacted
                 ? "border-cyan-400/60 bg-cyan-400/15 text-cyan-200"
-                : "border-white/10 bg-slate-800/70 text-white/70 hover:bg-slate-700/70",
+                : "border-border bg-muted text-muted-foreground hover:bg-accent",
               canInteract ? "cursor-pointer" : "cursor-default"
             )}
           >
@@ -131,7 +133,7 @@ function ReactionBar({
             "flex items-center rounded-full border border-dashed px-1.5 py-0.5 text-xs transition-colors",
             pickerOpen
               ? "border-cyan-400/50 text-cyan-200"
-              : "border-white/15 text-white/45 hover:border-white/30 hover:text-white/80"
+              : "border-border text-muted-foreground hover:border-border hover:text-foreground"
           )}
         >
           <SmilePlus className="size-3.5" />
@@ -140,7 +142,7 @@ function ReactionBar({
 
       {/* 内联表情选择器 */}
       {pickerOpen && (
-        <div className="flex w-full flex-wrap gap-1 rounded-lg border border-white/10 bg-slate-900/80 p-1.5">
+        <div className="flex w-full flex-wrap gap-1 rounded-lg border border-border bg-card p-1.5">
           {REACTION_CONTENTS.map((content) => {
             const c = countOf(content)
             const has = reacted(content)
@@ -152,12 +154,12 @@ function ReactionBar({
                 title={content}
                 className={cn(
                   "flex items-center gap-1 rounded-md px-1.5 py-1 text-base transition-colors",
-                  has ? "bg-cyan-400/15" : "hover:bg-white/10"
+                  has ? "bg-cyan-400/15" : "hover:bg-accent"
                 )}
               >
                 <span>{REACTION_EMOJI[content]}</span>
                 {c > 0 && (
-                  <span className="text-[10px] text-white/60">{c}</span>
+                  <span className="text-[10px] text-muted-foreground">{c}</span>
                 )}
               </button>
             )
@@ -193,16 +195,16 @@ function ReplyEditor({
     <div className="flex gap-3">
       <UserAvatar url={avatarUrl} name={name} size="sm" />
       <div className="min-w-0 flex-1">
-        <div className="rounded-xl border border-white/10 bg-slate-900/70 transition-colors focus-within:border-cyan-400/40">
+        <div className="rounded-xl border border-border bg-card transition-colors focus-within:border-cyan-400/40">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="写下你的回复…（支持 Markdown）"
             rows={3}
-            className="w-full resize-y bg-transparent px-3.5 py-3 text-sm text-white outline-none placeholder:text-white/30"
+            className="w-full resize-y bg-transparent px-3.5 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <div className="flex items-center justify-between border-t border-white/5 px-3 py-2">
-            <span className="font-mono text-[10px] text-white/30">
+          <div className="flex items-center justify-between border-t border-border px-3 py-2">
+            <span className="font-mono text-[10px] text-muted-foreground">
               Markdown 语法支持
             </span>
             <Button
@@ -266,7 +268,7 @@ function PostItem({
         {!last && (
           <span
             aria-hidden="true"
-            className="mt-2 w-px flex-1 rounded-full bg-white/10"
+            className="mt-2 w-px flex-1 rounded-full bg-border"
           />
         )}
       </div>
@@ -275,7 +277,7 @@ function PostItem({
       <div className="min-w-0 flex-1 pb-7">
         {/* 头部：作者 · 徽章 · 时间 · 楼层 */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold text-white">{name}</span>
+          <span className="text-sm font-semibold text-foreground">{name}</span>
           {isOp && (
             <Badge className="border-cyan-400/40 bg-cyan-400/10 font-mono text-[10px] text-cyan-300">
               发起者
@@ -286,9 +288,9 @@ function PostItem({
               作者
             </Badge>
           )}
-          <span className="text-xs text-white/40">· {time}</span>
+          <span className="text-xs text-muted-foreground">· {time}</span>
           {floor !== undefined && (
-            <span className="ml-auto font-mono text-xs text-white/30">
+            <span className="ml-auto font-mono text-xs text-muted-foreground">
               #{floor}
             </span>
           )}
@@ -297,14 +299,14 @@ function PostItem({
         {/* 内容卡片 */}
         <div
           className={cn(
-            "mt-2 rounded-xl border border-white/10 bg-slate-900/70 backdrop-blur-sm transition-colors",
-            "hover:border-white/20 hover:bg-slate-900"
+            "mt-2 rounded-xl border border-border bg-card transition-colors",
+            "hover:border-border hover:bg-accent"
           )}
         >
           {children}
 
           {/* 底部：表情反应条 */}
-          <div className="border-t border-white/5 px-4 py-2.5">
+          <div className="border-t border-border px-4 py-2.5">
             <ReactionBar
               reactions={reactions}
               canInteract={canInteract}
@@ -323,6 +325,14 @@ export function CommunityDetailPage() {
   const { number } = useParams<{ number: string }>()
   const num = Number(number)
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
+  // 社区来源 + 回复开关（官方社区只读，replyEnable=false）
+  const source = searchParams.get("source")
+  const info = useMemo(() => resolveCommunity(source), [source])
+  // replyEnable：URL 显式参数优先，未传时用 source 兜底（official 默认 false）
+  const replyEnableParam = searchParams.get("replyEnable")
+  const replyEnable =
+    replyEnableParam === null ? info.replyEnable : replyEnableParam !== "false"
   const [detail, setDetail] = useState<DiscussionDetail | null>(null)
   const [state, setState] = useState<"loading" | "unauthorized" | "error" | "ok">(
     "loading"
@@ -336,7 +346,11 @@ export function CommunityDetailPage() {
       return
     }
     setState("loading")
-    loadDiscussionDetail(num).then((d) => {
+    const loadDetail =
+      info.source === "official"
+        ? loadOfficialDiscussionDetail
+        : loadDiscussionDetail
+    loadDetail(num).then((d) => {
       if (!alive) return
       if (!d) {
         // 区分未登录（401）与其他错误
@@ -349,7 +363,7 @@ export function CommunityDetailPage() {
     return () => {
       alive = false
     }
-  }, [num])
+  }, [num, info.source])
 
   /** 乐观更新某个 subjectId（discussion / comment）的表情反应 */
   const updateReactions = (
@@ -412,6 +426,10 @@ export function CommunityDetailPage() {
     content: string,
     active: boolean
   ) => {
+    if (!replyEnable) {
+      toast.info("官方社区为只读，无法表态")
+      return
+    }
     if (!user) {
       toast.info("请先登录，再表达态度")
       return
@@ -426,7 +444,7 @@ export function CommunityDetailPage() {
 
   /** 发表回复（成功后追加到评论列表；失败降级跳转 GitHub） */
   const handleSubmitComment = async (body: string) => {
-    if (!detail) return
+    if (!detail || !replyEnable) return
     setSubmitting(true)
     try {
       const comment = await postDiscussionComment(detail.number, detail.id, body)
@@ -449,44 +467,51 @@ export function CommunityDetailPage() {
   return (
     <div className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
       {/* 面包屑（与插件详情页一致） */}
-      <nav className="mb-6 flex items-center gap-1.5 text-xs text-white/45">
+      <nav className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Link
           to="/"
-          className="flex items-center gap-1 transition-colors hover:text-white"
+          className="flex items-center gap-1 transition-colors hover:text-foreground"
         >
           <Home className="size-3.5" />
           首页
         </Link>
         <span>/</span>
-        <Link to="/community" className="transition-colors hover:text-white">
+        <Link
+          to={`/community?source=${source ?? "own"}`}
+          className="transition-colors hover:text-foreground"
+        >
           讨论交流
         </Link>
         <span>/</span>
-        <span className="font-mono text-white/70">#{num}</span>
+        <span className="font-mono text-foreground/80">#{num}</span>
       </nav>
 
       {state === "loading" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-4">
-            <Skeleton className="h-10 w-64 bg-white/5" />
-            <Skeleton className="h-4 w-full bg-white/5" />
-            <Skeleton className="h-4 w-3/4 bg-white/5" />
-            <Skeleton className="h-64 w-full bg-white/5" />
+            <Skeleton className="h-10 w-64 bg-muted" />
+            <Skeleton className="h-4 w-full bg-muted" />
+            <Skeleton className="h-4 w-3/4 bg-muted" />
+            <Skeleton className="h-64 w-full bg-muted" />
           </div>
-          <Skeleton className="h-80 rounded-xl bg-white/5" />
+          <Skeleton className="h-80 rounded-xl bg-muted" />
         </div>
       )}
 
       {needsLogin && (
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-          <MessagesSquare className="size-10 text-white/30" />
-          <p className="text-lg font-medium text-white/80">登录后畅聊</p>
-          <p className="text-sm text-white/50">
+          <MessagesSquare className="size-10 text-muted-foreground" />
+          <p className="text-lg font-medium text-foreground">登录后畅聊</p>
+          <p className="text-sm text-muted-foreground">
             讨论正文与评论需要 GitHub 授权后才能查看
           </p>
           <Button asChild size="sm" className="mt-2">
             {/* 真实导航：/auth/login 由 Worker 处理，无前端路由 */}
-            <a href={loginUrl("/community/" + num)}>
+            <a
+              href={loginUrl(
+                `/community/${num}?source=${source ?? "own"}&replyEnable=${replyEnable}`
+              )}
+            >
               <User className="size-4" />
               登录
             </a>
@@ -496,15 +521,15 @@ export function CommunityDetailPage() {
 
       {state === "error" && !needsLogin && (
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-          <p className="text-lg font-medium text-white/80">出错了</p>
-          <p className="text-sm text-white/50">讨论不存在或加载失败</p>
+          <p className="text-lg font-medium text-foreground">出错了</p>
+          <p className="text-sm text-muted-foreground">讨论不存在或加载失败</p>
           <Button
             variant="outline"
             size="sm"
-            className="mt-2 border-white/15 bg-slate-900/60 text-white hover:bg-slate-800"
+            className="mt-2 border-border bg-card text-foreground hover:bg-accent"
           >
             <ArrowLeft className="size-3.5" />
-            <Link to="/community">返回酒馆</Link>
+            <Link to={`/community?source=${source ?? "own"}`}>返回酒馆</Link>
           </Button>
         </div>
       )}
@@ -512,17 +537,17 @@ export function CommunityDetailPage() {
       {detail && state === "ok" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* ── 左栏：楼帖主列（README 风格容器） ── */}
-          <main className="min-w-0 rounded-xl border border-white/10 bg-slate-950/70 backdrop-blur-sm">
+          <main className="min-w-0 rounded-xl border border-border bg-card">
             {/* 容器头栏 */}
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-white/80">
+            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <MessagesSquare className="size-4 text-cyan-300" />
                 <span className="truncate">讨论 #{detail.number}</span>
                 <Badge
                   className={cn(
                     "shrink-0 font-mono text-[10px]",
                     CATEGORY_STYLES[detail.categoryName] ??
-                      "border-white/15 bg-white/10 text-white/70"
+                      "border-border bg-accent text-foreground"
                   )}
                 >
                   {detail.categoryName}
@@ -532,7 +557,7 @@ export function CommunityDetailPage() {
                 href={detail.url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1 text-xs text-white/45 transition-colors hover:text-white"
+                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
                 在 GitHub 查看
                 <ExternalLink className="size-3" />
@@ -543,7 +568,7 @@ export function CommunityDetailPage() {
             <div className="p-4 sm:p-6">
               {/* 标题区 */}
               <header>
-                <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
                   {detail.title}
                 </h1>
                 {/* 作者行（移动端；桌面端在右侧边栏展示作者卡片） */}
@@ -554,10 +579,10 @@ export function CommunityDetailPage() {
                     size="sm"
                   />
                   <div className="text-xs">
-                    <p className="font-medium text-white/85">
+                    <p className="font-medium text-foreground">
                       {detail.author}
                     </p>
-                    <p className="text-white/40">
+                    <p className="text-muted-foreground">
                       {formatRelativeTime(detail.createdAt)} 发起 ·{" "}
                       {detail.comments.length} 条评论
                     </p>
@@ -575,7 +600,7 @@ export function CommunityDetailPage() {
                   last={detail.comments.length === 0}
                   subjectId={detail.id}
                   reactions={detail.reactions}
-                  canInteract={!!user}
+                  canInteract={!!user && replyEnable}
                   onToggleReaction={handleToggleReaction}
                 >
                   <div
@@ -591,7 +616,7 @@ export function CommunityDetailPage() {
 
                 {/* 评论楼层 */}
                 {detail.comments.length === 0 ? (
-                  <div className="ml-1 flex items-center gap-2 rounded-lg border border-dashed border-white/15 px-4 py-6 text-sm text-white/40">
+                  <div className="ml-1 flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                     <CornerDownRight className="size-4" />
                     还没有评论，来抢沙发
                   </div>
@@ -607,7 +632,7 @@ export function CommunityDetailPage() {
                       last={i === detail.comments.length - 1}
                       subjectId={c.id}
                       reactions={c.reactions}
-                      canInteract={!!user}
+                      canInteract={!!user && replyEnable}
                       onToggleReaction={handleToggleReaction}
                     >
                       <div
@@ -623,9 +648,19 @@ export function CommunityDetailPage() {
                   ))
                 )}
 
-                {/* 站内回复编辑器（登录后可用） */}
+                {/* 站内回复编辑器（登录 + 开启回复后可用） */}
                 <div className="mt-2 ml-12">
-                  {user ? (
+                  {!replyEnable ? (
+                    <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
+                      <span>官方社区为只读，无法在站内回复</span>
+                      <Button asChild size="sm" variant="outline">
+                        <a href={detail.url} target="_blank" rel="noreferrer">
+                          <ExternalLink className="size-4" />
+                          前往 GitHub 参与
+                        </a>
+                      </Button>
+                    </div>
+                  ) : user ? (
                     <ReplyEditor
                       avatarUrl={user.avatar_url}
                       name={user.login}
@@ -633,10 +668,14 @@ export function CommunityDetailPage() {
                       onSubmit={handleSubmitComment}
                     />
                   ) : (
-                    <div className="flex items-center justify-between rounded-xl border border-dashed border-white/15 px-4 py-4 text-sm text-white/45">
+                    <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
                       <span>登录后即可参与回复</span>
                       <Button asChild size="sm" variant="outline">
-                        <a href={loginUrl("/community/" + num)}>
+                        <a
+                          href={loginUrl(
+                            `/community/${num}?source=${source ?? "own"}&replyEnable=${replyEnable}`
+                          )}
+                        >
                           <User className="size-4" />
                           登录
                         </a>
@@ -651,45 +690,45 @@ export function CommunityDetailPage() {
           {/* ── 右栏：边栏（sticky 固定，滚动不消失；与插件详情页一致） ── */}
           <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
             {/* 作者卡片 */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/70 p-5 backdrop-blur-sm">
+            <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">
                 <UserAvatar url={detail.authorAvatarUrl} name={detail.author} />
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-white">
+                  <p className="truncate font-medium text-foreground">
                     {detail.author}
                   </p>
-                  <p className="text-xs text-white/45">
+                  <p className="text-xs text-muted-foreground">
                     {formatRelativeTime(detail.createdAt)} 发起
                   </p>
                 </div>
               </div>
-              <div className="mt-4 flex items-center gap-2 text-xs text-white/45">
+              <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <MessagesSquare className="size-3.5 text-cyan-300/80" />
                 讨论 #{detail.number} · {detail.comments.length} 条评论
               </div>
             </div>
 
             {/* 统计（评论数 / 最近更新） */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/70 p-5 backdrop-blur-sm">
+            <div className="rounded-xl border border-border bg-card p-5">
               <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="rounded-lg bg-white/5 py-3">
-                  <p className="text-lg font-semibold text-white">
+                <div className="rounded-lg bg-muted py-3">
+                  <p className="text-lg font-semibold text-foreground">
                     {detail.comments.length}
                   </p>
-                  <p className="text-xs text-white/45">评论</p>
+                  <p className="text-xs text-muted-foreground">评论</p>
                 </div>
-                <div className="rounded-lg bg-white/5 py-3">
-                  <p className="text-sm font-semibold text-white">
+                <div className="rounded-lg bg-muted py-3">
+                  <p className="text-sm font-semibold text-foreground">
                     {formatRelativeTime(detail.updatedAt)}
                   </p>
-                  <p className="text-xs text-white/45">最近更新</p>
+                  <p className="text-xs text-muted-foreground">最近更新</p>
                 </div>
               </div>
             </div>
 
             {/* 分类 */}
-            <div className="rounded-xl border border-white/10 bg-slate-900/70 p-5 backdrop-blur-sm">
-              <p className="font-mono text-[10px] tracking-[0.25em] text-white/40">
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground">
                 CATEGORY
               </p>
               <div className="mt-3">
@@ -697,7 +736,7 @@ export function CommunityDetailPage() {
                   className={cn(
                     "font-mono text-[11px]",
                     CATEGORY_STYLES[detail.categoryName] ??
-                      "border-white/15 bg-white/10 text-white/70"
+                      "border-border bg-accent text-foreground"
                   )}
                 >
                   {detail.categoryName}

@@ -27,11 +27,11 @@ const menuItems = [
   // 与首页 view 逐一对应（不做直接进入页面的动作，全部滚动定位）：
   //   · 生态概览 → 首页生态概览屏（#dsh-ecosystem）
   //   · 插件精选 → 首页插件精选屏（#dsh-curated）
-  //   · 讨论交流 → 首页讨论交流屏（#dsh-chatbar）
+  //   · 讨论交流 → 首页讨论交流屏（#dsh-community）
   //   · 深海套装 → 首页深海套装屏（#dsh-deepsea-kit）
   { label: "生态概览", to: "/#dsh-ecosystem", icon: Compass },
   { label: "插件精选", to: "/#dsh-curated", icon: Layers },
-  { label: "讨论交流", to: "/#dsh-chatbar", icon: MessagesSquare },
+  { label: "讨论交流", to: "/#dsh-community", icon: MessagesSquare },
   { label: "深海套装", to: "/#dsh-deepsea-kit", icon: Package },
 ]
 

@@ -240,17 +240,17 @@ export function PluginsPage() {
     <div className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
       {/* 页头 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-white">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           插件生态
         </h1>
       </div>
 
       {/* 搜索 + 过滤条 */}
-      <div className="mt-6 flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-900/70 p-4 backdrop-blur-sm">
+      <div className="mt-6 flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         {/* 搜索框（自行捕捞模式在后方显示搜索按钮） */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-white/35" />
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchRef}
               value={keyword}
@@ -265,7 +265,7 @@ export function PluginsPage() {
                   ? "直接输入即过滤缓存渔获（如 dsh、harness、skill）…"
                   : "输入关键词后点击搜索，实时查询 GitHub…"
               }
-              className="h-9 border-white/10 bg-slate-950/70 pl-9 text-white placeholder:text-white/30"
+              className="h-9 border-border bg-background pl-9 text-foreground placeholder:text-muted-foreground"
             />
           </div>
           {sourceMode === "live" && (
@@ -285,14 +285,14 @@ export function PluginsPage() {
 
         {/* 语言下拉 + star 限制 + 发布时间 + 来源模式切换 */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-white/40">语言</span>
+          <span className="text-[11px] text-muted-foreground">语言</span>
           <Select
             value={language ?? "all"}
             onValueChange={(v) => setLanguage(v === "all" ? null : v)}
           >
             <SelectTrigger
               size="sm"
-              className="h-7 border-white/10 bg-slate-950/70 text-xs text-white/80 focus-visible:ring-white/30"
+              className="h-7 border-border bg-background text-xs text-foreground"
             >
               <SelectValue placeholder="全部" />
             </SelectTrigger>
@@ -306,9 +306,9 @@ export function PluginsPage() {
             </SelectContent>
           </Select>
 
-          <span className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
+          <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
 
-          <span className="text-[11px] text-white/40">Stars</span>
+          <span className="text-[11px] text-muted-foreground">Stars</span>
           {STAR_LEVELS.map((s) => (
             <FilterBadge
               key={s.value}
@@ -318,9 +318,9 @@ export function PluginsPage() {
             />
           ))}
 
-          <span className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
+          <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
 
-          <span className="text-[11px] text-white/40">创建时间</span>
+          <span className="text-[11px] text-muted-foreground">创建时间</span>
           {CREATED_LEVELS.map((c) => (
             <FilterBadge
               key={c.value}
@@ -337,7 +337,7 @@ export function PluginsPage() {
               onValueChange={handleSourceChange}
               className="w-fit"
             >
-              <TabsList className="h-8 border border-white/10 bg-slate-950/60 text-xs">
+              <TabsList className="h-8 border border-border bg-muted text-xs">
                 <TabsTrigger value="cache">挑选渔获</TabsTrigger>
                 <TabsTrigger value="live">自行捕捞</TabsTrigger>
               </TabsList>
@@ -353,7 +353,7 @@ export function PluginsPage() {
           onValueChange={(v) => setMode(v as ViewMode)}
           className="w-fit"
         >
-          <TabsList className="h-8 border border-white/10 bg-slate-900/60 text-xs">
+          <TabsList className="h-8 border border-border bg-muted text-xs">
             <TabsTrigger value="hot">热门</TabsTrigger>
             <TabsTrigger value="latest">最新</TabsTrigger>
           </TabsList>
@@ -365,9 +365,9 @@ export function PluginsPage() {
             <TooltipTrigger asChild>
               <Badge
                 variant="outline"
-                className="h-8 cursor-help gap-1.5 rounded-full border-white/10 bg-slate-900/60 px-3 text-xs font-normal text-white/45"
+                className="h-8 cursor-help gap-1.5 rounded-full border-border bg-card px-3 text-xs font-normal text-muted-foreground"
               >
-                <Info className="size-3.5 text-white/50" />
+                <Info className="size-3.5 text-muted-foreground" />
                 已捕捞
                 <span className="text-cyan-300">{filtered.length}</span>
                 个渔获
@@ -387,13 +387,13 @@ export function PluginsPage() {
       {!repos ? (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {SKELETON_KEYS.map((key) => (
-            <Skeleton key={key} className="h-40 rounded-xl bg-white/5" />
+            <Skeleton key={key} className="h-40 rounded-xl bg-muted" />
           ))}
         </div>
       ) : pageItems.length === 0 ? (
         <div className="mt-16 text-center">
-          <p className="text-sm text-white/50">没有匹配的插件</p>
-          <p className="mt-1 text-xs text-white/30">换个关键词或放宽筛选试试</p>
+          <p className="text-sm text-muted-foreground">没有匹配的插件</p>
+          <p className="mt-1 text-xs text-muted-foreground">换个关键词或放宽筛选试试</p>
         </div>
       ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -411,7 +411,7 @@ export function PluginsPage() {
             size="sm"
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="text-white/60 hover:text-white"
+            className="text-muted-foreground hover:text-foreground"
             aria-label="上一页"
           >
             <ChevronLeft className="size-4" />
@@ -419,7 +419,7 @@ export function PluginsPage() {
           {pageNumbers.map((item) => {
             if (item.value === "…") {
               return (
-                <span key={item.key} className="px-1 text-xs text-white/30">
+                <span key={item.key} className="px-1 text-xs text-muted-foreground">
                   …
                 </span>
               )
@@ -434,7 +434,7 @@ export function PluginsPage() {
                   "min-w-8 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
                   pageNumber === page
                     ? "bg-cyan-500/20 text-cyan-300"
-                    : "text-white/60 hover:bg-white/10 hover:text-white"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
                 {pageNumber}
@@ -446,7 +446,7 @@ export function PluginsPage() {
             size="sm"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="text-white/60 hover:text-white"
+            className="text-muted-foreground hover:text-foreground"
             aria-label="下一页"
           >
             <ChevronRight className="size-4" />
@@ -474,7 +474,7 @@ function FilterBadge({
         "rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors",
         active
           ? "border-cyan-400/50 bg-cyan-500/15 text-cyan-300"
-          : "border-white/10 bg-white/5 text-white/55 hover:text-white/90"
+          : "border-border bg-muted text-muted-foreground hover:text-foreground"
       )}
     >
       {label}
@@ -487,7 +487,7 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
   return (
     <Link
       to={`/plugin/${owner}/${name}`}
-      className="group flex flex-col rounded-xl border border-white/10 bg-slate-900/70 p-5 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-cyan-400/40 hover:bg-slate-900"
+      className="group flex flex-col rounded-xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-cyan-400/40 hover:bg-accent"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -495,10 +495,10 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
             {owner.slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h3 className="truncate font-mono text-sm font-semibold text-white">
+            <h3 className="truncate font-mono text-sm font-semibold text-foreground">
               {repo.full_name}
             </h3>
-            <p className="truncate text-[11px] text-white/40">
+            <p className="truncate text-[11px] text-muted-foreground">
               {repo.language ?? "未知语言"}
               {repo.license ? ` · ${repo.license}` : ""}
             </p>
@@ -514,7 +514,7 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
         )}
       </div>
 
-      <p className="mt-3 line-clamp-2 min-h-8 text-xs leading-relaxed text-white/60">
+      <p className="mt-3 line-clamp-2 min-h-8 text-xs leading-relaxed text-muted-foreground">
         {repo.description || "暂无描述"}
       </p>
 
@@ -524,30 +524,30 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
           {repo.topics.slice(0, 3).map((t) => (
             <span
               key={t}
-              className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-white/45"
+              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
             >
               {t}
             </span>
           ))}
           {repo.topics.length > 3 && (
-            <span className="text-[10px] text-white/30">
+            <span className="text-[10px] text-muted-foreground">
               +{repo.topics.length - 3}
             </span>
           )}
         </div>
       )}
 
-      <div className="mt-auto flex items-center gap-3 pt-4 text-xs text-white/65">
+      <div className="mt-auto flex items-center gap-3 pt-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <Star className="size-3.5 text-amber-300" />
           {formatStars(repo.stargazers_count)}
         </span>
-        <span className="text-white/40">·</span>
+        <span className="text-muted-foreground">·</span>
         <span className="flex items-center gap-1">
-          <GitFork className="size-3.5 text-white/45" />
+          <GitFork className="size-3.5 text-muted-foreground" />
           {formatStars(repo.forks_count)}
         </span>
-        <span className="ml-auto text-[11px] text-white/35">
+        <span className="ml-auto text-[11px] text-muted-foreground">
           {repo.pushed_at ? repo.pushed_at.slice(0, 10) : ""}
         </span>
       </div>

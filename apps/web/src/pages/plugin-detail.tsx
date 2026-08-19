@@ -99,20 +99,20 @@ export function PluginDetailPage() {
   return (
     <div className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
       {/* 面包屑 */}
-      <nav className="mb-6 flex items-center gap-1.5 text-xs text-white/45">
+      <nav className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Link
           to="/"
-          className="flex items-center gap-1 transition-colors hover:text-white"
+          className="flex items-center gap-1 transition-colors hover:text-foreground"
         >
           <Home className="size-3.5" />
           首页
         </Link>
         <span>/</span>
-        <Link to="/plugins" className="transition-colors hover:text-white">
+        <Link to="/plugins" className="transition-colors hover:text-foreground">
           插件生态
         </Link>
         <span>/</span>
-        <span className="font-mono text-white/70">
+        <span className="font-mono text-foreground/80">
           {owner}/{repo}
         </span>
       </nav>
@@ -120,24 +120,24 @@ export function PluginDetailPage() {
       {state.status === "loading" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-4">
-            <Skeleton className="h-10 w-64 bg-white/5" />
-            <Skeleton className="h-4 w-full bg-white/5" />
-            <Skeleton className="h-4 w-3/4 bg-white/5" />
-            <Skeleton className="h-64 w-full bg-white/5" />
+            <Skeleton className="h-10 w-64 bg-muted" />
+            <Skeleton className="h-4 w-full bg-muted" />
+            <Skeleton className="h-4 w-3/4 bg-muted" />
+            <Skeleton className="h-64 w-full bg-muted" />
           </div>
-          <Skeleton className="h-80 rounded-xl bg-white/5" />
+          <Skeleton className="h-80 rounded-xl bg-muted" />
         </div>
       )}
 
       {state.status === "error" && (
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
-          <p className="text-lg font-medium text-white/80">出错了</p>
-          <p className="text-sm text-white/50">{state.message}</p>
+          <p className="text-lg font-medium text-foreground">出错了</p>
+          <p className="text-sm text-muted-foreground">{state.message}</p>
           <Button
             variant="outline"
             size="sm"
             onClick={load}
-            className="mt-2 border-white/15 bg-slate-900/60 text-white hover:bg-slate-800"
+            className="mt-2 border-border bg-card text-foreground hover:bg-accent"
           >
             <RefreshCw className="size-3.5" />
             重试
@@ -148,9 +148,9 @@ export function PluginDetailPage() {
       {state.status === "ready" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* 左侧：README */}
-          <div className="min-w-0 rounded-xl border border-white/10 bg-slate-950/70 backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-white/80">
+          <div className="min-w-0 rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <BookMarked className="size-4 text-cyan-300" />
                 README
               </div>
@@ -159,7 +159,7 @@ export function PluginDetailPage() {
                   href={state.readme.html_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1 text-xs text-white/45 transition-colors hover:text-white"
+                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
                   在 GitHub 查看
                   <ExternalLink className="size-3" />
@@ -175,19 +175,19 @@ export function PluginDetailPage() {
                   branch={state.info.default_branch}
                 />
               ) : (
-                <p className="text-sm text-white/45">该仓库没有 README 文件</p>
+                <p className="text-sm text-muted-foreground">该仓库没有 README 文件</p>
               )}
             </div>
           </div>
 
           {/* 右侧：about 信息（sticky 固定，滚动不消失） */}
           <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-            <div className="rounded-xl border border-white/10 bg-slate-900/70 p-5 backdrop-blur-sm">
+            <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">
                 <img
                   src={state.info.owner.avatar_url}
                   alt={state.info.owner.login}
-                  className="size-11 rounded-full border border-white/15"
+                  className="size-11 rounded-full border border-border"
                   loading="lazy"
                 />
                 <div className="min-w-0">
@@ -196,7 +196,7 @@ export function PluginDetailPage() {
                     href={state.info.html_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="block truncate font-mono text-base font-bold text-white transition-colors hover:text-cyan-300"
+                    className="block truncate font-mono text-base font-bold text-foreground transition-colors hover:text-cyan-300"
                   >
                     {repo}
                   </a>
@@ -211,7 +211,7 @@ export function PluginDetailPage() {
                 </div>
               </div>
 
-              <p className="mt-4 text-sm leading-relaxed text-white/65">
+              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
                 {state.info.description || "暂无描述"}
               </p>
 
@@ -258,7 +258,7 @@ export function PluginDetailPage() {
                   {state.info.topics.slice(0, 8).map((t) => (
                     <span
                       key={t}
-                      className="rounded-full bg-white/5 px-2 py-0.5 font-mono text-[10px] text-white/50"
+                      className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
                     >
                       {t}
                     </span>
@@ -268,8 +268,8 @@ export function PluginDetailPage() {
 
               {/* 最新发布（与 about 卡片一体、直接平铺不嵌套，避免空间局促；无 release 则隐藏） */}
               {state.release && (
-                <div className="mt-5 border-t border-white/10 pt-4">
-                  <div className="flex items-center gap-2 text-xs font-medium text-white/80">
+                <div className="mt-5 border-t border-border pt-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                     <Download className="size-3.5 text-cyan-300" />
                     最新发布
                   </div>
@@ -280,17 +280,17 @@ export function PluginDetailPage() {
                     className="mt-2 flex items-center justify-between gap-2 py-1 transition-colors hover:text-cyan-300"
                   >
                     <div className="min-w-0">
-                      <p className="truncate font-mono text-xs font-semibold text-white">
+                      <p className="truncate font-mono text-xs font-semibold text-foreground">
                         {state.release.tag_name}
                       </p>
-                      <p className="mt-0.5 truncate text-[10px] text-white/40">
+                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
                         {state.release.name || state.release.tag_name}
                         {state.release.published_at
                           ? ` · ${formatDate(state.release.published_at)}`
                           : ""}
                       </p>
                     </div>
-                    <ExternalLink className="size-3.5 shrink-0 text-white/40" />
+                    <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
                   </a>
                   {state.release.assets.length > 0 && (
                     <div className="mt-1.5 flex flex-col">
@@ -302,7 +302,7 @@ export function PluginDetailPage() {
                           rel="noreferrer"
                           className="flex items-center justify-between gap-2 py-1 transition-colors hover:text-cyan-300"
                         >
-                          <span className="truncate font-mono text-[11px] text-white/70">
+                          <span className="truncate font-mono text-[11px] text-foreground/80">
                             {asset.name}
                           </span>
                           <span className="flex shrink-0 items-center gap-1 text-[10px] text-cyan-300">
@@ -332,7 +332,7 @@ export function PluginDetailPage() {
                   asChild
                   variant="outline"
                   size="sm"
-                  className="w-full border-white/15 bg-white/5 text-white hover:bg-white/10"
+                  className="w-full border-border bg-muted text-foreground hover:bg-accent"
                 >
                   <a
                     href={`https://github.com/${state.info.owner.login}/${repo}/issues/new`}
@@ -362,9 +362,9 @@ function Stat({
   label: string
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 rounded-lg bg-white/5 py-2.5">
-      <span className="text-base font-bold text-white">{value}</span>
-      <span className="flex items-center gap-1 text-[10px] text-white/40">
+    <div className="flex flex-col items-center gap-1 rounded-lg bg-muted py-2.5">
+      <span className="text-base font-bold text-foreground">{value}</span>
+      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
         {icon}
         {label}
       </span>
@@ -381,8 +381,8 @@ function MetaRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-white/40">{label}</dt>
-      <dd className="truncate text-white/80">{children}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="truncate text-foreground">{children}</dd>
     </div>
   )
 }

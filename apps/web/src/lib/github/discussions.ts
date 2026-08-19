@@ -21,6 +21,60 @@ export const OFFICIAL_REPO = "deepseek-harness"
 export const DISCUSSIONS_SEED_URL = "/data/discussions.json"
 export const OFFICIAL_DISCUSSIONS_SEED_URL = "/data/discussions-official.json"
 
+/** 社区来源标识：own = 我们的社区（evil7/deepSea，可互动）；official = 官方社区（只读） */
+export type CommunitySource = "own" | "official"
+
+/** 单个社区的配置（owner/repo/标题/回复开关/发帖入口） */
+export interface CommunityInfo {
+  source: CommunitySource
+  owner: string
+  repo: string
+  /** 页头标题 */
+  label: string
+  /** 是否开启站内回复/表情（官方社区无法站外调接口写，显式 false） */
+  replyEnable: boolean
+  /** 发起讨论的 GitHub 跳转链接 */
+  createUrl: string
+}
+
+/** 依据 source 解析社区配置（默认 own） */
+export function resolveCommunity(
+  source: string | null | undefined
+): CommunityInfo {
+  if (source === "official") {
+    return {
+      source: "official",
+      owner: OFFICIAL_OWNER,
+      repo: OFFICIAL_REPO,
+      label: "官方社区",
+      replyEnable: false,
+      createUrl: `https://github.com/${OFFICIAL_OWNER}/${OFFICIAL_REPO}/discussions/new`,
+    }
+  }
+  return {
+    source: "own",
+    owner: COMMUNITY_OWNER,
+    repo: COMMUNITY_REPO,
+    label: "我们的社区",
+    replyEnable: true,
+    createUrl: `https://github.com/${COMMUNITY_OWNER}/${COMMUNITY_REPO}/discussions/new`,
+  }
+}
+
+/** 依据 source 选择列表 seed 加载器 */
+export function resolveSeedLoader(source: string | null | undefined): () => Promise<
+  DiscussionSummary[]
+> {
+  return source === "official" ? loadOfficialDiscussionsSeed : loadDiscussionsSeed
+}
+
+/** 依据 source 选择登录态实时列表加载器 */
+export function resolveLiveLoader(source: string | null | undefined): () => Promise<
+  DiscussionSummary[] | null
+> {
+  return source === "official" ? loadOfficialDiscussionsLive : loadDiscussionsLive
+}
+
 /** GitHub ReactionContent 枚举值（支持的表情类型） */
 export const REACTION_CONTENTS = [
   "THUMBS_UP",
@@ -373,10 +427,12 @@ export function loadOfficialDiscussionsLive(): Promise<
 }
 
 /**
- * 加载讨论详情（前端 octokit GraphQL 直调，需登录）。
+ * 通用：加载某仓库讨论详情（前端 octokit GraphQL 直调，需登录）。
  * 未登录/失败返回 null，不抛错。
  */
-export async function loadDiscussionDetail(
+async function fetchDiscussionDetail(
+  owner: string,
+  repo: string,
   number: number
 ): Promise<DiscussionDetail | null> {
   try {
@@ -424,7 +480,7 @@ export async function loadDiscussionDetail(
           }
         }
       }`,
-      { owner: COMMUNITY_OWNER, repo: COMMUNITY_REPO, number }
+      { owner, repo, number }
     )
     const d = data.repository?.discussion
     if (!d) return null
@@ -452,6 +508,20 @@ export async function loadDiscussionDetail(
   } catch {
     return null
   }
+}
+
+/** 加载我们的社区讨论详情（evil7/deepSea） */
+export function loadDiscussionDetail(
+  number: number
+): Promise<DiscussionDetail | null> {
+  return fetchDiscussionDetail(COMMUNITY_OWNER, COMMUNITY_REPO, number)
+}
+
+/** 加载官方社区讨论详情（deepseek-ai/deepseek-harness，只读） */
+export function loadOfficialDiscussionDetail(
+  number: number
+): Promise<DiscussionDetail | null> {
+  return fetchDiscussionDetail(OFFICIAL_OWNER, OFFICIAL_REPO, number)
 }
 
 /**

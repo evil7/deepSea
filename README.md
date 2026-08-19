@@ -1,6 +1,6 @@
 # deepSea · DeepSeek Harness 插件生态聚合站
 
-> 搜罗与聚类 `deepseek-harness` 周边插件生态，提供快速搜索、下载使用、公共社区、插件评分等能力的对接。
+> 搜罗类聚 deepseek-harness 周边插件生态，提供快速搜索、下载使用、社区讨论、插件评分、协助开发等能力。
 
 - 官方库：<https://github.com/deepseek-ai/deepseek-harness>（"Everything is a Plugin"）
 - 生态 topics：`dsh` · `dsh-plugin` · `dsh-plugins` · `dsh-patch` · `cordis` · `plugin-marketplace` 等

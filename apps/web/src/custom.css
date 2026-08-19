@@ -57,10 +57,10 @@ body {
   --background: oklch(0.13 0.022 240);
   --foreground: oklch(0.97 0.008 230);
 
-  /* 卡片 / 弹层：半透明深玻璃（配合 backdrop-blur 实现毛玻璃） */
-  --card: oklch(0.17 0.025 240 / 70%);
+  /* 卡片 / 弹层：实色深卡片（子路由页面还原 shadcn 默认，需清晰有边界） */
+  --card: oklch(0.19 0.025 240);
   --card-foreground: oklch(0.97 0.008 230);
-  --popover: oklch(0.17 0.025 240 / 85%);
+  --popover: oklch(0.19 0.025 240);
   --popover-foreground: oklch(0.97 0.008 230);
 
   /* 主色：青色系（海洋光柱同源） */
@@ -68,13 +68,13 @@ body {
   --primary-foreground: oklch(0.13 0.022 240);
 
   /* 次级 / 弱化 */
-  --secondary: oklch(0.22 0.03 240 / 70%);
+  --secondary: oklch(0.22 0.03 240);
   --secondary-foreground: oklch(0.95 0.01 230);
-  --muted: oklch(0.22 0.03 240 / 70%);
+  --muted: oklch(0.22 0.03 240);
   --muted-foreground: oklch(0.72 0.03 230);
 
-  /* 强调高亮（Select item hover / ghost hover）：深色玻璃 */
-  --accent: oklch(0.25 0.045 230 / 80%);
+  /* 强调高亮（Select item hover / ghost hover）：深色 */
+  --accent: oklch(0.25 0.045 230);
   --accent-foreground: oklch(0.97 0.008 230);
 
   /* 边框 / 输入 / 焦点环：白色半透明（毛玻璃描边） */
@@ -83,7 +83,7 @@ body {
   --ring: oklch(0.72 0.14 230 / 60%);
 
   /* 侧栏（未用但保持同色系） */
-  --sidebar: oklch(0.15 0.024 240 / 70%);
+  --sidebar: oklch(0.15 0.024 240);
   --sidebar-foreground: oklch(0.97 0.008 230);
   --sidebar-primary: oklch(0.72 0.14 230);
   --sidebar-primary-foreground: oklch(0.13 0.022 240);
