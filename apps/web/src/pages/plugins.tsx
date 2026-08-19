@@ -39,6 +39,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { usePageEnter } from "@/components/showcase/page-enter"
+import { PageHeader } from "@/components/layout/page-header"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -236,17 +238,18 @@ export function PluginsPage() {
     return items
   }, [totalPages, page])
 
+  const pageRef = usePageEnter<HTMLDivElement>()
+
   return (
-    <div className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
-      {/* 页头 */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          插件生态
-        </h1>
-      </div>
+    <div
+      ref={pageRef}
+      className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
+    >
+      {/* 页头（共享 PageHeader，sticky 吸附变形） */}
+      <PageHeader title="插件生态" />
 
       {/* 搜索 + 过滤条 */}
-      <div className="mt-6 flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         {/* 搜索框（自行捕捞模式在后方显示搜索按钮） */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -376,7 +379,6 @@ export function PluginsPage() {
             <TooltipContent side="left" sideOffset={8}>
               <div className="flex flex-col gap-0.5">
                 <p>距下次出海：{minutesUntilNextSync()} 分钟</p>
-                <p>捕捞目标：热度前 {repos?.length ?? 0} 的 DSH 插件</p>
               </div>
             </TooltipContent>
           </Tooltip>

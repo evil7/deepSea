@@ -568,16 +568,16 @@ export function CommunitySlide() {
     animatePos(CENTER, null)
   }
 
-  /** 点击卡片：左半 → 官方社区（只读），右半 → 我们的社区（可互动） */
+  /** 点击卡片：左半 → 蓝鲸社区（官方只读），右半 → 浪尖酒馆（可互动） */
   const onCardClick = (e: MouseEvent<HTMLDivElement>) => {
     const el = containerRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
     const ratio = (e.clientX - rect.left) / rect.width
     if (ratio < 0.5) {
-      navigate("/community?source=official&replyEnable=false")
+      navigate("/community?source=dsh")
     } else {
-      navigate("/community?source=own")
+      navigate("/community?source=dpc")
     }
   }
 

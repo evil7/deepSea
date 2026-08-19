@@ -1,17 +1,19 @@
 import { useEffect, useRef } from "react"
 import {
+  Beer,
   ChevronDown,
-  MessagesSquare,
-  MonitorSmartphone,
   Package,
   Palette,
   Plug,
+  Radio,
+  ShieldCheck,
 } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { ComingSoonSlide } from "@/components/home/coming-soon"
 import { CommunitySlide } from "@/components/home/community-slide"
 import { Features } from "@/components/home/features"
+import { InstallCommand } from "@/components/home/install-command"
 import { PluginPreview } from "@/components/plugins/plugin-preview"
 import {
   FullscreenSlides,
@@ -75,13 +77,12 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       deepSea
                     </h1>
                     <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
-                      DeepSeek Harness 插件生态的入海口。
+                      DeepSeek Harness 插件生态的入海口
                       <br />
-                      发现 · 安装 · 管理 · 互联，一站式聚合。
-                      <br />
-                      风浪越大，收获越多。
+                      发现 · 安装 · 管理 · 互联，一站式聚合
                     </p>
-                    <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+                    {/* deepc 安装命令：终端风格，一眼可见（独立组件 + 自定义 CSS） */}
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                       <Button
                         asChild
                         size="lg"
@@ -99,12 +100,13 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                         variant="outline"
                         className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                       >
-                        <Link to="/#dsh-community">
-                          <MessagesSquare className="size-4" />
-                          讨论交流
+                        <Link to="/community">
+                          <Beer className="size-4" />
+                          把酒言欢
                         </Link>
                       </Button>
                     </div>
+                    <InstallCommand />
                   </div>
                 </div>
               ),
@@ -139,38 +141,41 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                 <ComingSoonSlide
                   eyebrow="05 · DEEPSEA KIT"
                   title="深海套装"
-                  description="把 deepSea 装进口袋：主题、管理与多端互联，一套带走。"
+                  description="把 deepSea 装进口袋：一套 deepc 组合包，搞定主题、插件管理与多端互联。"
                   items={[
                     {
                       id: "theme",
                       icon: Palette,
-                      title: "deepsea 主题",
+                      title: "一致主题",
                       description:
-                        "可视化构造深海主题，一键生成 deepc 主题插件并应用到本地 profile。",
+                        "约定 DeepcTheme 主题文档规范，local 直接调用官方 theme.register 移植优秀主题，remote 经 P2P/私有 gist 同步各端，一套主题多端一致。",
                       tag: "theme",
                     },
                     {
                       id: "manage",
                       icon: Package,
-                      title: "插件管理器",
+                      title: "插件管理",
                       description:
-                        "线上线下集中管理插件：清单、版本、更新提示与安全审计一站式。",
+                        "本地管理点注入 dsh 设置页，异步执行安装/卸载/更新与安全审计，插件与主题共用一个设置页，多 profile 一站式管理。",
                       tag: "deepc",
                     },
                     {
                       id: "sync",
-                      icon: MonitorSmartphone,
-                      title: "多端互联协议",
+                      icon: Radio,
+                      title: "多端互联",
                       description:
-                        "WebRTC 多端互联：会话接力、主题与插件清单跨设备同步。",
+                        "WebRTC 实时 P2P 加私有 gist 端到端加密同步，deepc.cn 统一界面多端调用 dsh、对话同步，免 nginx 反代风险。",
                       tag: "sync",
                     },
+                    {
+                      id: "security",
+                      icon: ShieldCheck,
+                      title: "安全护栏",
+                      description:
+                        "沙箱命名空间映射白名单、动态安全路径、危险操作二次验证与审计日志，同步密钥自协商派生不出设备。",
+                      tag: "security",
+                    },
                   ]}
-                  installHint={{
-                    id: "dsh-install",
-                    label: "完成 deepc 工具安装",
-                    command: "dsh plugin add deepc",
-                  }}
                 />
               ),
             },

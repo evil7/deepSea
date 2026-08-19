@@ -37,6 +37,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { usePageEnter } from "@/components/showcase/page-enter"
+import { PageHeader } from "@/components/layout/page-header"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -326,13 +328,10 @@ export function CommunityDetailPage() {
   const num = Number(number)
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
-  // 社区来源 + 回复开关（官方社区只读，replyEnable=false）
+  // 社区来源 + 回复开关（蓝鲸社区只读；回复开关由社区身份决定，不允许 URL 控制）
   const source = searchParams.get("source")
   const info = useMemo(() => resolveCommunity(source), [source])
-  // replyEnable：URL 显式参数优先，未传时用 source 兜底（official 默认 false）
-  const replyEnableParam = searchParams.get("replyEnable")
-  const replyEnable =
-    replyEnableParam === null ? info.replyEnable : replyEnableParam !== "false"
+  const replyEnable = info.replyEnable
   const [detail, setDetail] = useState<DiscussionDetail | null>(null)
   const [state, setState] = useState<"loading" | "unauthorized" | "error" | "ok">(
     "loading"
@@ -347,7 +346,7 @@ export function CommunityDetailPage() {
     }
     setState("loading")
     const loadDetail =
-      info.source === "official"
+      info.source === "dsh"
         ? loadOfficialDiscussionDetail
         : loadDiscussionDetail
     loadDetail(num).then((d) => {
@@ -427,7 +426,7 @@ export function CommunityDetailPage() {
     active: boolean
   ) => {
     if (!replyEnable) {
-      toast.info("官方社区为只读，无法表态")
+      toast.info("蓝鲸社区为只读，无法表态")
       return
     }
     if (!user) {
@@ -464,27 +463,35 @@ export function CommunityDetailPage() {
   // 未登录时先提示（worker 返回 401 → detail 为 null，这里按未登录处理）
   const needsLogin = state === "error" && !user
 
+  const pageRef = usePageEnter<HTMLDivElement>()
+
   return (
-    <div className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
-      {/* 面包屑（与插件详情页一致） */}
-      <nav className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Link
-          to="/"
-          className="flex items-center gap-1 transition-colors hover:text-foreground"
-        >
-          <Home className="size-3.5" />
-          首页
-        </Link>
-        <span>/</span>
-        <Link
-          to={`/community?source=${source ?? "own"}`}
-          className="transition-colors hover:text-foreground"
-        >
-          讨论交流
-        </Link>
-        <span>/</span>
-        <span className="font-mono text-foreground/80">#{num}</span>
-      </nav>
+    <div
+      ref={pageRef}
+      className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
+    >
+      {/* 页头：面包屑 + 讨论编号（共享 PageHeader） */}
+      <PageHeader
+        breadcrumb={
+          <>
+            <Link
+              to="/"
+              className="flex items-center gap-1 transition-colors hover:text-foreground"
+            >
+              <Home className="size-3.5" />
+              首页
+            </Link>
+            <span>/</span>
+            <Link
+              to={`/community?source=${source ?? "dpc"}`}
+              className="transition-colors hover:text-foreground"
+            >
+              {info.label}
+            </Link>
+          </>
+        }
+        title={<span className="font-mono">#{num}</span>}
+      />
 
       {state === "loading" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -507,11 +514,7 @@ export function CommunityDetailPage() {
           </p>
           <Button asChild size="sm" className="mt-2">
             {/* 真实导航：/auth/login 由 Worker 处理，无前端路由 */}
-            <a
-              href={loginUrl(
-                `/community/${num}?source=${source ?? "own"}&replyEnable=${replyEnable}`
-              )}
-            >
+            <a href={loginUrl(`/community/${num}?source=${source ?? "dpc"}`)}>
               <User className="size-4" />
               登录
             </a>
@@ -529,7 +532,7 @@ export function CommunityDetailPage() {
             className="mt-2 border-border bg-card text-foreground hover:bg-accent"
           >
             <ArrowLeft className="size-3.5" />
-            <Link to={`/community?source=${source ?? "own"}`}>返回酒馆</Link>
+            <Link to={`/community?source=${source ?? "dpc"}`}>返回{info.label}</Link>
           </Button>
         </div>
       )}
@@ -652,7 +655,7 @@ export function CommunityDetailPage() {
                 <div className="mt-2 ml-12">
                   {!replyEnable ? (
                     <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
-                      <span>官方社区为只读，无法在站内回复</span>
+                      <span>蓝鲸社区为只读，无法在站内回复</span>
                       <Button asChild size="sm" variant="outline">
                         <a href={detail.url} target="_blank" rel="noreferrer">
                           <ExternalLink className="size-4" />
@@ -672,9 +675,7 @@ export function CommunityDetailPage() {
                       <span>登录后即可参与回复</span>
                       <Button asChild size="sm" variant="outline">
                         <a
-                          href={loginUrl(
-                            `/community/${num}?source=${source ?? "own"}&replyEnable=${replyEnable}`
-                          )}
+                          href={loginUrl(`/community/${num}?source=${source ?? "dpc"}`)}
                         >
                           <User className="size-4" />
                           登录

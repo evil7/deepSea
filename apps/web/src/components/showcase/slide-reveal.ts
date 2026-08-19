@@ -62,7 +62,7 @@ export function useSlideReveal<T extends HTMLElement>({
           translateY: [28, 0],
           opacity: [0, 1],
           duration: DEFAULT_DURATION,
-          easing: DEFAULT_EASING,
+          ease: DEFAULT_EASING,
         })
       }
       if (itemEls.length > 0) {
@@ -73,7 +73,7 @@ export function useSlideReveal<T extends HTMLElement>({
           delay: stagger(DEFAULT_STAGGER, {
             start: titleEls.length > 0 ? 220 : 0,
           }),
-          easing: DEFAULT_EASING,
+          ease: DEFAULT_EASING,
         })
       }
     }

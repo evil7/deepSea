@@ -122,3 +122,39 @@ body {
   fill: oklch(0.13 0.022 240 / 92%) !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * 首页 hero 安装命令（InstallCommand 组件专用样式）
+ *   · 独立命名空间 .deepc-install*，不污染其它组件
+ *   · 终端光标闪烁 / 图标微动，弱化存在感不破坏首页美感
+ * ═══════════════════════════════════════════════════════════════════════ */
+.deepc-install {
+  cursor: pointer;
+}
+
+/* 终端光标：右侧细竖条，闪烁提示「可复制命令」 */
+.deepc-install__cursor {
+  width: 7px;
+  height: 1.1em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: oklch(0.87 0.12 230);
+  animation: deepc-cursor-blink 1.1s steps(1, start) infinite;
+}
+@keyframes deepc-cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 终端图标轻微呼吸，hover 时加快 */
+.deepc-install__icon {
+  transition: transform 0.3s ease;
+}
+.deepc-install:hover .deepc-install__icon {
+  transform: scale(1.12);
+}
+

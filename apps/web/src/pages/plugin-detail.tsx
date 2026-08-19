@@ -29,6 +29,8 @@ import {
 import type { RepoInfo, RepoReadme, RepoRelease } from "@/lib/github/types"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { usePageEnter } from "@/components/showcase/page-enter"
+import { PageHeader } from "@/components/layout/page-header"
 
 // ---------------------------------------------------------------------------
 // /plugin/:owner/:repo —— 插件详情页
@@ -96,26 +98,39 @@ export function PluginDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner, repo])
 
+  const pageRef = usePageEnter<HTMLDivElement>()
+
   return (
-    <div className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
-      {/* 面包屑 */}
-      <nav className="mb-6 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Link
-          to="/"
-          className="flex items-center gap-1 transition-colors hover:text-foreground"
-        >
-          <Home className="size-3.5" />
-          首页
-        </Link>
-        <span>/</span>
-        <Link to="/plugins" className="transition-colors hover:text-foreground">
-          插件生态
-        </Link>
-        <span>/</span>
-        <span className="font-mono text-foreground/80">
-          {owner}/{repo}
-        </span>
-      </nav>
+    <div
+      ref={pageRef}
+      className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
+    >
+      {/* 页头：面包屑 + 仓库标题（共享 PageHeader） */}
+      <PageHeader
+        breadcrumb={
+          <>
+            <Link
+              to="/"
+              className="flex items-center gap-1 transition-colors hover:text-foreground"
+            >
+              <Home className="size-3.5" />
+              首页
+            </Link>
+            <span>/</span>
+            <Link
+              to="/plugins"
+              className="transition-colors hover:text-foreground"
+            >
+              插件生态
+            </Link>
+          </>
+        }
+        title={
+          <span className="font-mono">
+            {owner}/{repo}
+          </span>
+        }
+      />
 
       {state.status === "loading" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">

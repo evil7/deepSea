@@ -54,8 +54,8 @@ export function ComingSoonSlide({
         <p className="mt-3 text-white/65">{description}</p>
       </div>
 
-      {/* 规划能力卡片网格 */}
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {/* 规划能力卡片网格：固定两列（四张卡分两行） */}
+      <div className="grid gap-6 sm:grid-cols-2">
         {items.map((item) => (
           <Card
             key={item.id}

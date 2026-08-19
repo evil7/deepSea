@@ -71,7 +71,7 @@ const features: Feature[] = [
     description:
       "统一生成安装指引，一键直达对应仓库 issues 发起提问与工单。",
     tag: "issue-bridge",
-    to: "/#dsh-install",
+    to: "/#dsh-deepsea-kit",
   },
   {
     id: "feature-manage",

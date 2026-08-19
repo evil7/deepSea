@@ -21,43 +21,59 @@ export const OFFICIAL_REPO = "deepseek-harness"
 export const DISCUSSIONS_SEED_URL = "/data/discussions.json"
 export const OFFICIAL_DISCUSSIONS_SEED_URL = "/data/discussions-official.json"
 
-/** 社区来源标识：own = 我们的社区（evil7/deepSea，可互动）；official = 官方社区（只读） */
-export type CommunitySource = "own" | "official"
+/**
+ * 社区来源标识（URL `?source=` 取值）：
+ *   · dsh = 蓝鲸社区（官方 deepseek-ai/deepseek-harness，只读）
+ *   · dpc = 浪尖酒馆（我们 evil7/deepSea，可互动，默认）
+ */
+export type CommunitySource = "dsh" | "dpc"
 
-/** 单个社区的配置（owner/repo/标题/回复开关/发帖入口） */
+/** 单个社区的配置（owner/repo/名称/简介/回复开关/发帖入口/对侧社区） */
 export interface CommunityInfo {
   source: CommunitySource
   owner: string
   repo: string
-  /** 页头标题 */
+  /** 社区名称（页头标题） */
   label: string
-  /** 是否开启站内回复/表情（官方社区无法站外调接口写，显式 false） */
+  /** 社区简介（页头副标题） */
+  description: string
+  /** 是否开启站内回复/表情（蓝鲸社区无法站外调接口写，显式 false） */
   replyEnable: boolean
   /** 发起讨论的 GitHub 跳转链接 */
   createUrl: string
+  /** 对侧社区名称（用于「前往xxxx」按钮） */
+  counterpartLabel: string
+  /** 对侧社区 source（用于「前往xxxx」跳转） */
+  counterpartSource: CommunitySource
 }
 
-/** 依据 source 解析社区配置（默认 own） */
+/** 依据 source 解析社区配置（默认 dpc = 浪尖酒馆） */
 export function resolveCommunity(
   source: string | null | undefined
 ): CommunityInfo {
-  if (source === "official") {
+  if (source === "dsh") {
     return {
-      source: "official",
+      source: "dsh",
       owner: OFFICIAL_OWNER,
       repo: OFFICIAL_REPO,
-      label: "官方社区",
+      label: "蓝鲸社区",
+      description: "DeepSeek Harness 官方讨论 · 内容实时同步，仅浏览。",
       replyEnable: false,
       createUrl: `https://github.com/${OFFICIAL_OWNER}/${OFFICIAL_REPO}/discussions/new`,
+      counterpartLabel: "浪尖酒馆",
+      counterpartSource: "dpc",
     }
   }
   return {
-    source: "own",
+    source: "dpc",
     owner: COMMUNITY_OWNER,
     repo: COMMUNITY_REPO,
-    label: "我们的社区",
+    label: "浪尖酒馆",
+    description: "深海的自家酒馆，畅聊插件、Q&A 与创意 · 回复与表态都从这里开始。",
     replyEnable: true,
     createUrl: `https://github.com/${COMMUNITY_OWNER}/${COMMUNITY_REPO}/discussions/new`,
+    counterpartLabel: "蓝鲸社区",
+    counterpartSource: "dsh",
   }
 }
 
@@ -65,14 +81,14 @@ export function resolveCommunity(
 export function resolveSeedLoader(source: string | null | undefined): () => Promise<
   DiscussionSummary[]
 > {
-  return source === "official" ? loadOfficialDiscussionsSeed : loadDiscussionsSeed
+  return source === "dsh" ? loadOfficialDiscussionsSeed : loadDiscussionsSeed
 }
 
 /** 依据 source 选择登录态实时列表加载器 */
 export function resolveLiveLoader(source: string | null | undefined): () => Promise<
   DiscussionSummary[] | null
 > {
-  return source === "official" ? loadOfficialDiscussionsLive : loadDiscussionsLive
+  return source === "dsh" ? loadOfficialDiscussionsLive : loadDiscussionsLive
 }
 
 /** GitHub ReactionContent 枚举值（支持的表情类型） */

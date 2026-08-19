@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { animate } from "animejs"
 import {
   ArrowLeft,
-  ExternalLink,
   Flame,
   Link2,
   MessagesSquare,
@@ -30,6 +30,8 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { usePageEnter } from "@/components/showcase/page-enter"
+import { PageHeader } from "@/components/layout/page-header"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -57,6 +59,16 @@ const CATEGORY_STYLES: Record<string, string> = {
   Polls: "border-rose-400/30 bg-rose-400/10 text-rose-300",
 }
 
+/** 分类色条（列表项左侧强调色，与徽章同色系） */
+const CATEGORY_ACCENTS: Record<string, string> = {
+  Announcements: "bg-amber-400/70",
+  General: "bg-sky-400/70",
+  Ideas: "bg-violet-400/70",
+  "Q&A": "bg-emerald-400/70",
+  "Show and tell": "bg-cyan-400/70",
+  Polls: "bg-rose-400/70",
+}
+
 /** 作者小头像：URL 非空才渲染 img，否则 User 图标 fallback（杜绝空 src 警告） */
 function AuthorAvatar({ url, name }: { url?: string; name: string }) {
   return (
@@ -69,16 +81,67 @@ function AuthorAvatar({ url, name }: { url?: string; name: string }) {
   )
 }
 
+/**
+ * 社区页背景：对应社区图（虚化 + 稍暗遮罩），随鼠标位置轻微位移。
+ *   · 图片超出视口 125% + blur，位移时不会露出边缘
+ *   · rAF 节流，位移幅度限制在小范围（x ±14px / y ±10px）
+ *   · image 变化时淡入（crossfade 切换社区背景）
+ */
+function CommunityBackdrop({ image }: { image: string }) {
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const imgRef = useRef<HTMLImageElement | null>(null)
+
+  useEffect(() => {
+    let raf = 0
+    const onMove = (e: MouseEvent) => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const nx = e.clientX / window.innerWidth - 0.5
+        const ny = e.clientY / window.innerHeight - 0.5
+        setOffset({ x: nx * -14, y: ny * -10 })
+      })
+    }
+    window.addEventListener("mousemove", onMove, { passive: true })
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      cancelAnimationFrame(raf)
+    }
+  }, [])
+
+  // 社区背景切换时淡入（crossfade）
+  useEffect(() => {
+    const img = imgRef.current
+    if (!img) return
+    animate(img, {
+      opacity: [0, 1],
+      duration: 600,
+      ease: "easeOutQuad",
+    })
+  }, [image])
+
+  return (
+    <div aria-hidden="true" className="fixed inset-0 z-0 overflow-hidden">
+      <img
+        ref={imgRef}
+        src={image}
+        alt=""
+        className="absolute top-1/2 left-1/2 h-[125%] w-[125%] max-w-none object-cover blur-md"
+        style={{
+          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(1.05)`,
+        }}
+      />
+      {/* 稍暗遮罩：保证前景文字可读 */}
+      <div className="absolute inset-0 bg-slate-950/72" />
+    </div>
+  )
+}
+
 export function CommunityPage() {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
-  // 社区来源：?source=own（默认，可互动）| official（只读）；replyEnable 控制回复
+  // 社区来源：?source=dsh（蓝鲸社区，只读）| dpc（浪尖酒馆，可互动，默认）
   const source = searchParams.get("source")
   const info = useMemo(() => resolveCommunity(source), [source])
-  // replyEnable：URL 显式参数优先，未传时用 source 兜底（official 默认 false）
-  const replyEnableParam = searchParams.get("replyEnable")
-  const replyEnable =
-    replyEnableParam === null ? info.replyEnable : replyEnableParam !== "false"
   const [list, setList] = useState<DiscussionSummary[] | null>(null)
   const [mode, setMode] = useState<SortMode>("hot")
   const [category, setCategory] = useState<CategoryFilter>("ALL")
@@ -86,6 +149,30 @@ export function CommunityPage() {
   const [page, setPage] = useState(0)
   // 分类：登录后取 GitHub 真实分类（含 id）；匿名从 seed 数据推导
   const [categories, setCategories] = useState<string[]>([])
+
+  // 社区切换（dsh ↔ dpc）左右平移过渡：新内容从对应方向滑入。
+  //   · dsh（蓝鲸社区，官方，在首页位于左侧）→ 从左侧滑入
+  //   · dpc（浪尖酒馆，自有，在首页位于右侧）→ 从右侧滑入
+  const contentRef = usePageEnter<HTMLDivElement>()
+  const prevSourceRef = useRef<string>(info.source)
+  useEffect(() => {
+    if (prevSourceRef.current === info.source) return
+    prevSourceRef.current = info.source
+    const el = contentRef.current
+    if (!el) return
+    const from = info.source === "dsh" ? -56 : 56
+    animate(el, {
+      translateX: [from, 0],
+      opacity: [0, 1],
+      duration: 480,
+      ease: "outExpo",
+      // 清除残留 transform：否则 sticky 页头（PageHeader）会失效
+      onComplete: () => {
+        el.style.transform = ""
+        el.style.opacity = ""
+      },
+    })
+  }, [info.source])
 
   useEffect(() => {
     let alive = true
@@ -106,9 +193,9 @@ export function CommunityPage() {
     }
   }, [source])
 
-  // 登录后拉取 GitHub 真实分类（仅我们的社区；官方社区从 seed 推导）
+  // 登录后拉取 GitHub 真实分类（仅我们的社区；蓝鲸社区从 seed 推导）
   useEffect(() => {
-    if (!user || info.source === "official") {
+    if (!user || info.source === "dsh") {
       return
     }
     let alive = true
@@ -122,12 +209,12 @@ export function CommunityPage() {
     }
   }, [user, info.source])
 
-  // 官方社区 / 未登录时：从 seed 数据推导真实分类
+  // 蓝鲸社区 / 未登录时：从 seed 数据推导真实分类
   useEffect(() => {
     if (!list) {
       return
     }
-    if (info.source === "official" || !user) {
+    if (info.source === "dsh" || !user) {
       setCategories(deriveCategories(list))
     }
   }, [user, list, info.source])
@@ -170,62 +257,52 @@ export function CommunityPage() {
   }
 
   return (
-    <div className="mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6">
-      {/* 页头：标题 + 发起讨论 */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="font-mono text-xs tracking-[0.3em] text-cyan-300/90">
-            04 · COMMUNITY
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            {info.label}
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            {info.source === "official"
-              ? "DeepSeek Harness 官方讨论（只读）—— 内容实时同步，站内仅浏览。"
-              : "深海的自家酒馆，畅聊插件、Q&A 与创意 —— 回复与表态都从这里开始。"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {info.source === "official" ? (
+    <>
+      <CommunityBackdrop image={info.source === "dsh" ? "/c1.png" : "/c2.png"} />
+      <div
+        ref={contentRef}
+        className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
+      >
+      {/* 页头：标题 + 描述 + 操作（共享 PageHeader，sticky 吸附变形） */}
+      <PageHeader
+        title={info.label}
+        description={
+          <div className="flex items-center gap-2">
+            <Badge
+              className={cn(
+                "shrink-0 font-mono text-[10px]",
+                info.replyEnable
+                  ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-300"
+                  : "border-amber-400/40 bg-amber-400/10 text-amber-300"
+              )}
+            >
+              {info.replyEnable ? "可互动" : "只读"}
+            </Badge>
+            <p className="text-muted-foreground">{info.description}</p>
+          </div>
+        }
+        actions={
+          <>
             <Button
               asChild
               variant="outline"
               className="border-border bg-card text-foreground hover:bg-accent"
             >
-              <Link to="/community?source=own">
+              <Link to={`/community?source=${info.counterpartSource}`}>
                 <ArrowLeft className="size-4" />
-                返回我们的社区
+                前往{info.counterpartLabel}
               </Link>
             </Button>
-          ) : (
-            <>
-              {/* 官方社区：只读 + 跳转链接 */}
-              <Button
-                asChild
-                variant="outline"
-                className="border-border bg-card text-foreground hover:bg-accent"
-              >
-                <a
-                  href="https://github.com/deepseek-ai/deepseek-harness/discussions"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <ExternalLink className="size-4" />
-                  官方社区（只读）
-                </a>
-              </Button>
-              <Button size="sm" onClick={startNew}>
-                <PenLine className="size-4" />
-                发起讨论
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+            <Button size="sm" onClick={startNew}>
+              <PenLine className="size-4" />
+              发起讨论
+            </Button>
+          </>
+        }
+      />
 
       {/* 工具栏：搜索 + 排序 + 分类分区（毛玻璃卡片容器，与 plugins 页筛选区一致） */}
-      <div className="mt-6 rounded-xl border border-border bg-card p-4">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 basis-64">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -304,10 +381,18 @@ export function CommunityPage() {
           pageItems.map((d) => (
             <Link
               key={d.number}
-              to={`/community/${d.number}?source=${source ?? "own"}&replyEnable=${replyEnable}`}
-              className="group flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-cyan-400/40 hover:bg-accent"
+              to={`/community/${d.number}?source=${source ?? "dpc"}`}
+              className="group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card py-3 pr-4 pl-4 transition-colors hover:border-cyan-400/40 hover:bg-accent"
             >
-              <div className="min-w-0 flex-1">
+              {/* 左侧分类色条 */}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute inset-y-0 left-0 w-1",
+                  CATEGORY_ACCENTS[d.categoryName] ?? "bg-muted-foreground/40"
+                )}
+              />
+              <div className="min-w-0 flex-1 pl-2">
                 <div className="flex items-center gap-2">
                   <Badge
                     className={cn(
@@ -322,19 +407,23 @@ export function CommunityPage() {
                     #{d.number}
                   </span>
                 </div>
-                <p className="mt-1.5 truncate text-sm font-medium text-foreground transition-colors group-hover:text-cyan-200">
+                <p className="mt-1.5 truncate text-sm font-semibold text-foreground transition-colors group-hover:text-cyan-200">
                   {d.title}
                 </p>
-                <p className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+                <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                   <AuthorAvatar url={d.avatarUrl} name={d.author} />
                   <span className="text-foreground/80">{d.author}</span>
                   <span>·</span>
                   {formatRelativeTime(d.updatedAt)}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                <MessagesSquare className="size-3.5" />
-                {d.comments}
+              {/* 评论数徽章 */}
+              <div className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg bg-muted px-3 py-2">
+                <span className="flex items-center gap-1 text-sm font-semibold text-foreground">
+                  <MessagesSquare className="size-3.5 text-cyan-300/80" />
+                  {d.comments}
+                </span>
+                <span className="text-[10px] text-muted-foreground">评论</span>
               </div>
             </Link>
           ))
@@ -367,6 +456,7 @@ export function CommunityPage() {
           </Button>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
