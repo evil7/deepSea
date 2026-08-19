@@ -34,18 +34,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出仓库
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # 完整历史：publish-cache.mjs 依赖本地 git worktree / branch 操作
           fetch-depth: 0
 
       - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
+        uses: pnpm/action-setup@v6
+        # ⚠️ 不写 version：pnpm 版本由 package.json 的 packageManager 字段
+        #（pnpm@11.20.0）精确指定，两处都写会报 "Multiple versions of pnpm specified"
 
       - name: 安装 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
