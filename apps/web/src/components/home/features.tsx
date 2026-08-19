@@ -1,9 +1,10 @@
 import {
   Compass,
+  Layers,
   MessagesSquare,
   Package,
+  Palette,
   Rocket,
-  ShieldCheck,
   type LucideIcon,
 } from "lucide-react"
 import { Link } from "react-router-dom"
@@ -34,53 +35,63 @@ type Feature = {
 const features: Feature[] = [
   {
     id: "feature-explore",
-    label: "插件精选",
+    label: "搜索插件",
     icon: Compass,
-    title: "汇聚全生态插件动态",
+    title: "全生态插件搜罗",
     description:
-      "对全 GitHub 的 dsh 相关 topics 与关键词持续搜索，聚合所有周边插件仓库、star 与更新动态。",
-    tag: "dsh-plugin-discovery",
+      "对全 GitHub 的 dsh topics 与关键词持续搜索，聚合所有周边插件仓库、star 与更新动态。",
+    tag: "discovery",
     to: "/plugins",
   },
   {
-    id: "feature-community",
-    label: "讨论交流",
-    icon: MessagesSquare,
-    title: "官方讨论实时同步",
+    id: "feature-curated",
+    label: "查看精选",
+    icon: Layers,
+    title: "热门与最新精选",
     description:
-      "基于官方 discussions 包装的更顺滑社区：最热与最新话题一目了然，一键直达官方讨论。",
-    tag: "dsh-discussions-hub",
+      "深海里打捞上来的生态亮点：封面流画廊一览热门与最新插件，直达详情。",
+    tag: "curated",
+    to: "/#dsh-curated",
+  },
+  {
+    id: "feature-community",
+    label: "进入酒馆",
+    icon: MessagesSquare,
+    title: "双社区讨论交流",
+    description:
+      "官方社区只读直连 + 自家可互动社区，撕纸对比、最热与最新一目了然。",
+    tag: "discussions",
     to: "/#dsh-community",
   },
   {
     id: "feature-install",
-    label: "安装文档",
+    label: "安装指引",
     icon: Rocket,
     title: "安装即用，有问直达",
     description:
-      "统一界面生成安装指引，直连对应插件的 issues 发起提问与工单，互助体验高效直接。",
-    tag: "dsh-issue-bridge",
+      "统一生成安装指引，一键直达对应仓库 issues 发起提问与工单。",
+    tag: "issue-bridge",
     to: "/#dsh-install",
   },
   {
     id: "feature-manage",
-    label: "插件管理",
+    label: "管理插件",
     icon: Package,
-    title: "本地可复刻的管理中心",
+    title: "线上线下集中管理",
     description:
-      "插件安装、更新提示一站式管理；deepc 插件可复刻本站点，完全用于本地使用。",
-    tag: "deepc",
-    to: "/#feature-manage",
+      "deepc 本地集中管理多 profile 插件：清单、版本、更新提示一站式。",
+    tag: "plugin-manager",
+    to: "/#dsh-deepsea-kit",
   },
   {
-    id: "feature-security",
-    label: "安全管理",
-    icon: ShieldCheck,
-    title: "deepc 安全护栏",
+    id: "feature-kit",
+    label: "了解套装",
+    icon: Palette,
+    title: "主题 · 互联 · 安全",
     description:
-      "统一且安全的映射方案、动态安全路径与二次验证，为 deepseek-harness 装上安全护栏。",
-    tag: "deepc-security",
-    to: "/#feature-security",
+      "主题快速构造、多端 WebRTC 互联与安全护栏，把 deepSea 装进口袋一套带走。",
+    tag: "deepsea-kit",
+    to: "/#dsh-deepsea-kit",
   },
 ]
 
@@ -108,8 +119,8 @@ export function Features({ active = false }: { active?: boolean }) {
           万物皆插件，经此入海流
         </h2>
         <p className="mt-3 text-white/75">
-          围绕 DeepSeek Harness
-          打造的五大能力聚合，从发现、社区到安装与安全，海陆空覆盖。
+          DeepSeek Harness 插件生态的入海口——从发现、精选、社区到安装、
+          管理与互联，六大能力聚合。
         </p>
       </div>
 

@@ -1,6 +1,6 @@
 # deepSea · DeepSeek Harness 插件生态聚合站
 
-> 搜罗类聚 deepseek-harness 周边插件生态，提供快速搜索、下载使用、社区讨论、插件评分、协助开发等能力。
+> DeepSeek Harness 插件生态的入海口——发现、安装、管理、互联，一站式聚合。
 
 - 官方库：<https://github.com/deepseek-ai/deepseek-harness>（"Everything is a Plugin"）
 - 生态 topics：`dsh` · `dsh-plugin` · `dsh-plugins` · `dsh-patch` · `cordis` · `plugin-marketplace` 等
@@ -26,7 +26,7 @@ deepSea/
 ├── .github/
 │   ├── instructions/ # 项目级 Copilot 指令（架构 / GitHub API / UI 规范）
 │   └── skills/       # dsh 生态工作流技能
-├── docs/             # 设计构思文档（deepsea-oauth-worker 等）
+├── docs/             # 设计构思文档（deepsea-oauth-worker、deepsea-suite-* 等）
 ├── pnpm-workspace.yaml
 └── package.json
 ```
@@ -60,10 +60,11 @@ pnpm secret:del -- GITHUB_CLIENT_SECRET   # 删除
 ## 核心功能
 
 1. **插件生态搜索** — 对全 GitHub 的相关插件 topics/关键词搜索，汇聚所有周边生态插件动态。
-2. **Discussions 包装** — 通过官方 API 包装官方 discussions，提供更好的分区、访问速度与视觉感受。
-3. **安装与互助** — 统一界面提供高效的插件安装体验，直连对应插件的 issues 发起提问与工单。
-4. **插件管理与更新** — 快速的插件管理与更新提示；`deepc` 插件可复刻本站点完全用于本地使用。
-5. **安全管理** — 构造 dsh 插件 `deepc` 用于 deepseek-harness 安全管理：统一且安全的映射方案、动态安全路径、二次验证。
+2. **插件精选** — 热门/最新精选画廊，封面流呈现生态亮点，直达插件详情。
+3. **Discussions 包装** — 蓝鲸酒馆双社区：官方只读直连 + 自家可互动，更好的分区与视觉体验。
+4. **安装与互助** — 统一生成安装指引，直连对应插件 issues 发起提问与工单。
+5. **集中管理与更新** — `deepc` 本地集中管理多 profile 插件：清单、版本、更新提示一站式。
+6. **深海套装（deepc）** — 主题快速构造 + 多端互联（WebRTC）+ 安全护栏，规划见 `docs/deepsea-suite-*.md`。
 
 ## 开发
 

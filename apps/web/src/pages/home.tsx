@@ -75,9 +75,9 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       deepSea
                     </h1>
                     <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
-                      围绕 DeepSeek Harness 插件能力聚合。
+                      DeepSeek Harness 插件生态的入海口。
                       <br />
-                      从插件发现、社区讨论到安装与安全，海陆空覆盖。
+                      发现 · 安装 · 管理 · 互联，一站式聚合。
                       <br />
                       风浪越大，收获越多。
                     </p>
@@ -146,7 +146,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       icon: Palette,
                       title: "deepsea 主题",
                       description:
-                        "深海海洋视觉主题，一键应用到你的插件与工具，保持深海氛围。",
+                        "可视化构造深海主题，一键生成 deepc 主题插件并应用到本地 profile。",
                       tag: "theme",
                     },
                     {
@@ -154,7 +154,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       icon: Package,
                       title: "插件管理器",
                       description:
-                        "本地安装、更新提示一站式管理，deepc 插件可复刻本站用于本地。",
+                        "线上线下集中管理插件：清单、版本、更新提示与安全审计一站式。",
                       tag: "deepc",
                     },
                     {
@@ -162,7 +162,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       icon: MonitorSmartphone,
                       title: "多端互联协议",
                       description:
-                        "桌面端与移动端互通，插件与配置跨设备同步，随时随地下潜。",
+                        "WebRTC 多端互联：会话接力、主题与插件清单跨设备同步。",
                       tag: "sync",
                     },
                   ]}
