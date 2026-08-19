@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { animate } from "animejs"
 import {
   ArrowLeft,
@@ -22,6 +22,7 @@ import {
   sortDiscussionsHot,
   sortDiscussionsLatest,
   subscribeDiscussions,
+  type CommunitySource,
   type DiscussionSummary,
 } from "@/lib/github/discussions"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +33,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { usePageEnter } from "@/components/showcase/page-enter"
 import { PageHeader } from "@/components/layout/page-header"
+import { useImageThemeColor } from "@/hooks/use-auto-color"
+import type { ThemeColors } from "@/lib/theme/auto-color"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -67,6 +70,15 @@ const CATEGORY_ACCENTS: Record<string, string> = {
   "Q&A": "bg-emerald-400/70",
   "Show and tell": "bg-cyan-400/70",
   Polls: "bg-rose-400/70",
+}
+
+/** 是否开启背景图自动取色（autoColor）：分析背景图色调推选三色 */
+const AUTO_COLOR = true
+
+/** 手动可配置三色（autoColor 关闭或提取失败时的兜底配色） */
+const COMMUNITY_THEME: Record<CommunitySource, ThemeColors> = {
+  dsh: { primary: "#38bdf8", secondary: "#0ea5e9", accent: "#818cf8" },
+  dpc: { primary: "#22d3ee", secondary: "#67e8f9", accent: "#fbbf24" },
 }
 
 /** 作者小头像：URL 非空才渲染 img，否则 User 图标 fallback（杜绝空 src 警告） */
@@ -142,6 +154,18 @@ export function CommunityPage() {
   // 社区来源：?source=dsh（蓝鲸社区，只读）| dpc（浪尖酒馆，可互动，默认）
   const source = searchParams.get("source")
   const info = useMemo(() => resolveCommunity(source), [source])
+
+  // 背景图 + 自动取色（autoColor）：分析背景图色调推选三色 → 注入 CSS 变量，
+  // 社区组件通过 --theme-primary/secondary/accent 自适应（点阵渐变/主色调/点缀色）
+  const backdropSrc = info.source === "dsh" ? "/c1.png" : "/c2.png"
+  const { colors } = useImageThemeColor(AUTO_COLOR ? backdropSrc : null)
+  const theme: ThemeColors = colors ?? COMMUNITY_THEME[info.source]
+  const themeVars = {
+    "--theme-primary": theme.primary,
+    "--theme-secondary": theme.secondary,
+    "--theme-accent": theme.accent,
+  } as CSSProperties
+
   const [list, setList] = useState<DiscussionSummary[] | null>(null)
   const [mode, setMode] = useState<SortMode>("hot")
   const [category, setCategory] = useState<CategoryFilter>("ALL")
@@ -172,6 +196,8 @@ export function CommunityPage() {
         el.style.opacity = ""
       },
     })
+    // contentRef 是 usePageEnter 返回的稳定 ref，无需（也不应）加入依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info.source])
 
   useEffect(() => {
@@ -258,9 +284,10 @@ export function CommunityPage() {
 
   return (
     <>
-      <CommunityBackdrop image={info.source === "dsh" ? "/c1.png" : "/c2.png"} />
+      <CommunityBackdrop image={backdropSrc} />
       <div
         ref={contentRef}
+        style={themeVars}
         className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
       >
       {/* 页头：标题 + 描述 + 操作（共享 PageHeader，sticky 吸附变形） */}
@@ -272,7 +299,7 @@ export function CommunityPage() {
               className={cn(
                 "shrink-0 font-mono text-[10px]",
                 info.replyEnable
-                  ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-300"
+                  ? "border-theme-soft bg-theme-soft text-theme"
                   : "border-amber-400/40 bg-amber-400/10 text-amber-300"
               )}
             >
@@ -301,8 +328,8 @@ export function CommunityPage() {
         }
       />
 
-      {/* 工具栏：搜索 + 排序 + 分类分区（毛玻璃卡片容器，与 plugins 页筛选区一致） */}
-      <div className="rounded-xl border border-border bg-card p-4">
+      {/* 工具栏：搜索 + 排序 + 分类分区（主题描边 + 左上柔光） */}
+      <div className="community-panel rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 basis-64">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -339,7 +366,7 @@ export function CommunityPage() {
             className={cn(
               "rounded-full border px-3 py-1 text-xs transition-colors",
               category === "ALL"
-                ? "border-cyan-400/60 bg-cyan-400/15 text-cyan-200"
+                ? "border-theme-soft bg-theme-soft text-theme"
                 : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
@@ -355,7 +382,7 @@ export function CommunityPage() {
                 className={cn(
                   "rounded-full border px-3 py-1 text-xs transition-colors",
                   category === c
-                    ? "border-cyan-400/60 bg-cyan-400/15 text-cyan-200"
+                    ? "border-theme-soft bg-theme-soft text-theme"
                     : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                 )}
               >
@@ -374,7 +401,7 @@ export function CommunityPage() {
             <Skeleton key={`skeleton-${i}`} className="h-16 w-full" />
           ))
         ) : pageItems.length === 0 ? (
-          <div className="rounded-lg border border-border bg-card px-6 py-12 text-center text-sm text-muted-foreground">
+          <div className="community-panel rounded-lg border border-border px-6 py-12 text-center text-sm text-muted-foreground">
             没有匹配的讨论
           </div>
         ) : (
@@ -382,13 +409,13 @@ export function CommunityPage() {
             <Link
               key={d.number}
               to={`/community/${d.number}?source=${source ?? "dpc"}`}
-              className="group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border bg-card py-3 pr-4 pl-4 transition-colors hover:border-cyan-400/40 hover:bg-accent"
+              className="community-card group relative flex items-center gap-4 overflow-hidden rounded-xl border border-border py-3 pr-4 pl-4 hover-theme-border"
             >
               {/* 左侧分类色条 */}
               <span
                 aria-hidden="true"
                 className={cn(
-                  "absolute inset-y-0 left-0 w-1",
+                  "community-card-bar absolute inset-y-0 left-0 w-1",
                   CATEGORY_ACCENTS[d.categoryName] ?? "bg-muted-foreground/40"
                 )}
               />
@@ -403,11 +430,11 @@ export function CommunityPage() {
                   >
                     {d.categoryName}
                   </Badge>
-                  <span className="font-mono text-xs text-muted-foreground">
+                  <span className="font-mono text-xs text-theme">
                     #{d.number}
                   </span>
                 </div>
-                <p className="mt-1.5 truncate text-sm font-semibold text-foreground transition-colors group-hover:text-cyan-200">
+                <p className="mt-1.5 truncate text-sm font-semibold text-foreground transition-colors group-hover:text-(--theme-primary)">
                   {d.title}
                 </p>
                 <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -417,10 +444,10 @@ export function CommunityPage() {
                   {formatRelativeTime(d.updatedAt)}
                 </p>
               </div>
-              {/* 评论数徽章 */}
-              <div className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg bg-muted px-3 py-2">
+              {/* 评论数徽章（accent 渐变浸入） */}
+              <div className="community-comment-chip flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-3 py-2">
                 <span className="flex items-center gap-1 text-sm font-semibold text-foreground">
-                  <MessagesSquare className="size-3.5 text-cyan-300/80" />
+                  <MessagesSquare className="size-3.5 text-theme-accent" />
                   {d.comments}
                 </span>
                 <span className="text-[10px] text-muted-foreground">评论</span>

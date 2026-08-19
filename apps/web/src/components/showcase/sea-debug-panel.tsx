@@ -168,7 +168,7 @@ export function SeaDebugPanel({ conf, onChange }: SeaDebugPanelProps) {
       <button
         type="button"
         onClick={() => setMinimized(false)}
-        className="fixed right-4 bottom-4 z-[80] flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-slate-950/90 px-3.5 py-2 text-xs font-medium text-cyan-300 shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900 hover:text-cyan-200"
+        className="fixed right-4 bottom-4 z-80 flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-slate-950/90 px-3.5 py-2 text-xs font-medium text-cyan-300 shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900 hover:text-cyan-200"
         aria-label="打开调试面板"
       >
         <SlidersHorizontal className="size-4" />
@@ -180,7 +180,7 @@ export function SeaDebugPanel({ conf, onChange }: SeaDebugPanelProps) {
   return (
     <>
       {/* —— 右侧抽屉 —— */}
-      <div className="fixed inset-0 z-[80]">
+      <div className="fixed inset-0 z-80">
         {/* 点击遮罩最小化（不虚化背景：纯透明，仅捕获点击） */}
         <div
           className="absolute inset-0 bg-transparent"
@@ -188,7 +188,7 @@ export function SeaDebugPanel({ conf, onChange }: SeaDebugPanelProps) {
           aria-hidden="true"
         />
         {/* 抽屉本体：右侧固定宽度、卡片从上到下竖列 */}
-        <div className="absolute inset-y-0 right-0 flex w-[340px] max-w-[90vw] flex-col border-l border-white/10 bg-slate-950/95 shadow-2xl">
+        <div className="absolute inset-y-0 right-0 flex w-85 max-w-[90vw] flex-col border-l border-white/10 bg-slate-950/95 shadow-2xl">
           {/* 顶栏 */}
           <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-slate-950 px-4 py-2.5">
             <div className="flex items-center gap-2 text-sm font-medium text-cyan-300">

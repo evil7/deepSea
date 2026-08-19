@@ -24,10 +24,33 @@ applyTo: ["apps/web/src/lib/github/**", "apps/web/src/hooks/**", "packages/**"]
 import { Octokit } from "@octokit/rest"
 import { graphql } from "@octokit/graphql"
 
-// 匿名或用户 Token（登录后注入）
-export const octokit = new Octokit({ auth: getToken() ?? undefined })
-export const gql = graphql.defaults({ headers: getToken() ? { authorization: `Bearer ${getToken()}` } : {} })
+let token: string | null = null // 登录后 setGitHubToken() 注入；只存内存
+
+// ⚠️⚠️ authStrategy 返回的对象必须同时含 `auth` 和 `hook` 两个方法：
+//   octokit core 会执行 `hook.wrap("request", auth.hook)`，缺 hook 会在发请求前
+//   抛 "Cannot read properties of undefined (reading 'bind')"，导致所有 REST 调用静默失败。
+export const octokit = new Octokit({
+  authStrategy: () => ({
+    async auth() {
+      const t = token
+      return t
+        ? { type: "token" as const, token: t, tokenType: "oauth" }
+        : { type: "unauthenticated" }
+    },
+    // hook 签名复刻 @octokit/auth-token 的 hook(token, request, route, parameters)
+    async hook(request, route, parameters) {
+      const t = token
+      const endpoint = request.endpoint.merge(route, parameters)
+      if (t) endpoint.headers.authorization = `Bearer ${t}`
+      return request(endpoint)
+    },
+  }),
+})
 ```
+
+- `auth` 字段不接受函数（`auth: () => token` 会抛 "Token passed to createTokenAuth is not a string"）；
+  动态 token 用自定义 `authStrategy`（返回 `{ auth, hook }`），登录后无需重建单例。
+- GraphQL 用 `githubGraphQL()`（每次请求动态读 token + headers），不走 octokit 实例。
 
 ## 插件搜索（`lib/github/search.ts`）
 

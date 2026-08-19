@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
+import { animate } from "animejs"
+import { ArrowUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -33,6 +35,8 @@ interface PageHeaderProps {
   actions?: ReactNode
   /** 是否启用 sticky 顶部固定（默认 true） */
   sticky?: boolean
+  /** sticky 时是否显示 [↑ Top] 返回顶部按钮（默认 true） */
+  showTopButton?: boolean
   /** 透传到 header 的额外类名 */
   className?: string
 }
@@ -40,12 +44,24 @@ interface PageHeaderProps {
 /** topbar 高度（h-16 = 64px）：sticky 吸附位置与 sentinel 判定边界统一 */
 const TOPBAR_H = 64
 
+/** animejs 平滑滚动到顶（数值动画 + onUpdate 写 scrollY） */
+function smoothScrollToTop() {
+  const obj = { y: window.scrollY }
+  animate(obj, {
+    y: [obj.y, 0],
+    duration: 600,
+    ease: "outExpo",
+    onUpdate: () => window.scrollTo(0, obj.y),
+  })
+}
+
 export function PageHeader({
   breadcrumb,
   title,
   description,
   actions,
   sticky = true,
+  showTopButton = true,
   className,
 }: PageHeaderProps) {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -108,9 +124,23 @@ export function PageHeader({
           >
             {title}
           </h1>
-          {actions && (
-            <div className="flex shrink-0 items-center gap-2">{actions}</div>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {actions}
+            {showTopButton && (
+              <button
+                type="button"
+                onClick={smoothScrollToTop}
+                aria-label="返回顶部"
+                className={cn(
+                  "items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-accent hover:text-foreground",
+                  stuck ? "inline-flex" : "hidden"
+                )}
+              >
+                <ArrowUp className="size-3.5" />
+                Top
+              </button>
+            )}
+          </div>
         </div>
 
         {description && (

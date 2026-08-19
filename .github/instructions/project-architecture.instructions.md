@@ -44,14 +44,24 @@ deepSea 是 DeepSeek Harness（dsh）插件生态聚合站：
 apps/web/src/
 ├── pages/          # 路由页面（每个功能一个页面组件）
 ├── components/     # 业务组件（按功能分子目录）
-│   └── ui/         # shadcn 生成组件（CLI 管理，禁止手改）
+│   ├── ui/         # shadcn 生成组件（CLI 管理，禁止手改）
+│   ├── layout/     # 跨页面布局组件（Topbar、PageHeader 共享页头）
+│   └── showcase/   # 展示/落地页动效（Ocean、插件码牌、usePageEnter/useSlideReveal 过渡 hook）
 ├── lib/
 │   ├── github/     # octokit 封装（client、search、discussions、issues）
+│   ├── theme/      # 配色自适应（auto-color 背景图取色纯函数）
 │   └── utils.ts    # cn() 等工具
-├── hooks/          # 自定义 hooks（数据获取、缓存、鉴权）
+├── hooks/          # 自定义 hooks（数据获取、缓存、鉴权、use-auto-color 取色）
 ├── stores/         # 全局状态（如插件收藏、已安装列表）
 └── types/          # 领域类型（Plugin、Discussion、Issue 等）
 ```
+
+补充约定：
+
+- **共享页头**用 `components/layout/page-header.tsx`（`PageHeader`），子页面统一，勿手写页头。
+- **场景过渡**用 `components/showcase/` 下的 `usePageEnter`（挂载）/ `useSlideReveal`（视口）。
+- **背景图自动取色**（社区页 autoColor）用 `lib/theme/auto-color.ts` 纯函数 + `hooks/use-auto-color.ts`。
+- 组件内配色走 CSS 变量 `--theme-*` 或 `custom.css` 语义类，禁硬编码 cyan/amber（见 ui-guidelines）。
 
 ## 核心页面与功能
 

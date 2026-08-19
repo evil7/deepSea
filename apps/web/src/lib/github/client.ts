@@ -21,15 +21,37 @@ export function getToken(): string | null {
   return token
 }
 
+/** 给 token 加 "Bearer " 前缀（对齐 @octokit/auth-token 的 withAuthorizationPrefix） */
+function withAuthorizationPrefix(t: string): string {
+  if (/^(token|bearer) +/i.test(t)) {
+    return t
+  }
+  return `Bearer ${t}`
+}
+
 // REST 客户端：用自定义 auth strategy 动态读取 token（登录后无需重建实例）。
-// Octokit 的 `auth` 字段只接受 string/object/strategy，不接受 `() => token`
-// （会抛 "Token passed to createTokenAuth is not a string"）。自定义 strategy
-// 返回 `{ token }` 时按 Bearer 注入；token 为空则返回 {} 匿名。
+// ⚠️ authStrategy 返回的对象必须同时含 `auth` 与 `hook` 两个方法：
+//   · `auth()`      —— 返回认证结果（token / unauthenticated）
+//   · `hook()`      —— 每次 REST 请求注入 authorization 头
+// octokit core 会执行 `hook.wrap("request", auth.hook)`，缺 hook 会在发请求前
+// 抛 "Cannot read properties of undefined (reading 'bind')"，导致所有 octokit
+// REST 调用（repos.get / search / issues）静默失败。
+// hook 签名复刻 @octokit/auth-token 的 `hook(token, request, route, parameters)`。
 export const octokit = new Octokit({
   authStrategy: () => ({
     async auth() {
       const t = token
-      return t ? { type: "token" as const, token: t, tokenType: "oauth" } : {}
+      return t
+        ? { type: "token" as const, token: t, tokenType: "oauth" }
+        : { type: "unauthenticated" }
+    },
+    async hook(request, route, parameters) {
+      const t = token
+      const endpoint = request.endpoint.merge(route, parameters)
+      if (t) {
+        endpoint.headers.authorization = withAuthorizationPrefix(t)
+      }
+      return request(endpoint)
     },
   }),
 })

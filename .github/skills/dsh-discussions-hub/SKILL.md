@@ -91,6 +91,11 @@ query ($owner: String!, $repo: String!, $number: Int!) {
 - 侧边栏按 `category.name` 分组（如 Announcements、General、Ideas、Q&A）
 - 列表项展示：标题、分类徽章、评论数、更新时间、作者
 - 提供排序：最新、最热（评论数）、未回复
+- **配色自适应（autoColor）**：社区页设置背景图（dsh→`/c1.png` 蓝鲸、dpc→`/c2.png` 浪尖）
+  后，`lib/theme/auto-color.ts` 分析背景图色调推选三色（primary/secondary/accent），
+  注入 CSS 变量 `--theme-*`，驱动卡片点阵渐变、身份徽章、分类激活、hover 边框、评论徽章。
+  - 算法：HSV 量化 16 色桶 + `权重 = S × (1 - |V-0.5|×2)` 偏向彩色 + 色相分散选举。
+  - 组件可手动配置三色兜底（`COMMUNITY_THEME`）；分类徽章/色条保留 6 色分类语义不变。
 
 ### 5. 交互与跳转
 

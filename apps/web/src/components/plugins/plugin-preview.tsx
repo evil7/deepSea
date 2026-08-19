@@ -82,8 +82,8 @@ export function PluginPreview() {
 
       {/* 码牌叠放画廊（整体随标题上浮淡入；卡片自身由 animejs 抽出动画控制） */}
       {!repos ? (
-        <div className="slide-reveal-item grid h-[428px] w-full place-items-center">
-          <Skeleton className="h-[350px] w-[250px] rounded-2xl bg-white/5" />
+        <div className="slide-reveal-item grid h-107 w-full place-items-center">
+          <Skeleton className="h-87.5 w-62.5 rounded-2xl bg-white/5" />
         </div>
       ) : (
         <div className="slide-reveal-item">

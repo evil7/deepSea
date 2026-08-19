@@ -158,3 +158,156 @@ body {
   transform: scale(1.12);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * 社区配色自适应（autoColor）
+ *   · --theme-primary / --theme-secondary / --theme-accent 三个主题色，
+ *     默认 = 浪尖酒馆（dpc）青色系；开启 autoColor 后由 JS 分析背景图
+ *     覆盖（inline style），蓝鲸社区（dsh）自动变蓝系、酒馆（dpc）变青橙系
+ *   · 组件通过语义工具类引用，避免硬编码 cyan/amber，实现「可配置三色」
+ *   · color-mix 生成透明变体（软背景/软边框），替换原先 bg-cyan-400/15 等
+ * ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --theme-primary: oklch(0.72 0.14 230);
+  --theme-secondary: oklch(0.82 0.11 230);
+  --theme-accent: oklch(0.75 0.13 80);
+}
+
+/* 主色文本 */
+.text-theme {
+  color: var(--theme-primary);
+}
+/* 主色软背景（~14%） */
+.bg-theme-soft {
+  background-color: color-mix(in srgb, var(--theme-primary) 14%, transparent);
+}
+/* 主色软边框（~45%） */
+.border-theme-soft {
+  border-color: color-mix(in srgb, var(--theme-primary) 45%, transparent);
+}
+/* hover 主色边框（列表卡片） */
+.hover-theme-border:hover {
+  border-color: color-mix(in srgb, var(--theme-primary) 45%, transparent);
+}
+/* hover 主色文本 */
+.hover-theme-text:hover {
+  color: var(--theme-primary);
+}
+/* 点缀色文本（评论徽章等强调点） */
+.text-theme-accent {
+  color: var(--theme-accent);
+}
+/* 点缀色软背景 */
+.bg-theme-accent-soft {
+  background-color: color-mix(in srgb, var(--theme-accent) 16%, transparent);
+}
+
+/* —— 板块容器：顶部主题渐变描边（primary→accent）+ 左上角柔光 —— */
+.community-panel {
+  position: relative;
+  background:
+    radial-gradient(
+      140% 100% at 0% 0%,
+      color-mix(in srgb, var(--theme-primary) 9%, transparent),
+      transparent 52%
+    ),
+    var(--card);
+}
+.community-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--theme-primary) 55%, transparent) 28%,
+    color-mix(in srgb, var(--theme-accent) 55%, transparent) 68%,
+    transparent
+  );
+}
+
+/* —— 列表卡片：双层点阵 + 顶部高光 + hover 柔光涟漪 —— */
+.community-card {
+  position: relative;
+  background: var(--card);
+  transition:
+    box-shadow 0.3s ease,
+    border-color 0.2s ease;
+}
+/* 双层点阵：secondary 密集小点 + primary 稀疏大点（错位），
+   叠加从左侧浸入的 primary 柔光；默认极淡，hover 浮现如「鳞片反光」 */
+.community-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--theme-secondary) 78%, transparent) 1px,
+      transparent 1.2px
+    ),
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--theme-primary) 52%, transparent) 1.5px,
+      transparent 1.6px
+    ),
+    radial-gradient(
+      130% 100% at 0% 50%,
+      color-mix(in srgb, var(--theme-primary) 16%, transparent),
+      transparent 55%
+    );
+  background-size: 16px 16px, 44px 44px, 100% 100%;
+  background-position: 0 0, 8px 8px, 0 0;
+  opacity: 0.08;
+  transition: opacity 0.3s ease;
+}
+.community-card:hover::before {
+  opacity: 0.24;
+  animation: community-dot-ripple 1.6s ease-out;
+}
+/* hover 触发的点阵涟漪（背景位移，模拟光标掠过水面） */
+@keyframes community-dot-ripple {
+  from {
+    background-position: 0 0, 8px 8px, 0 0;
+  }
+  to {
+    background-position: 16px 16px, 52px 52px, 0 0;
+  }
+}
+/* 顶部高光线 */
+.community-card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--theme-primary) 42%, transparent) 45%,
+    transparent
+  );
+  opacity: 0.45;
+}
+/* hover 外发光（主色柔光），与 hover-theme-border 的描边叠加 */
+.community-card:hover {
+  box-shadow: 0 10px 32px -14px
+    color-mix(in srgb, var(--theme-primary) 34%, transparent);
+}
+/* 左侧分类色条 hover 增亮（分类色发光） */
+.community-card:hover .community-card-bar {
+  filter: brightness(1.3) saturate(1.15);
+}
+
+/* —— 评论徽章：accent 渐变浸入（顶部浓、底部淡） —— */
+.community-comment-chip {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-accent) 16%, transparent),
+      color-mix(in srgb, var(--theme-accent) 4%, transparent)
+    ),
+    var(--muted);
+}
+
