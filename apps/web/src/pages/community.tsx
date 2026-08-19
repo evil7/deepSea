@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { animate } from "animejs"
 import {
-  ArrowLeft,
+  ArrowLeftRight,
   ArrowUp,
   Flame,
   Link2,
@@ -35,7 +35,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { usePageEnter } from "@/components/showcase/page-enter"
 import { PageHeader } from "@/components/layout/page-header"
-import { useImageThemeColor } from "@/hooks/use-auto-color"
 import type { ThemeColors } from "@/lib/theme/auto-color"
 import { cn } from "@/lib/utils"
 
@@ -74,10 +73,7 @@ const CATEGORY_ACCENTS: Record<string, string> = {
   Polls: "bg-rose-400/70",
 }
 
-/** 是否开启背景图自动取色（autoColor）：分析背景图色调推选三色 */
-const AUTO_COLOR = true
-
-/** 手动可配置三色（autoColor 关闭或提取失败时的兜底配色） */
+/** 手动可配置三色（社区主题配色） */
 const COMMUNITY_THEME: Record<CommunitySource, ThemeColors> = {
   dsh: { primary: "#38bdf8", secondary: "#0ea5e9", accent: "#818cf8" },
   dpc: { primary: "#22d3ee", secondary: "#67e8f9", accent: "#fbbf24" },
@@ -95,61 +91,6 @@ function AuthorAvatar({ url, name }: { url?: string; name: string }) {
   )
 }
 
-/**
- * 社区页背景：对应社区图（虚化 + 稍暗遮罩），随鼠标位置轻微位移。
- *   · 图片超出视口 125% + blur，位移时不会露出边缘
- *   · rAF 节流，位移幅度限制在小范围（x ±14px / y ±10px）
- *   · image 变化时淡入（crossfade 切换社区背景）
- */
-function CommunityBackdrop({ image }: { image: string }) {
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const imgRef = useRef<HTMLImageElement | null>(null)
-
-  useEffect(() => {
-    let raf = 0
-    const onMove = (e: MouseEvent) => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => {
-        const nx = e.clientX / window.innerWidth - 0.5
-        const ny = e.clientY / window.innerHeight - 0.5
-        setOffset({ x: nx * -14, y: ny * -10 })
-      })
-    }
-    window.addEventListener("mousemove", onMove, { passive: true })
-    return () => {
-      window.removeEventListener("mousemove", onMove)
-      cancelAnimationFrame(raf)
-    }
-  }, [])
-
-  // 社区背景切换时淡入（crossfade）
-  useEffect(() => {
-    const img = imgRef.current
-    if (!img) return
-    animate(img, {
-      opacity: [0, 1],
-      duration: 600,
-      ease: "easeOutQuad",
-    })
-  }, [image])
-
-  return (
-    <div aria-hidden="true" className="fixed inset-0 z-0 overflow-hidden">
-      <img
-        ref={imgRef}
-        src={image}
-        alt=""
-        className="absolute top-1/2 left-1/2 h-[125%] w-[125%] max-w-none object-cover blur-md"
-        style={{
-          transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(1.05)`,
-        }}
-      />
-      {/* 稍暗遮罩：保证前景文字可读 */}
-      <div className="absolute inset-0 bg-slate-950/72" />
-    </div>
-  )
-}
-
 export function CommunityPage() {
   const { user } = useAuth()
   // 社区来源：/community/dsh（蓝鲸社区，只读）| /community/dpc（浪尖酒馆，可互动）
@@ -159,11 +100,8 @@ export function CommunityPage() {
     pathname.split("/")[2] === "dsh" ? "dsh" : "dpc"
   const info = useMemo(() => resolveCommunity(source), [source])
 
-  // 背景图 + 自动取色（autoColor）：分析背景图色调推选三色 → 注入 CSS 变量，
-  // 社区组件通过 --theme-primary/secondary/accent 自适应（点阵渐变/主色调/点缀色）
-  const backdropSrc = info.source === "dsh" ? "/c1.png" : "/c2.png"
-  const { colors } = useImageThemeColor(AUTO_COLOR ? backdropSrc : null)
-  const theme: ThemeColors = colors ?? COMMUNITY_THEME[info.source]
+  // 社区主题配色：注入 CSS 变量，社区组件通过 --theme-primary/secondary/accent 自适应
+  const theme: ThemeColors = COMMUNITY_THEME[info.source]
   const themeVars = {
     "--theme-primary": theme.primary,
     "--theme-secondary": theme.secondary,
@@ -304,7 +242,6 @@ export function CommunityPage() {
 
   return (
     <>
-      <CommunityBackdrop image={backdropSrc} />
       <div
         ref={contentRef}
         style={themeVars}
@@ -314,7 +251,7 @@ export function CommunityPage() {
       <PageHeader
         title={info.label}
         description={
-          <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 sm:flex">
             <Badge
               className={cn(
                 "shrink-0 font-mono text-[10px]",
@@ -330,26 +267,40 @@ export function CommunityPage() {
         }
         actions={
           <>
+            {/* 手机端：icon-only 前往对侧社区（左右交换图标） */}
+            <Button
+              asChild
+              size="icon"
+              variant="outline"
+              className="size-9 border-border bg-card text-foreground hover:bg-accent sm:hidden"
+              aria-label={`前往${info.counterpartLabel}`}
+            >
+              <Link to={`/community/${info.counterpartSource}`}>
+                <ArrowLeftRight className="size-5" />
+              </Link>
+            </Button>
+            {/* 桌面端：左右交换 icon + 对侧社区名（与手机版 icon 一致；sticky 吸附后隐藏） */}
             <Button
               asChild
               variant="outline"
-              className="border-border bg-card text-foreground hover:bg-accent"
+              className="hidden border-border bg-card text-foreground hover:bg-accent group-data-[stuck=true]:hidden! sm:inline-flex"
             >
               <Link to={`/community/${info.counterpartSource}`}>
-                <ArrowLeft className="size-4" />
-                前往{info.counterpartLabel}
+                <ArrowLeftRight className="size-4" />
+                {info.counterpartLabel}
               </Link>
             </Button>
-            <Button size="sm" onClick={startNew}>
+            <Button size="sm" onClick={startNew} className="hidden sm:inline-flex">
               <PenLine className="size-4" />
-              发起讨论
+              新建
             </Button>
           </>
         }
       />
 
-      {/* 工具栏：搜索 + 排序 + 分类分区（主题描边 + 左上柔光） */}
-      <div className="community-panel rounded-xl border border-border p-4">
+      {/* 工具栏：搜索 + 排序 + 分类分区（主题描边 + 左上柔光；手机端隐藏，
+          只保留社区名 + 交换按钮 + 列表） */}
+      <div className="community-panel hidden rounded-xl border border-border p-4 sm:block">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 basis-64">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -464,8 +415,9 @@ export function CommunityPage() {
                   {formatRelativeTime(d.updatedAt)}
                 </p>
               </div>
-              {/* 尾部统计：评论数 + 投票数（icon + 数字，无文字，均为 API 直接提供的标量） */}
-              <div className="flex shrink-0 items-center gap-2">
+              {/* 尾部统计：评论数 + 投票数（icon + 数字，无文字；仅桌面显示，
+                  手机端只显示纯卡片，不展示回复/投票数量） */}
+              <div className="hidden shrink-0 items-center gap-2 sm:flex">
                 <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
                   <MessagesSquare className="size-3.5 text-theme-accent" />
                   <span className="text-sm font-semibold tabular-nums text-foreground">

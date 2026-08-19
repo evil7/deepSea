@@ -243,11 +243,26 @@ export function PluginsPage() {
       ref={pageRef}
       className="relative z-10 mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-7xl px-4 py-10 sm:px-6"
     >
-      {/* 页头（共享 PageHeader，sticky 吸附变形） */}
-      <PageHeader title="插件生态" />
+      {/* 页头（共享 PageHeader，sticky 吸附变形）
+          手机端：标题右侧同排「热门|最新」切换（搜索栏整个移除，见下方 hidden） */}
+      <PageHeader
+        title="插件生态"
+        actions={
+          <Tabs
+            value={mode}
+            onValueChange={(v) => setMode(v as ViewMode)}
+            className="w-fit sm:hidden"
+          >
+            <TabsList className="h-8 border border-border bg-muted text-xs">
+              <TabsTrigger value="hot">热门</TabsTrigger>
+              <TabsTrigger value="latest">最新</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
+      />
 
-      {/* 搜索 + 过滤条 */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      {/* 搜索 + 过滤条（手机端隐藏：只留标题 + 热门/最新 + 列表 + 分页） */}
+      <div className="hidden flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex">
         {/* 搜索框（自行捕捞模式在后方显示搜索按钮） */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -347,8 +362,9 @@ export function PluginsPage() {
         </div>
       </div>
 
-      {/* 结果工具条：左 [热门|最新]，右 (info)已捕捞{n}个渔获 */}
-      <div className="mt-4 flex items-center justify-between gap-3">
+      {/* 结果工具条：左 [热门|最新]，右 (info)已捕捞{n}个渔获（手机端隐藏，
+          切换已上移到标题行 actions） */}
+      <div className="mt-4 hidden items-center justify-between gap-3 sm:flex">
         <Tabs
           value={mode}
           onValueChange={(v) => setMode(v as ViewMode)}
@@ -487,7 +503,7 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
   return (
     <Link
       to={`/plugin/${owner}/${name}`}
-      className="group flex flex-col rounded-xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-cyan-400/40 hover:bg-accent"
+      className="group flex min-w-0 flex-col rounded-xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-cyan-400/40 hover:bg-accent"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">

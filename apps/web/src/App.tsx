@@ -9,6 +9,7 @@ import { SeaDebugPanel } from "@/components/showcase/sea-debug-panel"
 import type { SeaState } from "@/components/showcase/sea-state"
 import { useAuth } from "@/hooks/use-auth"
 import { useDiscussionsSync } from "@/hooks/use-discussions-sync"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { HomePage } from "@/pages/home"
 import { PluginDetailPage } from "@/pages/plugin-detail"
 import { PluginsPage } from "@/pages/plugins"
@@ -30,6 +31,9 @@ export function App() {
   // 前端同步 worker（每 3 分钟刷新 discussions 列表，见 discussions-sync.ts）
   const { user } = useAuth()
   useDiscussionsSync(user)
+
+  // 移动端：不渲染 3D 海洋（WebGL 开销大），改静态渐变背景；调试面板同理
+  const isMobile = useIsMobile()
 
   // 二级功能页（/plugins、/plugin/...）：固定海底 + 背景虚化
   // /auth/* 为登录等纯功能路由（worker 处理），不改变海洋展示状态（视为首页）
@@ -70,11 +74,24 @@ export function App() {
 
   return (
     <div id="top" className="min-h-dvh">
-      {/* 3D 海面背景：仅首页渲染（子路由页面使用 shadcn 默认背景，不叠加海洋 3D） */}
-      {!isSubPage && <Ocean conf={conf} state={seaState} blur={false} />}
+      {/* 3D 海面背景：仅桌面首页渲染（移动端用静态渐变，见下方）；
+          子路由页面使用 shadcn 默认背景，不叠加海洋 3D */}
+      {!isSubPage && !isMobile && <Ocean conf={conf} state={seaState} blur={false} />}
 
-      {/* 调试面板：仅首页（地址 #sea-debug 显示，滑块调参 + 复制 JSON） */}
-      {!isSubPage && <SeaDebugPanel conf={conf} onChange={setConf} />}
+      {/* 移动端首页：静态深海渐变背景（替代 3D 海洋，省 WebGL） */}
+      {!isSubPage && isMobile && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0"
+          style={{
+            background:
+              "linear-gradient(180deg, #0a1a3a 0%, #0a1730 35%, #071027 65%, #04101f 100%)",
+          }}
+        />
+      )}
+
+      {/* 调试面板：仅桌面首页（地址 #sea-debug 显示，滑块调参 + 复制 JSON） */}
+      {!isSubPage && !isMobile && <SeaDebugPanel conf={conf} onChange={setConf} />}
 
       <Topbar />
 

@@ -56,7 +56,10 @@ export function Topbar() {
           <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Waves className="size-5" />
           </span>
-          <span className="text-lg font-semibold tracking-tight">deepSea</span>
+          {/* 站点名称：手机端隐藏，仅保留 logo */}
+          <span className="hidden text-lg font-semibold tracking-tight sm:inline">
+            deepSea
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-1 lg:flex" aria-label="主导航">
@@ -171,17 +174,32 @@ export function Topbar() {
             // 未登录：站内登录入口（Worker /auth/login 生成 state 后 302 GitHub）
             // 必须用 <a href> 真实导航：/auth/login 由 Worker 处理（无前端路由），
             // 若用 react-router <Link> 会命中 SPA 兜底路由、请求到不了 Worker。
-            <Button
-              asChild
-              size="sm"
-              variant="outline"
-              className="hidden sm:inline-flex"
-            >
-              <a href={loginUrl()}>
-                <UserCircle className="size-4" />
-                登录
-              </a>
-            </Button>
+            <>
+              {/* 手机端：icon-only 方块（与 logo size-9 同等大小） */}
+              <Button
+                asChild
+                size="icon"
+                variant="outline"
+                className="size-9 sm:hidden"
+                aria-label="登录"
+              >
+                <a href={loginUrl()}>
+                  <UserCircle className="size-5" />
+                </a>
+              </Button>
+              {/* 桌面端：带文字按钮 */}
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="hidden sm:inline-flex"
+              >
+                <a href={loginUrl()}>
+                  <UserCircle className="size-4" />
+                  登录
+                </a>
+              </Button>
+            </>
           )}
         </div>
       </div>

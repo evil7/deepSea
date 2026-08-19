@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
-import { Flame, Link2 } from "lucide-react"
+import { Flame, Link2, Star } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { PluginFanDeck } from "@/components/plugins/plugin-coverflow"
 import { useSlideReveal } from "@/components/showcase/slide-reveal"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { loadPluginSeed, sortPlugins } from "@/lib/github/search"
 import { PLUGIN_SEED_URL } from "@/lib/github/topics"
 import type { PluginRepo } from "@/lib/github/types"
@@ -16,7 +18,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 type ViewMode = "hot" | "latest"
 
+function formatStars(n: number): string {
+  if (n >= 1000) {
+    return `${(n / 1000).toFixed(1)}k`
+  }
+  return String(n)
+}
+
 export function PluginPreview() {
+  const isMobile = useIsMobile()
   const [repos, setRepos] = useState<PluginRepo[] | null>(null)
   const [mode, setMode] = useState<ViewMode>("hot")
 
@@ -84,6 +94,49 @@ export function PluginPreview() {
       {!repos ? (
         <div className="slide-reveal-item grid h-107 w-full place-items-center">
           <Skeleton className="h-87.5 w-62.5 rounded-2xl bg-white/5" />
+        </div>
+      ) : isMobile ? (
+        // 移动端：FanDeck 固定卡宽+铺满会横向溢出且 hover 交互失效，降级为
+        // 横向滚动卡片列表（触摸滑动，snap 对齐）
+        <div className="slide-reveal-item -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2">
+          {top10.map((repo) => {
+            const [owner, name] = repo.full_name.split("/")
+            return (
+              <Link
+                key={repo.full_name}
+                to={`/plugin/${owner}/${name}`}
+                className="flex w-44 shrink-0 snap-start flex-col rounded-2xl border border-white/10 bg-slate-900/70 p-4"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 font-mono text-xs font-bold text-cyan-300">
+                    {owner.slice(0, 1).toUpperCase()}
+                  </div>
+                  <h3 className="truncate font-mono text-sm font-semibold text-white">
+                    {name}
+                  </h3>
+                </div>
+                <p className="mt-2 line-clamp-3 flex-1 text-xs leading-relaxed text-white/60">
+                  {repo.description || "暂无描述"}
+                </p>
+                <div className="mt-3 flex items-center gap-1.5 border-t border-white/10 pt-3 text-xs text-white/50">
+                  <Star className="size-3.5 text-amber-300" />
+                  <span className="tabular-nums text-white/80">
+                    {formatStars(repo.stargazers_count)}
+                  </span>
+                  {repo.language && (
+                    <span className="ml-auto truncate">{repo.language}</span>
+                  )}
+                </div>
+              </Link>
+            )
+          })}
+          {/* more 卡：跳全部插件 */}
+          <Link
+            to="/plugins"
+            className="flex w-24 shrink-0 snap-start items-center justify-center rounded-2xl border border-white/10 bg-slate-900/70 p-4"
+          >
+            <span className="text-sm font-medium text-cyan-300">更多 →</span>
+          </Link>
         </div>
       ) : (
         <div className="slide-reveal-item">

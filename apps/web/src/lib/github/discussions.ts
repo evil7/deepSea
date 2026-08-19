@@ -69,7 +69,7 @@ export function resolveCommunity(
     owner: COMMUNITY_OWNER,
     repo: COMMUNITY_REPO,
     label: "浪尖酒馆",
-    description: "深海的自家酒馆，畅聊插件、Q&A 与创意 · 回复与表态都从这里开始。",
+    description: "畅聊插件、Q&A 与创意 · 回复与表态都从这里开始。",
     createUrl: `https://github.com/${COMMUNITY_OWNER}/${COMMUNITY_REPO}/discussions/new`,
     counterpartLabel: "蓝鲸社区",
     counterpartSource: "dsh",

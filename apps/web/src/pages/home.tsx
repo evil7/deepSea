@@ -25,6 +25,7 @@ import {
 } from "@/components/showcase/sea-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface HomePageProps {
   /** 当前海洋状态（由 App 统一管理：路由 + 首页翻屏共同驱动） */
@@ -34,6 +35,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
+  const isMobile = useIsMobile()
   // 全屏幻灯控制句柄（「探索更多」等入口统一走幻灯跳转）
   const slidesRef = useRef<FullscreenSlidesHandle>(null)
 
@@ -42,82 +44,76 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
     onSeaStateChange(index >= DEEP_SLIDE_INDEX ? "deep" : "surface")
   }
 
-  return (
-    <>
-      {/* 沉入海底的入口：fixed 在首页底部；滚动即淡出，回顶部重现 */}
-      <ScrollFadeExploreButton onClick={() => slidesRef.current?.next()} />
+  // 首屏 hero（带大标题）：手机端不显示安装命令，桌面端保留
+  const heroSlide = {
+    id: "hero",
+    label: "首页",
+    node: (
+      <div className="relative h-full">
+        {/* 内容锚定视口正中心（百分比定位）：
+            section 从顶部导航下方开始（导航高 4rem），
+            section 高度 = 100dvh - 4rem → 其 50% 点比视口中心低 2rem。
+            用 top-[calc(50%-2rem)] 抵消导航占位：
+            内容中心 = 4rem + (100dvh-4rem)/2 - 2rem = 50dvh = 视口中心，
+            任意屏幕尺寸/比例下内容相对视口中心不偏移 */}
+        <div className="absolute inset-x-0 top-[calc(50%-2rem)] -translate-y-1/2 px-4 text-center sm:px-6">
+          <Badge
+            variant="outline"
+            className="border-white/20 bg-white/10 text-white backdrop-blur-sm"
+          >
+            DeepSeek + DeePwn =
+          </Badge>
+          <h1 className="mt-6 text-5xl font-bold tracking-tight text-white drop-shadow-[0_2px_16px_rgba(8,26,61,0.9)] sm:text-7xl">
+            deepSea
+          </h1>
+          <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
+            DeepSeek Harness 插件生态的入海口
+            <br />
+            发现 · 安装 · 管理 · 互联，一站式聚合
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <Link to="/plugins">
+                <Plug className="size-4" />
+                大海捞珍
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            >
+              <Link to="/community">
+                <Beer className="size-4" />
+                把酒言欢
+              </Link>
+            </Button>
+          </div>
+          {/* deepc 安装命令：终端风格（仅桌面显示，手机端不显示） */}
+          {!isMobile && <InstallCommand />}
+        </div>
+      </div>
+    ),
+  }
 
-      <main className="relative z-10">
-        {/* 全屏幻灯：每屏固定占满视口，左侧进度点导航；内容页半透明深色遮罩 */}
-        <FullscreenSlides
-          ref={slidesRef}
-          heightClass="h-[calc(100dvh-4rem)]"
-          contentOverlay
-          onActiveChange={handleSlideChange}
-          slides={[
-            {
-              id: "hero",
-              label: "首页",
-              node: (
-                <div className="relative h-full">
-                  {/* 内容锚定视口正中心（百分比定位）：
-                      section 从顶部导航下方开始（导航高 4rem），
-                      section 高度 = 100dvh - 4rem → 其 50% 点比视口中心低 2rem。
-                      用 top-[calc(50%-2rem)] 抵消导航占位：
-                      内容中心 = 4rem + (100dvh-4rem)/2 - 2rem = 50dvh = 视口中心，
-                      任意屏幕尺寸/比例下内容相对视口中心不偏移 */}
-                  <div className="absolute inset-x-0 top-[calc(50%-2rem)] -translate-y-1/2 px-4 text-center sm:px-6">
-                    <Badge
-                      variant="outline"
-                      className="border-white/20 bg-white/10 text-white backdrop-blur-sm"
-                    >
-                      DeepSeek + DeePwn =
-                    </Badge>
-                    <h1 className="mt-6 text-5xl font-bold tracking-tight text-white drop-shadow-[0_2px_16px_rgba(8,26,61,0.9)] sm:text-7xl">
-                      deepSea
-                    </h1>
-                    <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
-                      DeepSeek Harness 插件生态的入海口
-                      <br />
-                      发现 · 安装 · 管理 · 互联，一站式聚合
-                    </p>
-                    {/* deepc 安装命令：终端风格，一眼可见（独立组件 + 自定义 CSS） */}
-                    <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-                      <Button
-                        asChild
-                        size="lg"
-                        variant="outline"
-                        className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                      >
-                        <Link to="/plugins">
-                          <Plug className="size-4" />
-                          大海捞珍
-                        </Link>
-                      </Button>
-                      <Button
-                        asChild
-                        size="lg"
-                        variant="outline"
-                        className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                      >
-                        <Link to="/community">
-                          <Beer className="size-4" />
-                          把酒言欢
-                        </Link>
-                      </Button>
-                    </div>
-                    <InstallCommand />
-                  </div>
-                </div>
-              ),
-            },
-            {
-              // 万物皆插件：原第三屏（核心能力）上移到第二屏；轻雾遮罩
-              id: "dsh-ecosystem",
-              label: "万物皆插件",
-              overlayClassName: "bg-slate-950/40 backdrop-blur-[2px]",
-              node: <Features active={seaState === "deep"} />,
-            },
+  // 手机端：仅首屏 hero（不渲染后续 showcase 屏）；桌面端：完整多屏
+  const slides = isMobile
+    ? [heroSlide]
+    : [
+        heroSlide,
+        {
+          // 万物皆插件：原第三屏（核心能力）上移到第二屏；轻雾遮罩
+          id: "dsh-ecosystem",
+          label: "万物皆插件",
+          overlayClassName: "bg-slate-950/40 backdrop-blur-[2px]",
+          node: <Features active={seaState === "deep"} />,
+        },
             {
               // 插件精选：原第二屏移到第三屏；中雾遮罩
               id: "dsh-curated",
@@ -179,10 +175,27 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                 />
               ),
             },
-          ]}
+        ]
+
+  return (
+    <>
+      {/* 沉入海底的入口：fixed 首页底部；滚动淡出、回顶重现（仅桌面显示） */}
+      {!isMobile && (
+        <ScrollFadeExploreButton onClick={() => slidesRef.current?.next()} />
+      )}
+
+      <main className="relative z-10">
+        {/* 全屏幻灯：每屏固定占满视口，左侧进度点导航；内容页半透明深色遮罩 */}
+        <FullscreenSlides
+          ref={slidesRef}
+          heightClass="h-[calc(100dvh-4rem)]"
+          contentOverlay
+          onActiveChange={handleSlideChange}
+          slides={slides}
         />
 
-        <footer className="border-t border-white/10 bg-slate-950/60 py-10 backdrop-blur-sm">
+        {/* 手机端不显示 footer（后续单独做移动端 dock） */}
+        <footer className="hidden border-t border-white/10 bg-slate-950/60 py-10 backdrop-blur-sm sm:block">
           <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-sm text-white/70 sm:flex-row sm:px-6">
             <p>deepSea · DeepSeek Harness 插件生态聚合站</p>
             <p className="font-mono">dsh · deepc · everything is a plugin</p>

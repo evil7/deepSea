@@ -3,6 +3,8 @@ import type { ReactNode } from "react"
 import { animate } from "animejs"
 import { ArrowUp } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -66,9 +68,12 @@ export function PageHeader({
 }: PageHeaderProps) {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const [stuck, setStuck] = useState(false)
+  // 手机端不做 sticky：不吸附也不触发 stuck 收缩（页头保持完整展开）
+  const isMobile = useIsMobile()
+  const stickyEnabled = sticky && !isMobile
 
   useEffect(() => {
-    if (!sticky) {
+    if (!stickyEnabled) {
       return
     }
     const sentinel = sentinelRef.current
@@ -85,7 +90,7 @@ export function PageHeader({
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [sticky])
+  }, [stickyEnabled])
 
   return (
     <>
@@ -94,9 +99,13 @@ export function PageHeader({
           的 containing block 高度 = 页头自身高度，吸附空间为零、sticky 失效 */}
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       <header
+        data-stuck={stuck ? "true" : "false"}
         className={cn(
           // -mx/px：抵消父容器 padding，让 sticky 背景/边框横跨到 max-w 边缘
-          "sticky top-16 z-20 -mx-4 px-4 transition-all duration-200 sm:-mx-6 sm:px-6",
+          // sticky 仅桌面启用（手机端 stickyEnabled=false，不吸附）
+          // group：供 actions 内子按钮用 group-data-[stuck=true]: 在吸附时隐藏
+          "group z-20 -mx-4 px-4 transition-all duration-200 sm:-mx-6 sm:px-6",
+          stickyEnabled && "sticky top-16",
           stuck
             ? "border-b border-border bg-background/85 py-2 backdrop-blur-md"
             : "border-b border-transparent pb-6",
@@ -127,20 +136,16 @@ export function PageHeader({
           <div className="flex shrink-0 items-center gap-2">
             {actions}
             {showTopButton && (
-              <button
+              <Button
                 type="button"
                 onClick={smoothScrollToTop}
                 aria-label="返回顶部"
-                className={cn(
-                  // h-10.25(41px) 与右侧安装命令提示框（InstallCommand，其复制图标 size-6
-                  // 撑起的高度 41px）精确一致，消除同排操作区的视觉差异
-                  "h-10.25 items-center gap-1 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-foreground",
-                  stuck ? "inline-flex" : "hidden"
-                )}
+                variant="ghost"
+                className={stuck ? "inline-flex" : "hidden"}
               >
-                <ArrowUp className="size-3.5" />
+                <ArrowUp className="size-4" />
                 Top
-              </button>
+              </Button>
             )}
           </div>
         </div>

@@ -200,8 +200,8 @@ export function PluginDetailPage() {
 
       {state.status === "ready" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          {/* 左侧：README */}
-          <div className="min-w-0 rounded-xl border border-border bg-card">
+          {/* 左侧：README（移动端单列时排第二，桌面端 order-1 在左） */}
+          <div className="min-w-0 order-2 rounded-xl border border-border bg-card lg:order-1">
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <BookMarked className="size-4 text-cyan-300" />
@@ -235,8 +235,9 @@ export function PluginDetailPage() {
 
           {/* 右侧：about 信息（sticky 固定，滚动不消失）
               top-34.5(138px) = topbar 64 + stuck header ~58 + 间隔 16，
-              视觉间隔与未滚动时（header pb-6=24px）一致，不重叠不挤兑 */}
-          <aside className="space-y-4 lg:sticky lg:top-34.5 lg:self-start">
+              视觉间隔与未滚动时（header pb-6=24px）一致，不重叠不挤兑。
+              移动端单列时 order-1 排最前（about 优先于 README） */}
+          <aside className="order-1 space-y-4 lg:order-2 lg:sticky lg:top-34.5 lg:self-start">
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">
                 <img
