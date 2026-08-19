@@ -12,8 +12,6 @@
 // 详细构思见 docs/deepsea-oauth-worker.md。
 // ---------------------------------------------------------------------------
 
-import type { ExportedHandler } from "@cloudflare/workers-types"
-
 import { handleCallback } from "./auth/callback"
 import { handleLogin } from "./auth/login"
 import { handleLogout } from "./auth/logout"

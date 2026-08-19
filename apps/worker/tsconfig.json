@@ -4,7 +4,7 @@
     "lib": ["ES2023"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["@cloudflare/workers-types"],
+    "types": ["@types/node"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -13,5 +13,5 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src"]
+  "include": ["src", "worker-configuration.d.ts"]
 }
