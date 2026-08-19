@@ -19,10 +19,11 @@
     "search:plugins": "node scripts/search-deepseek-repos.mjs",
     "sync:discussions": "node scripts/sync-discussions.mjs",
     "dev:worker": "pnpm --filter @deepsea/worker dev",
-    "deploy": "pnpm build && pnpm --filter @deepsea/worker deploy",
+    "deploy": "pnpm typegen && pnpm build && pnpm --filter @deepsea/worker deploy",
     "secret:list": "pnpm --filter @deepsea/worker secret:list",
     "secret:put": "pnpm --filter @deepsea/worker secret:put",
-    "secret:del": "pnpm --filter @deepsea/worker secret:del"
+    "secret:del": "pnpm --filter @deepsea/worker secret:del",
+    "typegen": "pnpm --filter @deepsea/worker typegen"
   },
   "devDependencies": {
     "oxfmt": "^0.63.0",

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "secret:list": "wrangler secret list",
     "secret:put": "wrangler secret put",
-    "secret:del": "wrangler secret delete"
+    "secret:del": "wrangler secret delete",
+    "typegen": "wrangler types"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250801.0",

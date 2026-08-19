@@ -37,7 +37,7 @@ deepSea/
 
 ```bash
 pnpm build               # 构建前端（apps/web/dist）+ Worker 检查
-pnpm deploy              # 先 build，再发布 Worker（含 ASSETS + OAuth）
+pnpm deploy              # 先 typegen 生成类型 → build 构建 → 发布 Worker（含 ASSETS + OAuth）
 ```
 
 **Secret 管理**（wrangler secret，交互式输入值）：
@@ -47,6 +47,14 @@ pnpm secret:list                          # 列出已配置的 secret
 pnpm secret:put -- GITHUB_CLIENT_ID       # 新增/更新（回车后输入值）
 pnpm secret:del -- GITHUB_CLIENT_SECRET   # 删除
 ```
+
+**类型生成**（由 `wrangler.toml` 生成 Worker 环境类型）：
+
+```bash
+pnpm typegen                              # 生成 apps/worker/worker-configuration.d.ts
+```
+
+- 修改 `apps/worker/wrangler.toml`（bindings / vars / routes）后需重新 `pnpm typegen`。
 
 - 部署前需：`wrangler kv namespace create DEEPSEA_KV`（id 填入 wrangler.toml）、
   `pnpm secret:put -- GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / TOKEN_ENC_KEY`
