@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
 
-import { setGitHubToken } from "@/lib/github/client"
+import { AUTH_EXPIRED_EVENT, setGitHubToken } from "@/lib/github/client"
 
 export interface AuthUser {
   id: string
@@ -35,13 +35,31 @@ interface MeResponse {
 /** sessionStorage 键：登录态（user + token）会话内暂留 */
 const AUTH_STORAGE_KEY = "deepsea:auth"
 
-/** 读 sessionStorage 缓存的登录态（无效 / 缺失返回 null） */
+/**
+ * 会话缓存 TTL：超过后视为过期，回源 /auth/me 校验（Worker 会验证 token 是否
+ * 仍被 GitHub 认可）。平衡「减少打鉴权接口」与「及时捕捉 token 被撤销」。
+ */
+const AUTH_CACHE_TTL_MS = 10 * 60 * 1000
+
+/** 读 sessionStorage 缓存的登录态（无效 / 缺失 / 超 TTL 返回 null） */
 function readCached(): { user: AuthUser; token: string } | null {
   try {
     const raw = sessionStorage.getItem(AUTH_STORAGE_KEY)
     if (!raw) return null
-    const data = JSON.parse(raw) as { user?: AuthUser; token?: string }
+    const data = JSON.parse(raw) as {
+      user?: AuthUser
+      token?: string
+      cachedAt?: number
+    }
     if (data?.user?.login && data?.token) {
+      // 超 TTL：清缓存并返回 null，强制回源 /auth/me 校验 token 有效性
+      if (
+        typeof data.cachedAt === "number" &&
+        Date.now() - data.cachedAt > AUTH_CACHE_TTL_MS
+      ) {
+        sessionStorage.removeItem(AUTH_STORAGE_KEY)
+        return null
+      }
       return { user: data.user, token: data.token }
     }
     return null
@@ -50,11 +68,14 @@ function readCached(): { user: AuthUser; token: string } | null {
   }
 }
 
-/** 写 / 清 sessionStorage 缓存（隐私模式等极端情况静默忽略） */
+/** 写 / 清 sessionStorage 缓存（隐私模式等极端情况静默忽略）；写入时记录缓存时间戳。 */
 function writeCached(data: { user: AuthUser; token: string } | null): void {
   try {
     if (data) {
-      sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data))
+      sessionStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({ ...data, cachedAt: Date.now() })
+      )
     } else {
       sessionStorage.removeItem(AUTH_STORAGE_KEY)
     }
@@ -63,20 +84,34 @@ function writeCached(data: { user: AuthUser; token: string } | null): void {
   }
 }
 
+/**
+ * in-flight 单例：并发调用（App/Topbar/SonarPage 各自 useAuth 首次挂载）复用同一
+ * 请求，避免一次页面加载对 /auth/me 发多次并发请求（P0-1 消除业务自身浪费）。
+ */
+let fetchMeInFlight: Promise<{ user: AuthUser; token: string } | null> | null =
+  null
+
 /** 读取当前登录用户 + token（未登录返回 null；网络错误返回 null 不抛错） */
-async function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
-  try {
-    const res = await fetch("/auth/me", {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    })
-    if (!res.ok) return null
-    const data = (await res.json()) as MeResponse
-    if (!data.authed || !data.user || !data.token) return null
-    return { user: data.user, token: data.token }
-  } catch {
-    return null
-  }
+function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
+  if (fetchMeInFlight) return fetchMeInFlight
+  fetchMeInFlight = (async () => {
+    try {
+      const res = await fetch("/auth/me", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      })
+      if (!res.ok) return null
+      const data = (await res.json()) as MeResponse
+      if (!data.authed || !data.user || !data.token) return null
+      return { user: data.user, token: data.token }
+    } catch {
+      return null
+    } finally {
+      // 请求结束后清空引用，允许下次（如登录回跳强制刷新）重新请求。
+      fetchMeInFlight = null
+    }
+  })()
+  return fetchMeInFlight
 }
 
 export function useAuth() {
@@ -117,6 +152,19 @@ export function useAuth() {
       cancelled = true
     }
   }, [location.search])
+
+  // 监听授权失效事件（octokit 401 检测触发）：token 被撤销/过期时，清缓存
+  // 并登出。所有 useAuth 实例（topbar/sonar 等）各自监听，统一回到未登录态，
+  // UI 自然显示「登录」按钮引导重新授权。
+  useEffect(() => {
+    const onAuthExpired = () => {
+      setUser(null)
+      setGitHubToken(null)
+      writeCached(null)
+    }
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired)
+  }, [])
 
   const logout = useCallback(async () => {
     try {

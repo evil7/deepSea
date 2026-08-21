@@ -45,11 +45,9 @@ import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
 // /plugins —— 插件生态快速搜索页
-//   挑选渔获（过滤本地缓存种子）/ 自行捕捞（按条件实时查询 GitHub）双模式：
-//   · 挑选渔获：搜索框即时过滤缓存；star 默认对齐缓存脚本门槛（minStars=10），
-//     创建时间默认「不限」（缓存不再按创建时间收录）；把 star 设为「不限」即
-//     突破缓存门槛 → 自动切到自行捕捞
-//   · 自行捕捞：搜索框后显示搜索按钮，按当前过滤条件实时查询（需登录 token）
+//   · 输入框：即时过滤本地缓存种子（零 API 配额）
+//   · 搜索按钮：按当前条件实时查询 GitHub（默认过滤官方 topic dsh-plugin，
+//     需登录 token）
 // ---------------------------------------------------------------------------
 
 const PAGE_SIZE = 12
@@ -57,15 +55,13 @@ const PAGE_SIZE = 12
 /** 骨架屏占位 key（静态，避免 index key） */
 const SKELETON_KEYS = Array.from({ length: 6 }, (_, i) => `skeleton-${i}`)
 
-// 挑选渔获模式下 star 默认对齐缓存脚本门槛（search-deepseek-repos.mjs 默认
-// minStars=10，查询语句 stars:>=10 过滤）：缓存即按「≥10 star」捕捞的。
-// 选「不限」= 突破缓存门槛 → 自动切到自行捕捞（实时查询 GitHub）。
+// star 快速过滤：默认「不限」（0 = 不过滤），且「不限」放首个。
 const STAR_LEVELS = [
+  { label: "不限", value: 0 },
   { label: "≥ 10", value: 10 },
   { label: "≥ 100", value: 100 },
   { label: "≥ 1k", value: 1000 },
   { label: "≥ 10k", value: 10000 },
-  { label: "不限", value: 0 },
 ]
 
 /** 创建时间限制（created_at 距今 ≥ 该天数；0 = 不限）。
@@ -81,8 +77,6 @@ const CREATED_LEVELS = [
 const SYNC_MINUTE = 23
 
 type ViewMode = "hot" | "latest"
-/** 数据来源模式：挑选渔获（过滤缓存）/ 自行捕捞（实时查询 GitHub） */
-type SourceMode = "cache" | "live"
 
 function formatStars(n: number): string {
   if (n >= 1000) {
@@ -105,14 +99,12 @@ function minutesUntilNextSync(): number {
 
 export function PluginsPage() {
   const [repos, setRepos] = useState<PluginRepo[] | null>(null)
-  const seedRef = useRef<PluginRepo[]>([]) // 缓存种子（挑选渔获数据源）
   const [keyword, setKeyword] = useState("")
   const [language, setLanguage] = useState<string | null>(null)
-  // 默认对齐缓存脚本门槛（minStars=10）；创建时间不再设门槛（默认不限）
-  const [starLevel, setStarLevel] = useState(10)
+  // star 默认「不限」（0）；创建时间默认「不限」（0）
+  const [starLevel, setStarLevel] = useState(0)
   const [createdWithin, setCreatedWithin] = useState(0)
   const [mode, setMode] = useState<ViewMode>("hot")
-  const [sourceMode, setSourceMode] = useState<SourceMode>("cache")
   const [searching, setSearching] = useState(false)
   const [page, setPage] = useState(1)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -121,7 +113,6 @@ export function PluginsPage() {
     let alive = true
     loadPluginSeed(PLUGIN_SEED_URL).then((data) => {
       if (alive) {
-        seedRef.current = data
         setRepos(data)
       }
     })
@@ -130,26 +121,7 @@ export function PluginsPage() {
     }
   }, [])
 
-  /** 切换到自行捕捞：无登录 token 时弹出 sonner 提示 */
-  const switchToLive = () => {
-    if (!getToken()) {
-      toast.info("需登录github oauth进行搜索接口调用")
-    }
-    setSourceMode("live")
-  }
-
-  /** 数据来源切换（挑选渔获 ↔ 自行捕捞） */
-  const handleSourceChange = (value: string) => {
-    if (value === "live") {
-      switchToLive()
-      return
-    }
-    // 切回挑选渔获：恢复缓存种子
-    setRepos(seedRef.current.length > 0 ? seedRef.current : repos)
-    setSourceMode("cache")
-  }
-
-  /** 自行捕捞：按当前过滤条件实时查询 GitHub */
+  /** 在线搜索：按当前过滤条件实时查询 GitHub（默认过滤官方 topic） */
   const handleLiveSearch = async () => {
     if (!getToken()) {
       toast.info("需登录github oauth进行搜索接口调用")
@@ -207,14 +179,11 @@ export function PluginsPage() {
   // 过滤条件变化时回到第一页
   useEffect(() => {
     setPage(1)
-  }, [keyword, language, starLevel, createdWithin, mode, sourceMode])
+  }, [keyword, language, starLevel, createdWithin, mode])
 
-  /** star 过滤点击：挑选渔获模式下选「不限」→ 自动切换到自行捕捞 */
+  /** star 过滤点击：直接更新本地过滤条件 */
   const handleStarClick = (value: number) => {
     setStarLevel(value)
-    if (sourceMode === "cache" && value === 0) {
-      switchToLive()
-    }
   }
 
   /** 发布时间过滤点击：缓存不再按创建时间收录，「不限」是默认态、不触发切换 */
@@ -263,7 +232,7 @@ export function PluginsPage() {
 
       {/* 搜索 + 过滤条（手机端隐藏：只留标题 + 热门/最新 + 列表 + 分页） */}
       <div className="hidden flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex">
-        {/* 搜索框（自行捕捞模式在后方显示搜索按钮） */}
+        {/* 搜索框（输入即过滤缓存，点击搜索按钮在线查询） */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -272,31 +241,25 @@ export function PluginsPage() {
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => {
-                if (sourceMode === "live" && e.key === "Enter") {
+                if (e.key === "Enter") {
                   handleLiveSearch()
                 }
               }}
-              placeholder={
-                sourceMode === "cache"
-                  ? "直接输入即过滤缓存渔获（如 dsh、harness、skill）…"
-                  : "输入关键词后点击搜索，实时查询 GitHub…"
-              }
+              placeholder="直接输入即过滤缓存渔获，点击搜索在线查询 GitHub…"
               className="h-9 border-border bg-background pl-9 text-foreground placeholder:text-muted-foreground"
             />
           </div>
-          {sourceMode === "live" && (
-            <Button
-              size="sm"
-              onClick={handleLiveSearch}
-              disabled={searching}
-              className="h-9 shrink-0 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 hover:text-cyan-200"
-            >
-              <RefreshCw
-                className={cn("size-3.5", searching && "animate-spin")}
-              />
-              搜索
-            </Button>
-          )}
+          <Button
+            size="sm"
+            onClick={handleLiveSearch}
+            disabled={searching}
+            className="h-9 shrink-0 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 hover:text-cyan-200"
+          >
+            <RefreshCw
+              className={cn("size-3.5", searching && "animate-spin")}
+            />
+            搜索
+          </Button>
         </div>
 
         {/* 语言下拉 + star 限制 + 发布时间 + 来源模式切换 */}
@@ -345,20 +308,6 @@ export function PluginsPage() {
               label={c.label}
             />
           ))}
-
-          {/* 数据来源切换：挑选渔获（过滤缓存）| 自行捕捞（实时查询） */}
-          <div className="ml-auto">
-            <Tabs
-              value={sourceMode}
-              onValueChange={handleSourceChange}
-              className="w-fit"
-            >
-              <TabsList className="h-8 border border-border bg-muted text-xs">
-                <TabsTrigger value="cache">挑选渔获</TabsTrigger>
-                <TabsTrigger value="live">自行捕捞</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
         </div>
       </div>
 

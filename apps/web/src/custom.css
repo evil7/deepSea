@@ -311,3 +311,169 @@ body {
     var(--muted);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * coming soon 遮罩：右半渐变虚化 + 双词右侧划入 + 压印立体字 + 漂浮粒子
+ *   · 遮罩背景：线性渐变只虚化右半（右浓 → 左透明），不整块 backdrop-blur
+ *   · 文字：右对齐两排；COMING 先入、SOON 紧跟，均从右侧外侧划入（快进慢停）
+ *   · 字型：立体压印感（顶部内高光 + 底部深影 + 外投影的浮雕层次）
+ *   · 粒子：右半区域内白色/浅蓝小点缓慢上漂 + 呼吸（呼应社区纸屑配色）
+ * ═══════════════════════════════════════════════════════════════════════ */
+.coming-soon-word {
+  display: block;
+  font-family: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 800;
+  font-size: 2.25rem;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  /* 右对齐下抵消末字符 letter-spacing 空隙，右缘贴齐 */
+  margin-right: -0.16em;
+  color: #e8edf5;
+  /* 立体压印：顶部 1px 内高光 + 底部深影 + 柔外投影 */
+  text-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.32),
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    0 5px 18px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+@media (min-width: 640px) {
+  .coming-soon-word {
+    font-size: 2.9rem;
+  }
+}
+
+/* 初始态：两词均藏在右侧外侧（无角度，纯水平划入） */
+.coming-soon-word--coming,
+.coming-soon-word--soon {
+  transform: translateX(140%);
+}
+
+/* hover 触发：COMING 先入，SOON 紧跟（0.08s 错落） */
+.coming-soon-card:hover .coming-soon-word--coming {
+  animation: coming-slide-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.coming-soon-card:hover .coming-soon-word--soon {
+  animation: coming-slide-in 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards;
+}
+
+@keyframes coming-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(140%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* —— 右半漂浮粒子（白/浅蓝小点，缓慢上漂 + 呼吸） —— */
+.coming-soon-particle {
+  display: block;
+  border-radius: 9999px;
+  opacity: 0;
+  animation-name: coming-particle-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+@keyframes coming-particle-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.12;
+  }
+  50% {
+    transform: translateY(-16px);
+    opacity: 0.9;
+  }
+}
+
+/* —— 已上线卡片遮罩：START（压印大字）+ 左右弹跳箭头 —— */
+.coming-soon-start {
+  display: block;
+  font-family: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 800;
+  font-size: 2.4rem;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  /* 右对齐下抵消末字符 letter-spacing 空隙 */
+  margin-right: -0.18em;
+  color: #e8edf5;
+  text-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.32),
+    0 1px 1px rgba(0, 0, 0, 0.9),
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    0 5px 18px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateX(140%);
+  will-change: transform, opacity;
+}
+@media (min-width: 640px) {
+  .coming-soon-start {
+    font-size: 2.9rem;
+  }
+}
+.coming-soon-bounce-arrow {
+  display: block;
+  font-size: 1.9rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #7dd3fc;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+/* hover 触发：START 从右划入；箭头左右弹跳（往返，start 后 0.3s 起跳） */
+.coming-soon-live-card:hover .coming-soon-start {
+  animation: coming-slide-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.coming-soon-live-card:hover .coming-soon-bounce-arrow {
+  animation: coming-arrow-bounce 0.9s ease-in-out 0.3s infinite;
+}
+@keyframes coming-arrow-bounce {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateX(10px);
+    opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Swiper 全屏翻页分页点（首页 FullscreenSlides）
+ *   · 垂直翻页时 Swiper 默认把分页点放右侧；这里移到左侧竖排，对齐原进度点视觉
+ *   · 白色圆点，active 放大 + 外发光；非 active 半透明 hover 提亮
+ * ═══════════════════════════════════════════════════════════════════════ */
+.swiper-pagination-vertical.swiper-pagination-bullets {
+  left: 20px;
+  right: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.swiper-pagination-vertical.swiper-pagination-bullets .swiper-pagination-bullet {
+  margin: 0 !important;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.35);
+  opacity: 1;
+  transition: transform 0.3s ease, background-color 0.3s ease;
+}
+.swiper-pagination-vertical.swiper-pagination-bullets .swiper-pagination-bullet:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+.swiper-pagination-vertical.swiper-pagination-bullets .swiper-pagination-bullet-active {
+  background: #fff;
+  transform: scale(1.25);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+}
+

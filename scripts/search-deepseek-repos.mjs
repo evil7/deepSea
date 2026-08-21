@@ -1,29 +1,27 @@
 // ---------------------------------------------------------------------------
 // deepseek-harness 生态仓库搜索/收集脚本
-//   使用 octokit REST Search API 搜索所有 deepseek-harness 相关 GitHub 仓库，
-//   聚合 topic 搜索 + 关键词搜索，按 full_name 去重，导出结构化 JSON。
+//   使用 octokit REST Search API 索引官方 topic `dsh-plugin` 的 GitHub 仓库，
+//   按 full_name 去重，导出结构化 JSON。
+//
+// 收录策略（2026-08-20 定稿）：仅对官方指定 topic `dsh-plugin` 做索引，
+//   不再混入关键词搜索 / README 命中 / star 门槛等其它条件，保证收录精准。
+//   请求量封顶：按 stars 排序、每页 100，总计 30 次请求封顶（仅采集 1000 个），
+//   对齐 GitHub Search 30 req/min 的单次配额上限。
 //
 // 依赖复用：不重复安装 octokit —— 通过 createRequire 引用 apps/web 的
 //   @octokit/rest（pnpm workspace 已安装）。
 //
 // 用法（根目录）：
 //   GITHUB_TOKEN=ghp_xxx pnpm search:plugins          # 带 token（限流 30/min）
-//   pnpm search:plugins -- --min-stars 0               # 放宽 star 门槛（默认 ≥10）
-//   pnpm search:plugins -- --sort updated --limit 200  # 按更新时间、每类型最多 200 条（默认 1000）
-//   pnpm search:plugins -- --concurrency 10            # 并发查询数（默认 6，受 30 req/min 限速）
+//   pnpm search:plugins -- --sort updated --limit 200  # 按更新时间、最多 200 条（默认 1000）
+//   pnpm search:plugins -- --concurrency 10            # 并发查询数（默认 10，受 30 req/min 限速）
 //   pnpm search:plugins -- --merge                     # 拼接输出目录下其它 JSON 结果
 //   pnpm search:plugins -- --out data/repos.json       # 自定义输出路径
-//   pnpm search:plugins -- --topics-only               # 只跑 topic 搜索
-//   pnpm search:plugins -- --readme                    # 额外收录 README 全文命中
 //   pnpm search:plugins -- -v                          # 打印每轮查询进度
 //
-// 默认参数：limit 1000/类型（拉满单查询上限），star ≥ 10（查询语句 stars:>=N 直接过滤）。
-// 不再按创建时间过滤（age 已移除）。topic 只保留官方指定 `dsh-plugin`。
-// 关键词精选 6 个核心词，每个词单独成一条查询（不用 OR 合并，避免冷门词被热门词挤压截断）。
-//
 // 搜索优化：
-//   · 关键词逐词查询、topic 逐条查询（topic qualifier 不支持 OR，422）
-//   · 并发：多查询并行执行（--concurrency，默认 6），全局限速器保证不超过
+//   · topic 逐条查询（topic qualifier 不支持 OR，422）
+//   · 并发：多查询并行执行（--concurrency，默认 10），全局限速器保证不超过
 //     官方 30 req/min（请求间隔 ≥2s），但请求发出后不等响应（流水线）——
 //     把网络等待时间隐藏，总墙钟时间 ≈ 请求数/30/min，而非串行累加
 //   · 每查询 per_page=100（单次最大分页）+ 按 --limit 自动翻页递归，
@@ -52,44 +50,13 @@ const { Octokit } = webRequire("@octokit/rest")
 // 官方库：置顶展示并标记 is_official: true
 const OFFICIAL_REPOS = new Set(["deepseek-ai/deepseek-harness"])
 
-// Topic 全量收录：GitHub Search 不支持对 qualifier（如 topic:）使用 OR
-// （422：Logical operators only apply to text），必须逐条查询。
+// 仅收录官方指定 topic `dsh-plugin`（官方库 deepseek-ai/deepseek-harness
+//   自标的生态 topic）。GitHub Search 不支持对 qualifier（如 topic:）使用
+//   OR（422：Logical operators only apply to text），故逐条查询。
 // 新增生态 topic 直接追加到数组即可。
-// 注意（2026-08-19 定稿）：只保留官方指定 topic `dsh-plugin`（官方库
-//   deepseek-ai/deepseek-harness 自标的生态 topic）。deepc-list 等自定义
-//   topic 暂不收录，等 deepc 插件开发完成后再敲定与增补。
 const PLUGIN_TOPICS = [
   "dsh-plugin",
 ]
-
-// 关键词精选（name/description 命中）：
-//   精选最匹配的核心关键词（默认 1 组查询；追加更多时自动按每组 ≤6 个
-//   term 拆成多次 OR 查询，至多 12 个）。GitHub 单查询最多 5 个布尔运算符。
-//   关键：term 必须用引号包裹（含空格/连字符的短语），否则 GitHub 的
-//   OR 优先级高于 AND，会把多词 term 拆成单次 OR（如 deepseek agent →
-//   deepseek OR agent），导致任何描述含 agent/harness/plugin 的无关仓库
-//   混入收录。
-//   ⚠️ 2026-08-19 移除裸 "dsh" 与 "harness plugin"：
-//   · "dsh" 是子串匹配，会撞上 Box2DSharp / DShot / DShield / 3DShape /
-//     DShimmer / d2dsharp 等海量含 "dsh" 字母的无关项目（NOT 无法枚举干净）。
-//   · "harness plugin" 太宽，命中各种 AI agent harness 插件。
-//   · 只保留 dsh 专属长词，确保收录精准。
-const KEYWORD_TERMS = {
-  nameDesc: [
-    '"deepseek-harness"',
-    '"deepseek harness"',
-    '"dsh-plugin"',
-    '"dsh-plugins"',
-    '"dsh-patch"',
-    '"deepseek-harness plugin"',
-  ],
-  readme: [
-    '"deepseek-harness"',
-    '"deepseek harness"',
-    '"dsh-plugin"',
-    '"@deepseek-ai/dsh"',
-  ],
-}
 
 // ---------------------------------------------------------------------------
 // 并发 + 全局限速
@@ -157,18 +124,13 @@ async function runPool(tasks, concurrency) {
 function parseArgs(argv) {
   const args = {
     token: process.env.GITHUB_TOKEN,
-    // 质量门槛：star ≥ 10（查询语句 stars:>=N 直接过滤，不再按创建时间过滤）
-    minStars: 10,
     sort: "stars", // stars | updated | created
-    // 单查询收录上限：GitHub Search API 每查询最多返回 1000 条
-    // 缓存默认每类型 1000 个（关键词组 / 每个 topic 各 1000，即拉满）
+    // 单查询收录上限：每页 100 × 30 次请求 = 1000（对齐 30 req/min 单次配额）
     limit: 1000,
     out: path.join(__dirname, "output", "deepseek-harness-repos.json"),
-    topicsOnly: false,
-    readme: false,
     verbose: false,
     // 并发查询数：多查询并行翻页（全局限速保证 30 req/min 不超限）
-    concurrency: 6,
+    concurrency: 10,
     // 拼接输出目录下其它 JSON 结果（多配置文件合并去重）
     merge: false,
   }
@@ -177,18 +139,14 @@ function parseArgs(argv) {
     const next = () => argv[++i]
     if (a === "--token") args.token = next()
     else if (a.startsWith("--token=")) args.token = a.slice(8)
-    else if (a === "--min-stars") args.minStars = Number(next()) || 0
-    else if (a.startsWith("--min-stars=")) args.minStars = Number(a.slice(12)) || 0
     else if (a === "--sort") args.sort = next()
     else if (a.startsWith("--sort=")) args.sort = a.slice(7)
     else if (a === "--limit") args.limit = Number(next()) || 1000
     else if (a.startsWith("--limit=")) args.limit = Number(a.slice(8)) || 1000
     else if (a === "--out") args.out = next()
     else if (a.startsWith("--out=")) args.out = a.slice(6)
-    else if (a === "--topics-only") args.topicsOnly = true
-    else if (a === "--readme") args.readme = true
-    else if (a === "--concurrency") args.concurrency = Number(next()) || 6
-    else if (a.startsWith("--concurrency=")) args.concurrency = Number(a.slice(15)) || 6
+    else if (a === "--concurrency") args.concurrency = Number(next()) || 10
+    else if (a.startsWith("--concurrency=")) args.concurrency = Number(a.slice(15)) || 10
     else if (a === "--merge") args.merge = true
     else if (a === "--verbose" || a === "-v") args.verbose = true
   }
@@ -196,24 +154,12 @@ function parseArgs(argv) {
 }
 
 // —— 构造查询集合 ——
-// 每个关键词 term / topic 都单独成一条查询（不用 OR 合并）：
-//   · 避免 OR 合并后按 star 排序的前 1000 条里，冷门 term 的仓库被热门
-//     term 挤压截断，保证每个 term 都能完整拉取
-//   · GitHub Search 的 topic 本就无法 OR（qualifier 不支持，422），保持逐条
-// star 门槛（minStars）直接在查询语句 stars:>=N 过滤；官方库单独一条
-//   repo: 精确查询兜底（不带 star，任何门槛下都必收录）。
-function buildQueries({ topicsOnly, readme, minStars }) {
-  const starQ = minStars > 0 ? ` stars:>=${minStars}` : ""
+// 仅对官方 topic 逐条查询（GitHub Search 的 topic 无法 OR，qualifier 不支持，
+//   422）。官方库单独一条 repo: 精确查询兜底（不带任何条件，必收录并标记
+//   is_official，供前端置顶展示）。
+function buildQueries() {
   const queries = []
-  if (!topicsOnly) {
-    queries.push(
-      ...KEYWORD_TERMS.nameDesc.map((t) => `${t} in:name,description${starQ}`)
-    )
-    if (readme) {
-      queries.push(...KEYWORD_TERMS.readme.map((t) => `${t} in:readme${starQ}`))
-    }
-  }
-  queries.push(...PLUGIN_TOPICS.map((t) => `topic:${t}${starQ}`))
+  queries.push(...PLUGIN_TOPICS.map((t) => `topic:${t}`))
   queries.push(...[...OFFICIAL_REPOS].map((r) => `repo:${r}`))
   return queries
 }
@@ -334,12 +280,12 @@ async function logRateLimit(octokit) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   console.log(`octokit 仓库搜索：token=${args.token ? "已提供" : "匿名"} ` +
-    `minStars=${args.minStars} sort=${args.sort} ` +
+    `sort=${args.sort} ` +
     `limit=${args.limit} concurrency=${args.concurrency}`)
 
   const octokit = new Octokit({ auth: args.token || undefined })
 
-  const queries = buildQueries(args)
+  const queries = buildQueries()
   // 全局限速：带 token 30 req/min（间隔 2s）；匿名 10 req/min（间隔 6s）
   const throttle = new SearchThrottle(args.token ? 2000 : 6000)
   console.log(
@@ -351,7 +297,7 @@ async function main() {
   // 并发执行：每个查询一个任务，内部自行过全局限速器；403/429 以 Error 值返回
   const tasks = queries.map((q) => async () => {
     const items = await searchQuery(octokit, q, args, throttle)
-    const src = q.startsWith("topic:") ? "topic" : "keyword"
+    const src = q.startsWith("topic:") ? "topic" : "official"
     return {
       q,
       items: items.map((it) => Object.assign({}, it, { sources: [src] })),
@@ -404,13 +350,8 @@ async function main() {
     }
   }
 
-  // —— 过滤（质量门槛：star 已在查询语句过滤，此处双保险 + 官方库豁免）+ 排序 ——
-  const repos = [...seen.values()]
-    .filter(
-      (r) =>
-        r.stargazers_count >= args.minStars || OFFICIAL_REPOS.has(r.full_name)
-    )
-    .toSorted((a, b) => {
+  // —— 排序（仅 topic 命中，无需再按 star 过滤）——
+  const repos = [...seen.values()].toSorted((a, b) => {
       if (args.sort === "updated") return (b.pushed_at ?? "").localeCompare(a.pushed_at ?? "")
       if (args.sort === "created") return (b.created_at ?? "").localeCompare(a.created_at ?? "")
       return b.stargazers_count - a.stargazers_count

@@ -11,3 +11,12 @@ export type SeaState = "surface" | "deep"
 
 /** 首页第几屏开始视为「深海」（万物皆插件屏；首页第二屏即下潜） */
 export const DEEP_SLIDE_INDEX = 1
+
+/** 首页各屏 id（Topbar 菜单 / Features 卡片 / home.tsx slides 数组共用）。
+ *  取消 hash 定位后，站内跳转改用 location.state 携带 slideId 精准定位。 */
+export const HOME_SLIDE_IDS = {
+  ecosystem: "dsh-ecosystem",
+  curated: "dsh-curated",
+  community: "dsh-community",
+  deepseaKit: "dsh-deepsea-kit",
+} as const

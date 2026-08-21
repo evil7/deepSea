@@ -81,6 +81,14 @@ function main() {
   }
 
   // ④ 洁癖单 commit（--allow-empty 避免「nothing to commit」中断流程）
+  //    兜底配置 git 身份：本地或 runner 未设置 user.name/user.email 时，
+  //    commit 会报 "Please tell me who you are" 而失败，这里统一用缓存 bot。
+  if (!tryGit(["config", "user.name"])?.trim()) {
+    git(["config", "user.name", "deepsea-cache-bot"])
+  }
+  if (!tryGit(["config", "user.email"])?.trim()) {
+    git(["config", "user.email", "cache-bot@deepsea.local"])
+  }
   git(["add", "-A"], WT_PATH)
   git(
     ["commit", "-m", `cached at ${new Date().toISOString()}`, "--allow-empty"],

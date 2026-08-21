@@ -1,14 +1,15 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Beer,
   ChevronDown,
   Package,
-  Palette,
   Plug,
   Radio,
+  RefreshCw,
   ShieldCheck,
+  Star,
 } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 
 import { ComingSoonSlide } from "@/components/home/coming-soon"
 import { CommunitySlide } from "@/components/home/community-slide"
@@ -26,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { cn } from "@/lib/utils"
 
 interface HomePageProps {
   /** 当前海洋状态（由 App 统一管理：路由 + 首页翻屏共同驱动） */
@@ -34,15 +36,44 @@ interface HomePageProps {
   onSeaStateChange: (state: SeaState) => void
 }
 
+/** 首页 slide id → 索引映射（桌面端固定顺序：hero=0, ecosystem=1, ...）。
+ *  取消 hash 定位后，站内菜单/卡片跳转经 location.state 携带 slideId 精准定位。 */
+const SLIDE_INDEX_BY_ID: Record<string, number> = {
+  hero: 0,
+  "dsh-ecosystem": 1,
+  "dsh-curated": 2,
+  "dsh-community": 3,
+  "dsh-deepsea-kit": 4,
+}
+
 export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
   const isMobile = useIsMobile()
+  const location = useLocation()
+  const navigate = useNavigate()
   // 全屏幻灯控制句柄（「探索更多」等入口统一走幻灯跳转）
   const slidesRef = useRef<FullscreenSlidesHandle>(null)
+  // 当前屏索引：驱动「探索更多」按钮显隐（仅首页显示，翻屏后隐藏）
+  const [activeIndex, setActiveIndex] = useState(0)
 
-  // 翻屏（滚动/点击进度点/探索更多）→ 统一上报海洋状态：进入核心能力屏即深海
+  // 翻屏（滚轮/键盘/进度点/探索更多）→ 统一上报海洋状态：
+  // 进入第二屏（index ≥ 1）即深海，回到第一屏（index = 0）即海面 —— 由屏切换触发，非高度判断
   const handleSlideChange = (index: number) => {
+    setActiveIndex(index)
     onSeaStateChange(index >= DEEP_SLIDE_INDEX ? "deep" : "surface")
   }
+
+  // 站内菜单/卡片跳转到指定屏（消费 location.state.slideId）：
+  // 取消 hash 定位后，Topbar 菜单与 Features 卡片经 state 携带 slideId，
+  // 这里精准 goTo 对应屏，随后清除 state 避免刷新/重复触发时重复滚动。
+  useEffect(() => {
+    const slideId = (location.state as { slideId?: string } | null)?.slideId
+    if (!slideId) return
+    const index = SLIDE_INDEX_BY_ID[slideId]
+    if (index != null) {
+      slidesRef.current?.goTo(index)
+    }
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, navigate, location.pathname])
 
   // 首屏 hero（带大标题）：手机端不显示安装命令，桌面端保留
   const heroSlide = {
@@ -50,13 +81,9 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
     label: "首页",
     node: (
       <div className="relative h-full">
-        {/* 内容锚定视口正中心（百分比定位）：
-            section 从顶部导航下方开始（导航高 4rem），
-            section 高度 = 100dvh - 4rem → 其 50% 点比视口中心低 2rem。
-            用 top-[calc(50%-2rem)] 抵消导航占位：
-            内容中心 = 4rem + (100dvh-4rem)/2 - 2rem = 50dvh = 视口中心，
-            任意屏幕尺寸/比例下内容相对视口中心不偏移 */}
-        <div className="absolute inset-x-0 top-[calc(50%-2rem)] -translate-y-1/2 px-4 text-center sm:px-6">
+        {/* 内容居中于 hero 屏：slide 占满 content 区（navbar 与 footer 之间），
+            相对 slide 垂直居中即可，无需再按视口补偿导航占位 */}
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-4 text-center sm:px-6">
           <Badge
             variant="outline"
             className="border-white/20 bg-white/10 text-white backdrop-blur-sm"
@@ -137,15 +164,23 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                 <ComingSoonSlide
                   eyebrow="05 · DEEPSEA KIT"
                   title="深海套装"
-                  description="把 deepSea 装进口袋：一套 deepc 组合包，搞定主题、插件管理与多端互联。"
+                  description="把 deepSea 装进口袋：一套 deepc-bridge 组合包，搞定远程控制、工程同步与插件管理。"
                   items={[
                     {
-                      id: "theme",
-                      icon: Palette,
-                      title: "一致主题",
+                      id: "bridge",
+                      icon: Radio,
+                      title: "操作互联",
                       description:
-                        "约定 DeepcTheme 主题文档规范，local 直接调用官方 theme.register 移植优秀主题，remote 经 P2P/私有 gist 同步各端，一套主题多端一致。",
-                      tag: "theme",
+                        "deepc 主站自实现 chatUI，经 deepc-sonar-bridge 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
+                      tag: "bridge",
+                    },
+                    {
+                      id: "sync",
+                      icon: RefreshCw,
+                      title: "工程同步",
+                      description:
+                        "登录后把本地工作区 + 聊天记录经同一加密 RTC 通道实时传输，多端数据一致、备份与迁移。",
+                      tag: "sync",
                     },
                     {
                       id: "manage",
@@ -154,14 +189,6 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                       description:
                         "本地管理点注入 dsh 设置页，异步执行安装/卸载/更新与安全审计，插件与主题共用一个设置页，多 profile 一站式管理。",
                       tag: "deepc",
-                    },
-                    {
-                      id: "sync",
-                      icon: Radio,
-                      title: "多端互联",
-                      description:
-                        "WebRTC 实时 P2P 加私有 gist 端到端加密同步，deepc.cn 统一界面多端调用 dsh、对话同步，免 nginx 反代风险。",
-                      tag: "sync",
                     },
                     {
                       id: "security",
@@ -179,26 +206,35 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
 
   return (
     <>
-      {/* 沉入海底的入口：fixed 首页底部；滚动淡出、回顶重现（仅桌面显示） */}
+      {/* 沉入海底的入口：fixed 首页底部；仅首页屏显示、翻屏后隐藏（仅桌面显示） */}
       {!isMobile && (
-        <ScrollFadeExploreButton onClick={() => slidesRef.current?.next()} />
+        <ScrollFadeExploreButton
+          onClick={() => slidesRef.current?.next()}
+          visible={activeIndex === 0}
+        />
       )}
 
-      <main className="relative z-10">
-        {/* 全屏幻灯：每屏固定占满视口，左侧进度点导航；内容页半透明深色遮罩 */}
-        <FullscreenSlides
-          ref={slidesRef}
-          heightClass="h-[calc(100dvh-4rem)]"
-          contentOverlay
-          onActiveChange={handleSlideChange}
-          slides={slides}
-        />
+      {/* 首页三行布局：navbar(Topbar) + content(Swiper 翻页) + footer，
+          用 flex 协调高度 —— main 固定为「视口 − navbar」，Swiper 占剩余、
+          footer 收缩到底部，首屏即完整可见，不再溢出。 */}
+      <main className="relative z-10 flex h-[calc(100dvh-4rem)] flex-col">
+        <div className="min-h-0 flex-1">
+          {/* 全屏幻灯：Swiper 垂直翻页，左侧进度点导航；内容页半透明深色遮罩 */}
+          <FullscreenSlides
+            ref={slidesRef}
+            contentOverlay
+            onActiveChange={handleSlideChange}
+            slides={slides}
+          />
+        </div>
 
         {/* 手机端不显示 footer（后续单独做移动端 dock） */}
-        <footer className="hidden border-t border-white/10 bg-slate-950/60 py-10 backdrop-blur-sm sm:block">
-          <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-sm text-white/70 sm:flex-row sm:px-6">
+        <footer className="hidden shrink-0 border-t border-white/10 bg-slate-950/60 py-3 backdrop-blur-sm sm:block">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 text-sm text-white/70 sm:px-6">
             <p>deepSea · DeepSeek Harness 插件生态聚合站</p>
-            <p className="font-mono">dsh · deepc · everything is a plugin</p>
+            <a href="https://github.com/evil7/deepSea" target="_blank" rel="noopener noreferrer">
+              <p className="font-mono">evil7/deepSea</p><Star /><p>{123}</p>
+            </a>
           </div>
         </footer>
       </main>
@@ -206,41 +242,28 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
   )
 }
 
-/** 底部「探索更多」按钮：fixed 首页底部，滚动淡出、回顶重现 */
-function ScrollFadeExploreButton({ onClick }: { onClick: () => void }) {
-  const ref = useRef<HTMLButtonElement>(null)
-  useScrollFade(ref)
+/** 底部「探索更多」按钮：fixed 首页底部，仅首页屏显示、翻屏后淡出隐藏 */
+function ScrollFadeExploreButton({
+  onClick,
+  visible,
+}: {
+  onClick: () => void
+  visible: boolean
+}) {
   return (
     <button
-      ref={ref}
       type="button"
       onClick={onClick}
-      className="fixed bottom-10 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-1.5 text-white/70 transition-all duration-500 hover:text-white"
+      aria-hidden={!visible}
+      tabIndex={visible ? 0 : -1}
+      className={cn(
+        "fixed bottom-14 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-1.5 text-white/70 transition-opacity duration-500 hover:text-white",
+        visible ? "opacity-100" : "pointer-events-none opacity-0"
+      )}
       aria-label="探索更多"
     >
       <span className="text-xs font-medium tracking-[0.2em]">探索更多</span>
       <ChevronDown className="size-5 animate-bounce" />
     </button>
   )
-}
-
-/** 滚动越过一屏 12% 淡出按钮，回到顶部附近重现 */
-function useScrollFade(ref: React.RefObject<HTMLButtonElement | null>) {
-  useEffect(() => {
-    const el = ref.current
-    if (!el) {
-      return
-    }
-    const onScroll = () => {
-      const hidden = window.scrollY >= window.innerHeight * 0.12
-      el.classList.toggle("pointer-events-none", hidden)
-      el.classList.toggle("opacity-0", hidden)
-      el.classList.toggle("opacity-100", !hidden)
-      el.setAttribute("aria-hidden", String(hidden))
-      el.tabIndex = hidden ? -1 : 0
-    }
-    window.addEventListener("scroll", onScroll, { passive: true })
-    onScroll()
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [ref])
 }

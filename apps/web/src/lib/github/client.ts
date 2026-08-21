@@ -11,6 +11,17 @@ import { Octokit } from "@octokit/rest"
 
 let token: string | null = null
 
+/** 授权失效事件名（token 被撤销/过期，前端各 useAuth 实例监听后统一登出）。 */
+export const AUTH_EXPIRED_EVENT = "deepsea:auth-expired"
+
+/**
+ * 广播「授权已失效」：由 octokit 401 检测触发，通知所有 useAuth 实例清缓存登出。
+ * 用事件而非模块级回调，避免多个 useAuth 实例（topbar/sonar 等）互相覆盖 handler。
+ */
+export function notifyAuthExpired(): void {
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+}
+
 /** 设置 GitHub token（登录后由 useAuth 注入；sessionStorage 会话内暂留，关标签页失效） */
 export function setGitHubToken(t: string | null) {
   token = t
@@ -57,7 +68,11 @@ export const octokit = new Octokit({
       if (t) {
         endpoint.headers.authorization = withAuthorizationPrefix(t)
       }
-      return request(endpoint)
+      const response = await request(endpoint)
+      // token 失效检测：401 表示授权已被撤销/过期（区别于 5xx/网络错误，
+      // 后者会正常抛错由调用方处理，不触发登出）。
+      if (t && response.status === 401) notifyAuthExpired()
+      return response
     },
   }),
 })
@@ -73,11 +88,18 @@ export async function githubGraphQL<T = unknown>(
   variables?: Record<string, unknown>
 ): Promise<T> {
   const t = token
-  return graphqlRequest<T>({
-    query,
-    ...variables,
-    headers: t ? { authorization: `Bearer ${t}` } : {},
-  })
+  try {
+    return await graphqlRequest<T>({
+      query,
+      ...variables,
+      headers: t ? { authorization: `Bearer ${t}` } : {},
+    })
+  } catch (error) {
+    // GraphQL 401 → token 失效（@octokit/graphql 抛 HttpError，含 status）
+    const status = (error as { status?: number } | null)?.status
+    if (t && status === 401) notifyAuthExpired()
+    throw error
+  }
 }
 
 /** 限流剩余/总量（用于 UI 提示），取不到返回 null */

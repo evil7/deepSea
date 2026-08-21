@@ -15,6 +15,7 @@ import { PluginDetailPage } from "@/pages/plugin-detail"
 import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
+import { SonarPage } from "@/pages/sonar"
 
 /** 旧路由 /community/:number → 跳转到 /community/dpc/:number（默认社区） */
 function CommunityNumberRedirect() {
@@ -60,17 +61,11 @@ export function App() {
     }
   }
 
-  // 路由跳转后回到顶部（#hash 锚点除外：首页锚点滚动到对应区块）
+  // 路由跳转后回到顶部（已取消 hash 定位：首页各屏跳转改由 location.state 承载，
+  // 不再依赖 URL hash，避免 hash 与 Swiper transform 定位不一致导致的滚动问题）
   useEffect(() => {
-    if (location.hash) {
-      const el = document.getElementById(location.hash.slice(1))
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" })
-        return
-      }
-    }
     window.scrollTo(0, 0)
-  }, [location.pathname, location.hash])
+  }, [location.pathname])
 
   return (
     <div id="top" className="min-h-dvh">
@@ -107,6 +102,7 @@ export function App() {
         />
         <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/plugin/:owner/:repo" element={<PluginDetailPage />} />
+        <Route path="/sonar" element={<SonarPage />} />
         <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
         <Route path="/community/dsh" element={<CommunityPage />} />
         <Route path="/community/dpc" element={<CommunityPage />} />

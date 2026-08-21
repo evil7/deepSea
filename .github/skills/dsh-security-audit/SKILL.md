@@ -24,7 +24,9 @@ user-invocable: true
 
 - 每个插件映射到唯一沙箱命名空间：`~/.dsh/deepc/plugins/<plugin-id>/`（`plugin-id` 由 owner+repo 哈希生成，防路径注入）
 - 建立「插件 → 允许访问路径」白名单映射表，插件只能读写映射表内的路径
-- 映射表存于 `~/.dsh/deepc/mappings.json`，校验时比对规范化（canonical）路径，杜绝 `..`、符号链接逃逸：
+- **映射表存储走官方 `ctx.storage` seam**（`defineDomain` + `DomainFacility.open` → `ctx.storageDomain`，
+  挂 `storage-json` 后端），**不手写 `~/.dsh/deepc/mappings.json`**（避免绕开官方持久化与热发布）。
+  校验时比对规范化（canonical）路径，杜绝 `..`、符号链接逃逸：
 
 ```ts
 function safeResolve(base: string, input: string): string | null {
@@ -32,6 +34,12 @@ function safeResolve(base: string, input: string): string | null {
   return resolved.startsWith(base + path.sep) ? resolved : null
 }
 ```
+
+### 1a. 密钥管理（对齐官方 `ctx.credentials` seam）
+
+- GitHub/gist token 一律经 `ctx.credentials`（`credentialRef('DEEPSEA_GITHUB_TOKEN')` →
+  `ctx.credentials.resolve(ref)` → `{ value, source }`）；配置只携带引用，`describe(ref)` 永不返回值。
+- **绝不把密钥写入白名单/收藏等任何明文 JSON**；密钥值只由 `credentials-local` provider 持有。
 
 ### 2. 动态安全路径
 
@@ -43,7 +51,8 @@ function safeResolve(base: string, input: string): string | null {
 - 危险操作（安装新插件、更新、执行带写权限的插件、修改映射）必须二次确认：
   - 交互确认：展示操作摘要（插件名、来源、将写入的路径）后由用户确认
   - 可选的 TOTP/口令二次验证（`deepc verify` 命令或 UI 对话框）
-- 操作日志写入 `~/.dsh/deepc/audit.log`（时间、操作、插件、路径、结果）
+- 操作日志写入审计存储（追加型日志；可走 `ctx.storage` domain 或独立 `audit.log` 文件，路径经
+  `ctx.settings.documentPath` 解析）（时间、操作、插件、路径、结果）
 
 ### 4. 安装前审计清单
 

@@ -21,17 +21,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/hooks/use-auth"
 import { loginUrl, reauthUrl } from "@/lib/auth"
+import { HOME_SLIDE_IDS } from "@/components/showcase/sea-state"
 
 const menuItems = [
-  // 与首页 view 逐一对应（不做直接进入页面的动作，全部滚动定位）：
-  //   · 生态概览 → 首页生态概览屏（#dsh-ecosystem）
-  //   · 插件精选 → 首页插件精选屏（#dsh-curated）
-  //   · 讨论交流 → 首页讨论交流屏（#dsh-community）
-  //   · 深海套装 → 首页深海套装屏（#dsh-deepsea-kit）
-  { label: "生态概览", to: "/#dsh-ecosystem", icon: Compass },
-  { label: "插件精选", to: "/#dsh-curated", icon: Layers },
-  { label: "讨论交流", to: "/#dsh-community", icon: MessagesSquare },
-  { label: "深海套装", to: "/#dsh-deepsea-kit", icon: Package },
+  // 与首页各屏逐一对应：取消 hash 定位，点击经 location.state 携带 slideId
+  // 精准滚动到对应屏（HomePage 监听 state 调 goTo）
+  { label: "生态概览", slideId: HOME_SLIDE_IDS.ecosystem, icon: Compass },
+  { label: "插件精选", slideId: HOME_SLIDE_IDS.curated, icon: Layers },
+  { label: "讨论交流", slideId: HOME_SLIDE_IDS.community, icon: MessagesSquare },
+  { label: "深海套装", slideId: HOME_SLIDE_IDS.deepseaKit, icon: Package },
 ]
 
 /** 名片统计格（关注者 / 关注中 / 公开仓库） */
@@ -50,9 +48,13 @@ export function Topbar() {
   const { user, loading, logout } = useAuth()
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link to="/" className="flex items-center gap-2.5">
+    <header className="sticky top-0 z-50 h-16 border-b border-border/60 bg-background/80 backdrop-blur-md">
+      <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6">
+        <Link
+          to="/"
+          state={{ slideId: "hero" }}
+          className="flex items-center gap-2.5"
+        >
           <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Waves className="size-5" />
           </span>
@@ -64,8 +66,8 @@ export function Topbar() {
 
         <nav className="hidden items-center gap-1 lg:flex" aria-label="主导航">
           {menuItems.map((item) => (
-            <Button key={item.to} asChild variant="ghost" size="sm">
-              <Link to={item.to}>
+            <Button key={item.slideId} asChild variant="ghost" size="sm">
+              <Link to="/" state={{ slideId: item.slideId }}>
                 <item.icon className="size-4" />
                 {item.label}
               </Link>

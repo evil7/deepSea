@@ -107,13 +107,12 @@ export async function liveSearchRepos(): Promise<PluginRepo[]> {
 }
 
 /**
- * 按搜索条件实时查询（自行捕捞模式）
- * 把 UI 过滤条件映射为 GitHub Search qualifier：
+ * 按搜索条件实时查询（在线搜索）
+ * 默认过滤官方 topic（PLUGIN_TOPICS），在此基础上叠加 UI 过滤条件：
  *   · keyword        → 文本（多词自动加引号，避免 OR 拆词） + in:name,description
  *   · language       → language:xxx
  *   · minStars       → stars:>=n
  *   · createdWithinDays → created:<YYYY-MM-DD（创建距今 ≥ N 天；0 = 不限）
- * 无关键词时用核心 dsh 关键词 OR 兜底（避免空查询 422）。
  * 限流敏感：需登录 token（30 req/min），匿名 10 req/min；异常向上抛出。
  */
 export async function liveSearchReposByFilter(filter: {
@@ -122,20 +121,16 @@ export async function liveSearchReposByFilter(filter: {
   minStars?: number
   createdWithinDays?: number
 }): Promise<PluginRepo[]> {
-  const textParts: string[] = []
+  const qualifiers: string[] = []
+  // 默认过滤：官方 topic（与缓存脚本索引范围一致）
+  for (const topic of PLUGIN_TOPICS) {
+    qualifiers.push(`topic:${topic}`)
+  }
   const kw = filter.keyword?.trim()
   if (kw) {
-    textParts.push(/\s/.test(kw) ? `"${kw}"` : kw)
-  } else {
-    // 兜底：核心 dsh 专属长关键词（3 个 term = 2 个 OR，未超 5 上限）
-    // ⚠️ 不含裸 "dsh"（子串匹配撞 Box2DSharp/DShot/DShield 等无关项目）
-    textParts.push(
-      '"deepseek-harness"',
-      '"deepseek harness"',
-      '"dsh-plugin"'
-    )
+    qualifiers.push(/\s/.test(kw) ? `"${kw}"` : kw)
+    qualifiers.push("in:name,description")
   }
-  const qualifiers: string[] = []
   if (filter.language) {
     qualifiers.push(`language:${filter.language}`)
   }
@@ -146,8 +141,7 @@ export async function liveSearchReposByFilter(filter: {
     const d = new Date(Date.now() - filter.createdWithinDays * 86400000)
     qualifiers.push(`created:<${d.toISOString().slice(0, 10)}`)
   }
-  const q =
-    `${textParts.join(" OR ")} in:name,description ${qualifiers.join(" ")}`.trim()
+  const q = qualifiers.join(" ").trim()
   const res = await octokit.search.repos({
     q,
     sort: "stars",

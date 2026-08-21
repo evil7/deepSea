@@ -8,11 +8,11 @@
 # 同步周期：每小时一次（cron "15 * * * *"，每小时的第 15 分钟 UTC 触发）
 #   选择理由：
 #     · star 数 / 新仓库 / 推送动态为小时级变化，每小时同步保持最及时
-#     · 单次运行 ~3 分钟（关键词 OR 合并 + 11 topic，per_page=100 分页，
-#       2.1s 节流），24 次/天 ≈ 72 分钟/天，仍远低于免费额度 2000 分钟/月
+#     · 单次运行极短（仅 1 个官方 topic + 官方库兜底查询，per_page=100 分页，
+#       2s 节流），24 次/天仍远低于免费额度 2000 分钟/月
 #     · 分钟数固定 23 分，避免与其它仓库的整点 cron 抢资源
-#   GitHub Search API 限额：带 token 30 req/min；脚本 OR 合并后单次请求量
-#   大幅下降（9 关键词 → 2 组 OR + 11 topic），配额见底自动停止保底。
+#   GitHub Search API 限额：带 token 30 req/min；仅 1 个 topic 查询 + 官方库
+#   兜底，请求量极少，配额见底自动停止保底。
 # ---------------------------------------------------------------------------
 name: Sync Plugin Seed Data
 
@@ -61,9 +61,14 @@ jobs:
           # 无法读未安装 App 的外部仓库 discussions）
           DEEPSEA_PAT: ${{ secrets.DEEPSEA_PAT }}
         # 脚本照常写 scripts/output/*.json，供 publish:cache 读取。
-        # 默认参数：limit 1000/类型、star ≥ 10（查询语句 stars:>=10 过滤）；
-        # 只收录官方指定 topic dsh-plugin；并发 6 + 全局限速 30 req/min。
+        # 仅索引官方 topic dsh-plugin（无 star 门槛 / 关键词等其它条件）；
+        # 并发 6 + 全局限速 30 req/min。
         run: pnpm search:plugins && pnpm sync:discussions
+
+      - name: 配置 Git 身份（cache 分支提交需要）
+        run: |
+          git config --global user.name "deepsea-cache-bot"
+          git config --global user.email "cache-bot@deepsea.local"
 
       - name: 发布到 cache 分支（洁癖单 commit + force push）
         env:

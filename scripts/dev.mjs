@@ -158,7 +158,7 @@ async function main() {
   await clearPort(WORKER_PORT, "worker")
   await clearPort(WEB_PORT, "web")
 
-  // 1) 统一启动：worker → web
+  // 1) 统一启动：worker → web（deepc 声纳互联已切主站同源 SW 架构，无需 snap serve）
   const worker = start(
     "worker",
     path.join(root, "apps", "worker"),
