@@ -12,6 +12,7 @@
 import type {
   AssistantBlock,
   ContentBlock,
+  ContextSource,
   HistoryEntry,
   SessionEvent,
   StreamChunk,
@@ -47,6 +48,33 @@ export type RenderNode =
       content: ContentBlock[]
       isError: boolean
     }
+  | {
+      kind: "error"
+      seq: number
+      time: number
+      message: string
+      code?: string
+    }
+  | {
+      kind: "context"
+      seq: number
+      time: number
+      content: ContentBlock[]
+      source: ContextSource
+    }
+
+/**
+ * 上下文注入的来源名（producer name）：plugin id / 指令路径 / 其他 kind。
+ * 对齐 dsh `contextProvenance`：可读 label 优先，否则回退 source.kind。
+ */
+export function contextLabel(source: unknown): string {
+  const s = source as ContextSource | null | undefined
+  if (!s) return "上下文"
+  if (typeof s.plugin === "string" && s.plugin.length > 0) return s.plugin
+  if (Array.isArray(s.paths) && s.paths.length > 0) return s.paths[0]
+  if (typeof s.kind === "string" && s.kind.length > 0) return s.kind
+  return "上下文"
+}
 
 /** 把 ContentBlock[] 分类为 AssistantBlock[]（text/reasoning/tool-call/other）。 */
 export function classifyBlocks(content: readonly unknown[]): AssistantBlock[] {
@@ -103,6 +131,18 @@ export function foldEvents(events: HistoryEntry[]): RenderNode[] {
         const data = event.data as { content?: ContentBlock[]; source?: unknown }
         const content = data.content ?? []
         if (content.length === 0) break
+        // source.kind === "plugin" 等非 user 生产者 → 上下文注入（独立 flowItem）。
+        const sourceKind = (data.source as ContextSource | null | undefined)?.kind
+        if (sourceKind && sourceKind !== "user") {
+          nodes.push({
+            kind: "context",
+            seq: event.seq,
+            time: event.time,
+            content,
+            source: (data.source ?? {}) as ContextSource,
+          })
+          break
+        }
         nodes.push({
           kind: "user",
           seq: event.seq,
@@ -155,8 +195,25 @@ export function foldEvents(events: HistoryEntry[]): RenderNode[] {
         })
         break
       }
+      case "turn/end": {
+        // turn 结束携带错误原因时（kind === "error"），固化为错误节点。
+        const data = event.data as {
+          turn?: number
+          reason?: { kind?: string; error?: { message?: string; code?: string } }
+        }
+        if (data.reason?.kind === "error" && data.reason.error?.message) {
+          nodes.push({
+            kind: "error",
+            seq: event.seq,
+            time: event.time,
+            message: data.reason.error.message,
+            code: data.reason.error.code,
+          })
+        }
+        break
+      }
       default:
-        // assistant/chunk、step/*、turn/*、approval/*、session/end-seed 等忽略
+        // assistant/chunk、step/*、approval/*、session/end-seed 等忽略
         break
     }
   }
@@ -178,6 +235,10 @@ export function nodeSummary(node: RenderNode): string {
       )
     case "tool":
       return `${node.name ?? node.callId}${node.isError ? "（出错）" : ""}`
+    case "error":
+      return `运行失败：${node.message}`.slice(0, 120)
+    case "context":
+      return `上下文注入：${contextLabel(node.source)}`
   }
 }
 

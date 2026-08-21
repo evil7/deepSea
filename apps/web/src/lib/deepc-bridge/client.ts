@@ -112,7 +112,7 @@ export class DeepcClient {
   private lastTarget: string | null = null
   private lastSelf: string | null = null
   private userDisconnect = false
-  private everConnected = false
+  private connectionGeneration = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectAttempts = 0
 
@@ -148,7 +148,7 @@ export class DeepcClient {
   /** 断开连接（用户主动）。清除重连意图，不再自动恢复。 */
   disconnect(): void {
     this.userDisconnect = true
-    this.everConnected = false
+    this.connectionGeneration++
     this.cancelReconnect()
     this.lastTarget = null
     this.lastSelf = null
@@ -171,16 +171,21 @@ export class DeepcClient {
     }
     const conn = readLastConnection()
     if (!conn) return
-    // 持久化存在 = 之前连上过，视为「恢复」，失败也自动重试。
-    this.everConnected = true
     void this.connectToNode(conn.target, conn.self)
   }
 
-  /** 意外断连后的指数退避重连（1s→2s→4s…封顶 15s）。 */
+  /** 意外断连后的指数退避重连（1s→2s→4s…封顶 15s）。重试耗尽后停止并进入 error。 */
+  private readonly MAX_RECONNECT_ATTEMPTS = 15
+
   private scheduleReconnect(): void {
     if (this.userDisconnect) return
     if (!this.lastTarget || !this.lastSelf) return
     if (this.reconnectTimer) return
+    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      // 重试耗尽（约 3 分钟）：目标仍未就绪，停止重连，回到失败态。
+      this.setState("error")
+      return
+    }
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000)
     this.reconnectAttempts++
     this.reconnectTimer = setTimeout(() => {
@@ -203,6 +208,9 @@ export class DeepcClient {
    * 信令走 WS（DO 推送）。
    */
   async connectToNode(targetNodeId: string, selfNodeId: string): Promise<void> {
+    // 记录连接代际：disconnect() 会使代际 +1，从而让「进行中」的本次连接流程失效
+    // （异步 await 期间用户点断开，本流程完成后不得再覆盖 disconnected 状态）。
+    const gen = this.connectionGeneration
     // 记录连接意图（意外断连后据此自动重连）。
     this.lastTarget = targetNodeId
     this.lastSelf = selfNodeId
@@ -218,19 +226,19 @@ export class DeepcClient {
     this.pc = pc
     this.dc = dc
 
-    // 连接失败：清理 + 上报 + 调度自动重连（仅「曾连上过」才重连，首次失败不空转）。
+    // 连接失败：清理 + 上报 + 调度自动重连。
+    // 无论首次还是重连失败，都进入「重连中」持续重试——dsh 刷新后插件端 mailbox-host
+    // 的 WS 长连接需数秒重建，此时发 offer 会无人接收丢失，靠重试等待插件端就绪。
     const fail = (msg: string): void => {
       pc.close()
       this.pc = null
       this.dc = null
       this.wsSignal?.disconnect()
       this.wsSignal = null
+      // 本次连接流程已失效（用户中途断开）：不再改变状态 / 调度重连。
+      if (gen !== this.connectionGeneration) return
       this.emit("error", msg)
-      if (this.everConnected) {
-        this.setState("reconnecting")
-      } else {
-        this.setState("error")
-      }
+      this.setState("reconnecting")
       this.scheduleReconnect()
     }
 
@@ -251,8 +259,9 @@ export class DeepcClient {
 
       let answerRaw: string | null = null
       if (wsOk) {
-        // WS 投递 offer + 等 answer 推送。重连场景用更短超时（插件端离线时快速失败重试）。
-        const answerTimeoutMs = this.everConnected ? 15_000 : 60_000
+        // WS 投递 offer + 等 answer 推送。统一 15s 超时（插件端就绪通常数秒；
+        // 失败后由 scheduleReconnect 指数退避重试，无需长超时阻塞）。
+        const answerTimeoutMs = 15_000
         const answerPromise = new Promise<string | null>((resolve) => {
           const off = wsClient.onSignal((_from, kind, payload) => {
             if (kind !== "answer") return
@@ -289,6 +298,14 @@ export class DeepcClient {
       await pc.setRemoteDescription({ type: "answer", sdp: answerSdp })
       await this.waitDataChannelOpen(dc)
 
+      // 连接建立完成，但本次流程可能已失效（用户中途断开）：静默清理，不改状态。
+      if (gen !== this.connectionGeneration) {
+        pc.close()
+        this.pc = null
+        this.dc = null
+        return
+      }
+
       dc.addEventListener("message", (ev) => this.onMessage(ev))
       dc.addEventListener("close", () => {
         this.dispose()
@@ -302,7 +319,6 @@ export class DeepcClient {
         }
       })
 
-      this.everConnected = true
       this.cancelReconnect()
       writeLastConnection({ target: targetNodeId, self: selfNodeId })
       this.setState("connected")

@@ -22,8 +22,16 @@ import type {
   DownstreamFrame,
   HelloFrame,
   HistoryEntry,
+  HostRemoteEventFrame,
+  ModelCatalogEntry,
+  ModelSelection,
+  PluginInventoryEntry,
   SessionEventFrame,
+  SessionModelsView,
   SessionSummary,
+  SettingsDescribeView,
+  SettingsNamespaceView,
+  TurnError,
   WorkspaceView,
 } from "@/lib/deepc-bridge/protocol"
 
@@ -34,11 +42,13 @@ interface StreamingStep {
   seq: number
   time: number
   blocks: AssistantBlock[]
+  error?: TurnError
 }
 
 export function useDeepcBridge() {
   const [state, setState] = useState<ClientState>(deepcClient.state)
   const [hostInfo, setHostInfo] = useState<HelloFrame["host"] | null>(null)
+  const [model, setModel] = useState<ModelSelection | null>(null)
   const [theme, setTheme] = useState<unknown>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,6 +58,10 @@ export function useDeepcBridge() {
   const [messages, setMessages] = useState<RenderNode[]>([])
   const [streaming, setStreaming] = useState<StreamingStep | null>(null)
   const [loading, setLoading] = useState(false)
+  const [settings, setSettings] = useState<SettingsDescribeView | null>(null)
+  const [plugins, setPlugins] = useState<PluginInventoryEntry[]>([])
+  const [pluginsLoaded, setPluginsLoaded] = useState(false)
+  const [sessionModels, setSessionModels] = useState<SessionModelsView | null>(null)
 
   const sessionIdsRef = useRef<Map<string, string>>(new Map())
   const callNamesRef = useRef<Map<string, string>>(new Map())
@@ -59,8 +73,11 @@ export function useDeepcBridge() {
     const offState = deepcClient.on("state", (s) => setState(s))
     const offHello = deepcClient.on("hello", (hello) => {
       setHostInfo(hello.host)
+      setModel(hello.model ?? null)
       setTheme(hello.theme)
       void loadWorkspace()
+      void loadSettings()
+      void loadPlugins()
     })
     const offError = deepcClient.on("error", (msg) => setError(msg))
     const offDownstream = deepcClient.on("downstream", (frame) => {
@@ -77,11 +94,81 @@ export function useDeepcBridge() {
 
   // 连接建立后订阅 events.mux（多路复用：该账号所有会话的下行事件经此流推送）。
   // host 端 api-bridge 只在收到 subscribe 帧后才开始推 downstream，故必须显式订阅。
+  // 同时订阅 events.host（host 级 remote 事件，如 settings/document-updated）。
   useEffect(() => {
     if (state !== "connected") return
-    const unsub = deepcClient.subscribe("mux", () => {})
-    return unsub
+    const unsubMux = deepcClient.subscribe("mux", () => {})
+    const unsubHost = deepcClient.subscribe("host", () => {})
+    return () => {
+      unsubMux()
+      unsubHost()
+    }
   }, [state])
+
+  /** 读取 settings.describe 全量设置（真实动态值 + 插件注入 namespace）。 */
+  const loadSettings = useCallback(async () => {
+    const res = await deepcClient.call("settings.describe", {})
+    if (res.ok && res.value) {
+      setSettings(res.value as SettingsDescribeView)
+    }
+  }, [])
+
+  /**
+   * 读取插件清单（pluginInventory/list，typert Remote）。
+   * 注意 payload 为 { args: {} }（remote 信封），method 用斜杠名。
+   */
+  const loadPlugins = useCallback(async () => {
+    const res = await deepcClient.call("pluginInventory/list", { args: {} })
+    if (res.ok && res.value) {
+      const snap = res.value as { entries?: PluginInventoryEntry[] }
+      setPlugins(snap.entries ?? [])
+    }
+    setPluginsLoaded(true)
+  }, [])
+
+  /**
+   * 从 llm-deepseek namespace 提取可选模型目录（id → 显示名）。
+   * 由 settings 派生，无需额外 RPC。
+   */
+  const modelCatalog = useMemo<ModelCatalogEntry[]>(() => {
+    const view = settings?.namespaces.find((n) => n.ns === "llm-deepseek")
+    const v = view?.value as { models?: ModelCatalogEntry[] } | undefined
+    return v?.models ?? []
+  }, [settings])
+
+  /** 打开本机设置配置文件（settings.openDocument）。 */
+  const openSettingsDocument = useCallback(async (): Promise<boolean> => {
+    const res = await deepcClient.call("settings.openDocument", {})
+    return res.ok
+  }, [])
+
+  /**
+   * 写入一个 namespace 的顶层字段 patch（settings.update，带 expectedRevision）。
+   * 成功后用返回的 namespace view 折叠回本地 settings，无需重读。
+   */
+  const updateSetting = useCallback(
+    async (ns: string, patch: Record<string, unknown>): Promise<boolean> => {
+      const current = settings?.namespaces.find((n) => n.ns === ns)
+      const res = await deepcClient.call("settings.update", {
+        ns,
+        patch,
+        expectedRevision: current?.revision,
+      })
+      if (res.ok && res.value) {
+        const view = res.value as SettingsNamespaceView
+        setSettings((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            namespaces: prev.namespaces.map((n) => (n.ns === ns ? view : n)),
+          }
+        })
+        return true
+      }
+      return false
+    },
+    [settings]
+  )
 
   /** 加载工作区 + 会话列表。 */
   const loadWorkspace = useCallback(async () => {
@@ -102,7 +189,7 @@ export function useDeepcBridge() {
     }
   }, [])
 
-  /** 选中会话 → 加载历史消息。 */
+  /** 选中会话 → 加载历史消息 + 会话模型。 */
   const selectSession = useCallback(async (sessionId: string) => {
     setActiveSessionId(sessionId)
     setMessages([])
@@ -117,7 +204,39 @@ export function useDeepcBridge() {
       const value = res.value as { events?: HistoryEntry[] }
       setMessages(foldEvents(value.events ?? []))
     }
+    void loadSessionModels(sessionId)
   }, [])
+
+  /** 读取当前会话模型（session.models）。 */
+  const loadSessionModels = useCallback(async (sessionId: string) => {
+    const res = await deepcClient.call("session.models", { sessionId })
+    if (res.ok && res.value) {
+      setSessionModels(res.value as SessionModelsView)
+    } else {
+      setSessionModels(null)
+    }
+  }, [])
+
+  /** 切换当前会话模型（session.selectModel）。 */
+  const selectSessionModel = useCallback(
+    async (sessionId: string, provider: string, model: string, reasoningEffort?: string) => {
+      const res = await deepcClient.call("session.selectModel", {
+        sessionId,
+        provider,
+        model,
+        reasoningEffort,
+      })
+      if (res.ok && res.value) {
+        const v = res.value as { selected?: ModelSelection }
+        setSessionModels((prev) =>
+          prev && v.selected ? { ...prev, current: v.selected } : prev
+        )
+        return true
+      }
+      return false
+    },
+    []
+  )
 
   /** 发送消息。 */
   const sendPrompt = useCallback(
@@ -133,6 +252,25 @@ export function useDeepcBridge() {
     []
   )
 
+  /** 新建会话（传入 cwd 关联工作区；成功后刷新会话列表并选中）。 */
+  const createSession = useCallback(
+    async (cwd?: string): Promise<boolean> => {
+      const res = await deepcClient.call("session.create", cwd ? { cwd } : {})
+      if (!res.ok) return false
+      const value = (res.value ?? {}) as { sessionId?: string }
+      const sessionId = value.sessionId
+      await loadWorkspace()
+      if (sessionId) {
+        setActiveSessionId(sessionId)
+        activeRef.current = sessionId
+        setMessages([])
+        setStreaming(null)
+      }
+      return true
+    },
+    [loadWorkspace]
+  )
+
   /**
    * 下行事件：mux 流推来的 session/event 实时消费（对齐官方客户端分层）。
    *   · step/start        → 开启流式 assistant 节点（「生成中」）
@@ -144,6 +282,16 @@ export function useDeepcBridge() {
     const payload = frame.envelope.payload
     if (!payload || typeof payload !== "object") return
     const p = payload as { type?: string }
+
+    // host 级 remote 事件（events.host 流）——settings/document-updated 触发全量刷新。
+    if (p.type === "host/remote-event") {
+      const ev = payload as HostRemoteEventFrame
+      if (ev.event === "settings/document-updated") {
+        void loadSettings()
+      }
+      return
+    }
+
     if (p.type !== "session/event") return
     const evt = payload as SessionEventFrame
     if (evt.sessionId !== activeRef.current) return
@@ -176,7 +324,12 @@ export function useDeepcBridge() {
                   time: event.time,
                   blocks: [],
                 }
-          return { ...base, blocks: applyStreamChunk(base.blocks, chunk) }
+          // finish 分块携带错误时记录，供「本轮运行失败」实时展示。
+          let error = base.error
+          if (chunk.type === "finish" && chunk.reason?.kind === "error" && chunk.reason.failure) {
+            error = { message: chunk.reason.failure.message, code: chunk.reason.failure.code }
+          }
+          return { ...base, blocks: applyStreamChunk(base.blocks, chunk), error }
         })
         break
       }
@@ -254,7 +407,20 @@ export function useDeepcBridge() {
         break
       }
       case "turn/end": {
-        // turn 兜底边界：任何残留的流式指示器在此关闭。
+        // turn 兜底边界：任何残留的流式指示器在此关闭；错误原因固化为 error 节点。
+        const d = event.data as {
+          turn?: number
+          reason?: { kind?: string; error?: TurnError }
+        }
+        const err = d.reason?.kind === "error" ? d.reason.error : undefined
+        const msg = err?.message
+        if (msg) {
+          const code = err.code
+          setMessages((prev) => [
+            ...prev,
+            { kind: "error", seq: event.seq, time: event.time, message: msg, code },
+          ])
+        }
         setStreaming(null)
         break
       }
@@ -282,37 +448,61 @@ export function useDeepcBridge() {
     setStreaming(null)
   }, [])
 
-  // 合并渲染节点：已固化消息 + 当前流式 assistant（打字机）。
+  // 合并渲染节点：已固化消息 + 当前流式 assistant（打字机）+ 实时错误。
   const renderNodes = useMemo(() => {
-    if (!streaming || streaming.blocks.length === 0) return messages
-    return [
-      ...messages,
-      {
-        kind: "assistant" as const,
+    if (!streaming) return messages
+    const extra: RenderNode[] = []
+    if (streaming.blocks.length > 0) {
+      extra.push({
+        kind: "assistant",
         seq: streaming.seq,
         time: streaming.time,
         turn: streaming.turn,
         step: streaming.step,
         blocks: streaming.blocks,
-      },
-    ]
+      })
+    }
+    if (streaming.error?.message) {
+      extra.push({
+        kind: "error",
+        seq: streaming.seq,
+        time: streaming.time,
+        message: streaming.error.message,
+        code: streaming.error.code,
+      })
+    }
+    return [...messages, ...extra]
   }, [messages, streaming])
 
   return {
     state,
     hostInfo,
+    model,
     theme,
     error,
     workspaces,
     sessions,
     activeSessionId,
     messages: renderNodes,
-    isStreaming: streaming !== null,
+    // 有流式且非错误时才显示「正在生成…」；错误态由 renderNodes 里的 error 节点展示。
+    isStreaming: streaming !== null && streaming.error == null,
     loading,
+    settings,
+    plugins,
+    pluginsLoaded,
+    modelCatalog,
+    sessionModels,
     connectToNode,
     disconnect,
     selectSession,
     sendPrompt,
+    createSession,
     loadWorkspace,
+    loadSettings,
+    loadPlugins,
+    updateSetting,
+    openSettingsDocument,
+    loadSessionModels,
+    selectSessionModel,
   }
 }

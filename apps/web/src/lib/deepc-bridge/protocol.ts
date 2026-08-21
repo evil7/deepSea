@@ -183,6 +183,22 @@ export type AssistantBlock =
   | { kind: "tool-call"; callId: string; name: string; argsRaw: string }
   | { kind: "other"; block: unknown }
 
+/** 上下文注入 source 的 section（如 sandbox:policy / approval:policy）。 */
+export interface ContextSection {
+  name?: string
+  text?: string
+}
+
+/** 上下文注入消息 source（source.kind === "plugin" 等非 user 生产者）。 */
+export interface ContextSource {
+  kind?: string
+  plugin?: string
+  form?: string
+  sections?: ContextSection[]
+  paths?: string[]
+  [key: string]: unknown
+}
+
 // ── 流式输出（对齐 dsh `StreamChunk` 协议）────────────────────────────
 // assistant/chunk 事件的 data.chunk 字段；按 index 累积 delta 拼出完整块。
 //   · block-start      —— 打开一个内容块（text/reasoning/tool-call）
@@ -191,6 +207,18 @@ export type AssistantBlock =
 //   · tool-call-delta  —— 追加工具调用参数（id/name 首次 delta 携带）
 //   · block-end        —— 携带完整组装好的 ContentBlock（最终态）
 //   · usage / finish   —— 用量与结束标记（渲染可忽略）
+/** 错误详情（finish 分块的 failure / turn-end 的 error）。 */
+export interface TurnError {
+  message?: string
+  code?: string
+}
+
+/** finish 分块的 reason（kind === "error" 时 failure 携带错误；"stop" 为正常结束）。 */
+export interface FinishReason {
+  kind: string
+  failure?: TurnError
+}
+
 export type StreamChunk =
   | { type: "block-start"; index: number; blockType: "text" | "reasoning" | "tool-call" }
   | { type: "text-delta"; index: number; text: string }
@@ -198,7 +226,7 @@ export type StreamChunk =
   | { type: "tool-call-delta"; index: number; id: string; name?: string; argumentsDelta: string }
   | { type: "block-end"; index: number; block: ContentBlock }
   | { type: "usage"; usage: unknown }
-  | { type: "finish"; reason: unknown }
+  | { type: "finish"; reason: FinishReason }
 
 /** assistant/chunk 事件 data（宽松）。 */
 export interface AssistantChunkData {
@@ -282,3 +310,106 @@ export type MuxFrame =
   | ApprovalRequestedFrame
   | QuestionRequestedFrame
   | { type: string; [key: string]: unknown }
+
+// ── 设置（对齐 host-apiproxy settings.schema）───────────────────────────
+// settings.describe 返回每个 namespace 的 schema envelope + resolved value +
+// 三层（base/user）+ revision，供配置 UI 渲染真实动态值并带 revision 写入。
+
+export interface SettingsSecretView {
+  path: string[]
+  set: boolean
+}
+
+export interface SettingsNamespaceView {
+  ns: string
+  /** schemastery `schema.toJSON()` envelope（可据此渲染字段/枚举）。 */
+  schema: unknown
+  /** 当前 resolved value（schema defaults → base → user 三层叠加）。 */
+  value: unknown
+  base?: unknown
+  user?: unknown
+  applies: "live" | "restart"
+  secrets: SettingsSecretView[]
+  /** 单调 revision：写入时作为 expectedRevision 防冲突。 */
+  revision: number
+}
+
+export interface SettingsDescribeView {
+  writable: boolean
+  hasDocument: boolean
+  namespaces: SettingsNamespaceView[]
+}
+
+/** settings.update 响应：被更新 namespace 的新 view（redacted）。 */
+export type SettingsUpdateView = SettingsNamespaceView
+
+// ── 插件清单（对齐 host-plugin-inventory `pluginInventory/list` Remote）──
+// 注意：这是 typert Remote，调用 payload 为 { args: {} }，method 名为斜杠
+// `pluginInventory/list`（区别于 gateway scoped 点号 method）。
+
+export type PluginFiberPhase =
+  | "pending"
+  | "loading"
+  | "active"
+  | "failed"
+  | "unloading"
+  | null
+
+export interface PluginInventoryEntry {
+  entryId: string
+  moduleName: string
+  enabled: boolean
+  fiberPhase: PluginFiberPhase
+}
+
+export interface PluginInventorySnapshot {
+  entries: PluginInventoryEntry[]
+}
+
+/** llm-deepseek 里暴露的可选模型（name 为显示名，id 为模型 id）。 */
+export interface ModelCatalogEntry {
+  id: string
+  name: string
+  contextWindow?: number
+  inputModalities?: string[]
+  [key: string]: unknown
+}
+
+// ── 会话模型（对齐 host-apiproxy sessions.schema session.models）──────────
+
+/** 推理等级枚举项。 */
+export interface ReasoningEffortEntry {
+  id: string
+  name: string
+}
+
+/** 单个模型（含推理等级配置）。 */
+export interface SessionModelEntry {
+  id: string
+  name: string
+  reasoning?: { efforts?: ReasoningEffortEntry[]; defaultEffort?: string }
+}
+
+/** 一个 provider 分组。 */
+export interface ModelProviderGroup {
+  id: string
+  name: string
+  models: SessionModelEntry[]
+}
+
+/** session.models 响应值。 */
+export interface SessionModelsView {
+  current: ModelSelection
+  routable: boolean
+  groups: ModelProviderGroup[]
+  failures: unknown[]
+}
+
+// ── host 级 remote 事件（对齐 events.host 的 host/remote-event 帧）─────────
+// 事件名见 API_REMOTE_FORWARDED_EVENTS；settings/document-updated args 为 [ns, revision]。
+
+export interface HostRemoteEventFrame {
+  type: "host/remote-event"
+  event: string
+  args: unknown[]
+}
