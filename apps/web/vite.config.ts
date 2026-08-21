@@ -26,6 +26,12 @@ export default defineConfig({
         target: "http://127.0.0.1:8787",
         changeOrigin: true,
       },
+      // 信令 WebSocket（DO 信号房）：dev 主站 WS 同源连 5174，代理到 8787（含 ws 升级）。
+      "/ws": {
+        target: "http://127.0.0.1:8787",
+        changeOrigin: true,
+        ws: true,
+      },
       "/api": {
         target: "http://127.0.0.1:8787",
         changeOrigin: true,

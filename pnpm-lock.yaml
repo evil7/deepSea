@@ -165,6 +165,9 @@ importers:
 
   packages/deepc-bridge:
     dependencies:
+      animejs:
+        specifier: ^4.5.0
+        version: 4.5.0(@types/three@0.185.4)(three@0.185.1)
       node-datachannel:
         specifier: 0.33.0
         version: 0.33.0

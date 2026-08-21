@@ -2,21 +2,24 @@
 // deepc-bridge 浏览器端客户端（主站 chatUI 连接本地 dsh 的入口）。
 //
 // 职责：
-//   · connect(pairCode)：凭临时口令经 Worker 信令建立 WebRTC DataChannel
+//   · connectToNode(target, self)：多端直连（信箱式信令）建立 WebRTC DataChannel
 //   · call(method, payload)：unary 调用本地 dsh API，返回 RpcResult
 //   · subscribe(stream, handler)：订阅下行事件流（events.mux / events.host）
 //   · on(event, handler)：连接状态 / hello / downstream 事件分发
 //
-// 帧协议与 packages/deepc-bridge 严格对齐；信令走 Worker /auth/signal/*。
+// 帧协议与 packages/deepc-bridge 严格对齐；信令走 Worker /ws/signal（DO 推送）。
 // ---------------------------------------------------------------------------
 
 import {
   decryptSignal,
-  deriveRoomId,
-  deriveSignalKey,
+  deriveNodeSignalKey,
   encryptSignal,
 } from "./crypto"
-import { pollSignalDetailed, putSignal } from "./signaling"
+import {
+  decodeNodeEnvelope,
+  encodeNodeEnvelope,
+} from "./nodes"
+import { createWsSignalClient, type WsSignalClient } from "./ws-signaling"
 import type {
   BridgeFrame,
   DownstreamFrame,
@@ -37,6 +40,7 @@ export type ClientState =
   | "idle"
   | "connecting"
   | "connected"
+  | "reconnecting"
   | "error"
   | "disconnected"
 
@@ -60,10 +64,57 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
 }
 
+/** 最近一次连接的意图（sessionStorage 持久化，供页面刷新后自动恢复）。 */
+interface LastConnection {
+  target: string
+  self: string
+}
+
+const LAST_CONNECTION_KEY = "deepc.lastConnection"
+
+function readLastConnection(): LastConnection | null {
+  try {
+    const raw = sessionStorage.getItem(LAST_CONNECTION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as LastConnection
+    if (typeof parsed.target === "string" && typeof parsed.self === "string") {
+      return parsed
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function writeLastConnection(conn: LastConnection): void {
+  try {
+    sessionStorage.setItem(LAST_CONNECTION_KEY, JSON.stringify(conn))
+  } catch {
+    // 忽略（隐私模式等）
+  }
+}
+
+function clearLastConnection(): void {
+  try {
+    sessionStorage.removeItem(LAST_CONNECTION_KEY)
+  } catch {
+    // 忽略
+  }
+}
+
 export class DeepcClient {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
   private _state: ClientState = "idle"
+  private wsSignal: WsSignalClient | null = null
+
+  // 意外断连自动恢复：记住「连谁 + 我是谁」，dc close 后指数退避重连。
+  private lastTarget: string | null = null
+  private lastSelf: string | null = null
+  private userDisconnect = false
+  private everConnected = false
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private reconnectAttempts = 0
 
   private unaryPending = new Map<string, PendingUnary>()
   private subHandlers = new Map<string, Handler<DownstreamFrame>>()
@@ -94,74 +145,172 @@ export class DeepcClient {
     for (const handler of this.listeners[event]) handler(payload)
   }
 
-  /** 凭配对码连接本地 dsh host。 */
-  async connect(pairCode: string, signalBase?: string): Promise<void> {
-    this.setState("connecting")
-    const roomId = await deriveRoomId(pairCode)
-    const signalKey = await deriveSignalKey(pairCode)
+  /** 断开连接（用户主动）。清除重连意图，不再自动恢复。 */
+  disconnect(): void {
+    this.userDisconnect = true
+    this.everConnected = false
+    this.cancelReconnect()
+    this.lastTarget = null
+    this.lastSelf = null
+    clearLastConnection()
+    this.dispose()
+    this.setState("disconnected")
+  }
 
+  /**
+   * 页面加载后尝试恢复上次连接（vite full reload / 手滑刷新后自动重连）。
+   * 仅当当前未连接且存在持久化意图时生效。
+   */
+  resumeLastConnection(): void {
+    if (
+      this._state === "connected" ||
+      this._state === "connecting" ||
+      this._state === "reconnecting"
+    ) {
+      return
+    }
+    const conn = readLastConnection()
+    if (!conn) return
+    // 持久化存在 = 之前连上过，视为「恢复」，失败也自动重试。
+    this.everConnected = true
+    void this.connectToNode(conn.target, conn.self)
+  }
+
+  /** 意外断连后的指数退避重连（1s→2s→4s…封顶 15s）。 */
+  private scheduleReconnect(): void {
+    if (this.userDisconnect) return
+    if (!this.lastTarget || !this.lastSelf) return
+    if (this.reconnectTimer) return
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000)
+    this.reconnectAttempts++
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      void this.connectToNode(this.lastTarget!, this.lastSelf!)
+    }, delay)
+  }
+
+  private cancelReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectAttempts = 0
+  }
+
+  /**
+   * 多端直连：向目标 nodeId 投递 offer（发起方）。
+   * 主站 /sonar 点设备卡片时调用；selfNodeId 为主站控制端节点（answer 回投地址）。
+   * 信令走 WS（DO 推送）。
+   */
+  async connectToNode(targetNodeId: string, selfNodeId: string): Promise<void> {
+    // 记录连接意图（意外断连后据此自动重连）。
+    this.lastTarget = targetNodeId
+    this.lastSelf = selfNodeId
+    this.userDisconnect = false
+    // 首次连接显示「连接中」；自动重连期间保持「重连中」状态（不闪回设备列表）。
+    if (this._state !== "reconnecting") {
+      this.setState("connecting")
+    }
+
+    const key = await deriveNodeSignalKey(targetNodeId)
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    const dc = pc.createDataChannel("deepc", { ordered: true })
     this.pc = pc
+    this.dc = dc
+
+    // 连接失败：清理 + 上报 + 调度自动重连（仅「曾连上过」才重连，首次失败不空转）。
+    const fail = (msg: string): void => {
+      pc.close()
+      this.pc = null
+      this.dc = null
+      this.wsSignal?.disconnect()
+      this.wsSignal = null
+      this.emit("error", msg)
+      if (this.everConnected) {
+        this.setState("reconnecting")
+      } else {
+        this.setState("error")
+      }
+      this.scheduleReconnect()
+    }
 
     try {
-      // 关键：在 setRemoteDescription(offer) 之前监听 datachannel（时序见 session.ts）。
-      const dcPromise = this.waitRemoteDataChannel(pc)
-
-      const outcome = await pollSignalDetailed(roomId, "offer", {
-        baseUrl: signalBase,
-        timeoutMs: 60_000,
-      })
-      if (outcome.status === "rate-limited") {
-        pc.close()
-        this.setState("error")
-        this.emit("error", `连接过于频繁，请 ${outcome.retryAfter ?? 60}s 后再试`)
-        return
-      }
-      if (outcome.status !== "ok") {
-        pc.close()
-        this.setState("error")
-        this.emit("error", "配对失败：口令错误或已过期")
-        return
-      }
-      const offerSdp = await decryptSignal(signalKey, outcome.payload)
-      if (offerSdp === null) {
-        pc.close()
-        this.setState("error")
-        this.emit("error", "配对失败：信令解密失败")
-        return
-      }
-
-      await pc.setRemoteDescription({ type: "offer", sdp: offerSdp })
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
       await this.waitIceComplete(pc)
 
-      const answerSdp = pc.localDescription?.sdp ?? ""
-      const answerCipher = await encryptSignal(signalKey, answerSdp)
-      await putSignal(roomId, "answer", answerCipher, signalBase)
+      const offerSdp = pc.localDescription?.sdp ?? ""
+      const cipher = await encryptSignal(key, offerSdp)
+      const envelope = encodeNodeEnvelope(selfNodeId, cipher)
+      const answerKey = await deriveNodeSignalKey(selfNodeId)
 
-      const dc = await dcPromise
-      this.dc = dc
+      // WS 信令（DO 推送）：建连 + 投递 offer + 等 answer 推送。
+      const wsClient = createWsSignalClient()
+      this.wsSignal = wsClient
+      const wsOk = await wsClient.connect(selfNodeId)
+
+      let answerRaw: string | null = null
+      if (wsOk) {
+        // WS 投递 offer + 等 answer 推送。重连场景用更短超时（插件端离线时快速失败重试）。
+        const answerTimeoutMs = this.everConnected ? 15_000 : 60_000
+        const answerPromise = new Promise<string | null>((resolve) => {
+          const off = wsClient.onSignal((_from, kind, payload) => {
+            if (kind !== "answer") return
+            off()
+            clearTimeout(timer)
+            resolve(payload)
+          })
+          const timer = setTimeout(() => {
+            off()
+            resolve(null)
+          }, answerTimeoutMs)
+        })
+        wsClient.send(targetNodeId, "offer", envelope)
+        answerRaw = await answerPromise
+      } else {
+        fail("信令连接失败")
+        return
+      }
+
+      if (answerRaw === null) {
+        fail("等待 answer 超时")
+        return
+      }
+      const env = decodeNodeEnvelope(answerRaw)
+      if (env === null) {
+        fail("answer 信封非法")
+        return
+      }
+      const answerSdp = await decryptSignal(answerKey, env.sdp)
+      if (answerSdp === null) {
+        fail("answer 解密失败")
+        return
+      }
+      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp })
+      await this.waitDataChannelOpen(dc)
+
       dc.addEventListener("message", (ev) => this.onMessage(ev))
       dc.addEventListener("close", () => {
         this.dispose()
-        this.setState("disconnected")
+        if (this.userDisconnect) {
+          // 用户主动断开：disconnect() 已 setState("disconnected")，这里保持不动。
+          this.setState("disconnected")
+        } else {
+          // 意外断开 → 进入重连态并自动恢复。
+          this.setState("reconnecting")
+          this.scheduleReconnect()
+        }
       })
 
+      this.everConnected = true
+      this.cancelReconnect()
+      writeLastConnection({ target: targetNodeId, self: selfNodeId })
       this.setState("connected")
       // 握手确认：回应 node 端 hello。
       this.send({ kind: "hello-ack", protocolVersion: PROTOCOL_VERSION } as BridgeFrame)
     } catch {
-      pc.close()
-      this.setState("error")
-      this.emit("error", "连接超时")
+      fail("连接超时")
     }
-  }
-
-  /** 断开连接。 */
-  disconnect(): void {
-    this.dispose()
-    this.setState("disconnected")
   }
 
   private dispose(): void {
@@ -171,6 +320,8 @@ export class DeepcClient {
     }
     this.unaryPending.clear()
     this.subHandlers.clear()
+    this.wsSignal?.disconnect()
+    this.wsSignal = null
     this.dc?.close()
     this.pc?.close()
     this.dc = null
@@ -245,6 +396,19 @@ export class DeepcClient {
         this.emit("theme", frame)
         break
       }
+      case "control": {
+        if (frame.cmd === "deepc:bye") {
+          // 插件端主动断开：标记用户断开，不自动重连，回到设备列表。
+          this.userDisconnect = true
+          this.cancelReconnect()
+          this.lastTarget = null
+          this.lastSelf = null
+          clearLastConnection()
+          this.dispose()
+          this.setState("disconnected")
+        }
+        break
+      }
       default:
         break
     }
@@ -263,23 +427,19 @@ export class DeepcClient {
     })
   }
 
-  private waitRemoteDataChannel(pc: RTCPeerConnection): Promise<RTCDataChannel> {
+  /** 等待本地创建的 DataChannel 打开（发起方用）。 */
+  private waitDataChannelOpen(dc: RTCDataChannel, timeoutMs = 10_000): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("datachannel timeout")), 10_000)
-      const onDatachannel = (event: RTCDataChannelEvent): void => {
-        const dc = event.channel
-        const check = (): void => {
-          if (dc.readyState === "open") {
-            clearTimeout(timer)
-            dc.removeEventListener("open", check)
-            pc.removeEventListener("datachannel", onDatachannel)
-            resolve(dc)
-          }
+      const timer = setTimeout(() => reject(new Error("dc open timeout")), timeoutMs)
+      const check = (): void => {
+        if (dc.readyState === "open") {
+          clearTimeout(timer)
+          dc.removeEventListener("open", check)
+          resolve()
         }
-        dc.addEventListener("open", check)
-        check()
       }
-      pc.addEventListener("datachannel", onDatachannel)
+      dc.addEventListener("open", check)
+      check()
     })
   }
 }

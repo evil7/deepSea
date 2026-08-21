@@ -1,28 +1,15 @@
 // ---------------------------------------------------------------------------
-// deepc-bridge 浏览器端密码学 —— 配对码 + HKDF + AES-GCM 信令加密。
+// deepc-bridge 浏览器端密码学 —— 信箱信令密钥派生 + AES-GCM 加密。
 // 与 packages/deepc-bridge/src/crypto.ts 严格对齐（信令是跨端契约）。
 //
 // 安全模型：
-//   · roomId = HKDF(配对码) → 64 hex，Worker KV 信令键（只见哈希不见口令）
-//   · signalKey = HKDF(配对码) → AES-GCM 256，加密 SDP（Worker 不见明文）
+//   · nodeId → HKDF → AES-GCM 256 信箱信令密钥（收件人 nodeId 派生）
+//   · SDP 经 AES-GCM 加密后入信箱，Worker 不见明文。
 // ---------------------------------------------------------------------------
 
 const encoder = new TextEncoder()
 
-/** 配对码字符集：排除易混淆字符（0/O、1/I/L）。 */
-const PAIR_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-/** 生成一次性临时口令（8 位，32^8 ≈ 1.1×10^12 组合）。 */
-export function generatePairCode(len = 8): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(len))
-  let code = ""
-  for (let i = 0; i < len; i++) {
-    code += PAIR_CODE_ALPHABET[bytes[i] % PAIR_CODE_ALPHABET.length]
-  }
-  return code
-}
-
-/** HKDF-SHA256 派生指定位数（配对码为 IKM）。 */
+/** HKDF-SHA256 派生指定位数（nodeId 为 IKM）。 */
 async function deriveBits(
   ikm: string,
   salt: string,
@@ -43,15 +30,13 @@ async function deriveBits(
   )
 }
 
-/** 配对码 → roomId（64 hex，KV 信令键）。 */
-export async function deriveRoomId(pairingCode: string): Promise<string> {
-  const bits = await deriveBits(pairingCode, "deepc-room", "room-id", 256)
-  return bytesToHex(new Uint8Array(bits))
-}
-
-/** 配对码 → AES-GCM 信令密钥。 */
-export async function deriveSignalKey(pairingCode: string): Promise<CryptoKey> {
-  const bits = await deriveBits(pairingCode, "deepc-signal", "sdp-encryption", 256)
+/**
+ * nodeId → 信箱信令密钥（AES-GCM）。
+ * 与 packages/deepc-bridge/src/crypto.ts 严格对齐（跨端契约）。
+ * 收件人 nodeId 派生密钥：offer 用目标 nodeId、answer 用发起方 nodeId。
+ */
+export async function deriveNodeSignalKey(nodeId: string): Promise<CryptoKey> {
+  const bits = await deriveBits(nodeId, "deepc-node", "sdp-encryption", 256)
   return crypto.subtle.importKey("raw", bits, { name: "AES-GCM" }, false, [
     "encrypt",
     "decrypt",
@@ -83,12 +68,6 @@ export async function decryptSignal(key: CryptoKey, encoded: string): Promise<st
   } catch {
     return null
   }
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  let hex = ""
-  for (const b of bytes) hex += b.toString(16).padStart(2, "0")
-  return hex
 }
 
 function toBase64(buf: Uint8Array): string {

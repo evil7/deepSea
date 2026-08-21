@@ -79,3 +79,21 @@ function fromBase64(b64: string): Uint8Array {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
   return bytes
 }
+
+function bytesToHex(bytes: Uint8Array): string {
+  let hex = ""
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0")
+  return hex
+}
+
+/** 生成随机令牌（默认 32 字节 → 64 hex，256-bit 熵）。 */
+export function randomTokenHex(byteLen = 32): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(byteLen))
+  return bytesToHex(bytes)
+}
+
+/** SHA-256 哈希（hex）。用于 device_token 只存哈希、不落明文。 */
+export async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(input))
+  return bytesToHex(new Uint8Array(digest))
+}

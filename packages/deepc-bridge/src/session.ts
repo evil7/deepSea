@@ -1,23 +1,18 @@
 /**
- * deepc-bridge 会话编排 —— 配对 + 信令 + WebRTC 连接建立（deepc-sonar-bridge 底座）。
+ * deepc-bridge 会话编排 —— WebRTC 连接建立（多端直连底座）。
  *
- * 两端分工：
- *   · Host（本地 dsh node 端）：生成配对码 → 建 PeerConnection + DataChannel
- *     → offer → 加密入信令 → 轮询 answer → DC open。
- *   · Client（远端 chatUI）：输入配对码 → 轮询 offer → answer → 加密入信令
- *     → DC open。
+ * 信令走 WS+DO（/ws/signal 信号房）：offer/answer 由 DO 推送，两端用
+ * deriveNodeSignalKey 派生的 AES-GCM 密钥加密 SDP，DO 只见密文。
  *
  * 信令采用非 trickle ICE：等 ICE gathering complete 后一次性传完整 SDP。
  */
 
 import {
   decryptSignal,
-  deriveRoomId,
-  deriveSignalKey,
+  deriveNodeSignalKey,
   encryptSignal,
-  generatePairCode,
 } from './crypto'
-import { pollSignal, pollSignalDetailed, putSignal } from './signaling'
+import { encodeEnvelope } from './node-signaling'
 
 /**
  * 公共 STUN 服务器（真实免费服务，生产跨设备 NAT 穿透）。
@@ -39,198 +34,10 @@ export interface SessionOptions {
   openTimeoutMs?: number
 }
 
-export interface HostSession {
-  pairCode: string
-  dc: RTCDataChannel
-  pc: RTCPeerConnection
-  /** 关闭连接。 */
-  close: () => void
-}
-
-/** node 端 offer 阶段产物（配对码已生成，offer 已入信令，等待远端）。 */
-export interface HostOffer {
-  pairCode: string
-  roomId: string
-  pc: RTCPeerConnection
-  dc: RTCDataChannel
-}
-
 export interface ClientSession {
   dc: RTCDataChannel
   pc: RTCPeerConnection
   close: () => void
-}
-
-/**
- * host 阶段 1：生成配对码 → 建 PC+DC → offer → 加密入信令。
- * 传入 pairCodeOverride 可复用已有连接码（刷新后自动恢复用同一码重建 offer）。
- */
-export async function createHostOffer(
-  opts: SessionOptions = {},
-  pairCodeOverride?: string
-): Promise<HostOffer | null> {
-  const pairCode = pairCodeOverride ?? generatePairCode()
-  const roomId = await deriveRoomId(pairCode)
-  const signalKey = await deriveSignalKey(pairCode)
-
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-  const dc = pc.createDataChannel('deepc', { ordered: true })
-
-  try {
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    await waitIceComplete(pc)
-
-    const offerSdp = pc.localDescription?.sdp ?? ''
-    const offerCipher = await encryptSignal(signalKey, offerSdp)
-    if (!(await putSignal(roomId, 'offer', offerCipher, opts.signalBase))) {
-      pc.close()
-      return null
-    }
-    return { pairCode, roomId, pc, dc }
-  } catch {
-    pc.close()
-    return null
-  }
-}
-
-/** host 阶段 2：轮询 answer → setRemoteDescription → 等 DC open → 安装 relay。 */
-export async function finalizeHost(
-  offer: HostOffer,
-  opts: SessionOptions = {}
-): Promise<HostSession | null> {
-  const signalKey = await deriveSignalKey(offer.pairCode)
-  try {
-    const answerCipher = await pollSignal(offer.roomId, 'answer', {
-      baseUrl: opts.signalBase,
-      timeoutMs: opts.signalTimeoutMs ?? 60_000,
-    })
-    if (answerCipher === null) {
-      offer.pc.close()
-      return null
-    }
-    const answerSdp = await decryptSignal(signalKey, answerCipher)
-    if (answerSdp === null) {
-      offer.pc.close()
-      return null
-    }
-    await offer.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
-    await waitDataChannelOpen(offer.dc, opts.openTimeoutMs)
-
-    return {
-      pairCode: offer.pairCode,
-      dc: offer.dc,
-      pc: offer.pc,
-      close: () => {
-        offer.dc.close()
-        offer.pc.close()
-      },
-    }
-  } catch {
-    offer.pc.close()
-    return null
-  }
-}
-
-/** host 便捷组合：一次跑完两阶段（适用于无需中途展示配对码的场景）。 */
-export async function startHostSession(
-  opts: SessionOptions = {}
-): Promise<HostSession | null> {
-  const offer = await createHostOffer(opts)
-  if (offer === null) return null
-  return finalizeHost(offer, opts)
-}
-
-/** client 端配对失败原因（供前端提示）。 */
-export type ClientSessionError =
-  | "rate-limited" // 错误限流封禁
-  | "timeout" // 口令错误/超时
-  | "open-timeout" // DataChannel 打开超时
-
-/** client 端配对结果（含错误详情，供 inject.ts 上报给 /sonar）。 */
-export interface ClientSessionOutcome {
-  session: ClientSession | null
-  error?: ClientSessionError
-  retryAfter?: number
-  remainingAttempts?: number
-}
-
-/** client 端：凭临时口令建立连接并安装远端桥（返回详细结果）。 */
-export async function startClientSessionDetailed(
-  pairCode: string,
-  opts: SessionOptions = {}
-): Promise<ClientSessionOutcome> {
-  const roomId = await deriveRoomId(pairCode)
-  const signalKey = await deriveSignalKey(pairCode)
-
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
-
-  try {
-    // 关键：必须在 setRemoteDescription(offer) 之前监听 datachannel。远端
-    // （node 端 createDataChannel）的 datachannel 事件可能在后续 await 间隙
-    // 派发，若 handler 赋值过晚事件会丢失 → waitRemoteDataChannel 超时失败。
-    const dcPromise = waitRemoteDataChannel(pc, opts.openTimeoutMs)
-
-    const outcome = await pollSignalDetailed(roomId, 'offer', {
-      baseUrl: opts.signalBase,
-      timeoutMs: opts.signalTimeoutMs ?? 60_000,
-    })
-    if (outcome.status === 'rate-limited') {
-      pc.close()
-      return { session: null, error: 'rate-limited', retryAfter: outcome.retryAfter }
-    }
-    if (outcome.status !== 'ok') {
-      pc.close()
-      return {
-        session: null,
-        error: 'timeout',
-        remainingAttempts: outcome.remainingAttempts,
-      }
-    }
-    const offerSdp = await decryptSignal(signalKey, outcome.payload)
-    if (offerSdp === null) {
-      pc.close()
-      return { session: null, error: 'timeout' }
-    }
-    await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp })
-
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    await waitIceComplete(pc)
-
-    const answerSdp = pc.localDescription?.sdp ?? ''
-    const answerCipher = await encryptSignal(signalKey, answerSdp)
-    if (!(await putSignal(roomId, 'answer', answerCipher, opts.signalBase))) {
-      pc.close()
-      return { session: null, error: 'timeout' }
-    }
-
-    const dc = await dcPromise
-    // 注意：不在此安装远端桥——操作互联的 chatUI 侧由调用方（主站 chatUI）负责
-    // 创建 WebRtcApiClient 并 attach 到 dc，避免重复监听。
-    return {
-      session: {
-        dc,
-        pc,
-        close: () => {
-          dc.close()
-          pc.close()
-        },
-      },
-    }
-  } catch {
-    pc.close()
-    return { session: null, error: 'open-timeout' }
-  }
-}
-
-/** client 端：凭配对码建立连接并安装远端桥（兼容旧签名，返回 session 或 null）。 */
-export async function startClientSession(
-  pairCode: string,
-  opts: SessionOptions = {}
-): Promise<ClientSession | null> {
-  const outcome = await startClientSessionDetailed(pairCode, opts)
-  return outcome.session
 }
 
 /** 等待 ICE gathering complete（非 trickle，拿到完整 SDP）。 */
@@ -244,28 +51,6 @@ async function waitIceComplete(pc: RTCPeerConnection): Promise<void> {
       }
     }
     pc.addEventListener('icegatheringstatechange', onState)
-  })
-}
-
-/** 等待本地创建的 DataChannel 打开。 */
-function waitDataChannelOpen(
-  dc: RTCDataChannel,
-  timeoutMs?: number
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('data channel open timeout')),
-      timeoutMs ?? 10_000
-    )
-    const check = () => {
-      if (dc.readyState === 'open') {
-        clearTimeout(timer)
-        dc.removeEventListener('open', check)
-        resolve()
-      }
-    }
-    dc.addEventListener('open', check)
-    check()
   })
 }
 
@@ -294,4 +79,80 @@ function waitRemoteDataChannel(
     }, timeoutMs ?? 10_000)
     pc.addEventListener('datachannel', onDatachannel)
   })
+}
+
+// ---------------------------------------------------------------------------
+// 多端直连信令（WS+DO）—— nodeId 寻址 + 收件人 nodeId 派生密钥
+//
+// offer/answer 经 /ws/signal（DO 信号房）推送，两端用 deriveNodeSignalKey
+// 派生的 AES-GCM 密钥加密 SDP（DO 只见密文）。信箱式 HTTP 轮询已移除（A2）。
+// ---------------------------------------------------------------------------
+
+/** 信箱 offer 应答产物：answer（目标 nodeId + 加密信封）+ 延迟建会话。 */
+export interface MailboxAnswer {
+  /** answer 回投目标（发起方 nodeId）。 */
+  answerTarget: string
+  /** encodeEnvelope 后的 answer 信封（已 AES-GCM 加密，收件人 = 发起方 nodeId）。 */
+  answerPayload: string
+  /** 投递 answer 后调用：等远端 DataChannel 打开，返回已建会话（超时 reject）。 */
+  awaitSession: () => Promise<ClientSession>
+  /** 放弃应答（投递失败等场景），关闭本地 PC。 */
+  abort: () => void
+}
+
+/**
+ * 响应方核心：给定「发起方 nodeId + 加密 offer SDP」，解密 → createAnswer →
+ * 加密 answer → 返回待投递 answer + 延迟建会话（mailbox-host 的 WS 监听调用）。
+ */
+export async function respondMailboxOffer(
+  selfNodeId: string,
+  fromNodeId: string,
+  offerCipher: string,
+  opts: SessionOptions = {}
+): Promise<MailboxAnswer | null> {
+  try {
+    const key = await deriveNodeSignalKey(selfNodeId)
+    const offerSdp = await decryptSignal(key, offerCipher)
+    if (offerSdp === null) return null
+
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    // 关键：在 setRemoteDescription(offer) 之前监听 datachannel。
+    const dcPromise = waitRemoteDataChannel(pc, opts.openTimeoutMs)
+
+    await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp })
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    await waitIceComplete(pc)
+
+    const answerKey = await deriveNodeSignalKey(fromNodeId)
+    const answerSdp = pc.localDescription?.sdp ?? ''
+    const cipher = await encryptSignal(answerKey, answerSdp)
+    const answerEnvelope = encodeEnvelope(selfNodeId, cipher)
+
+    // 注意：不能在此 await dcPromise —— answer 必须先投递给发起方，发起方
+    // setRemoteDescription(answer) 后 DataChannel 才可能 open。此处 await 会形成
+    // 「等 dc open 才投 answer / 投 answer 才 dc open」的死锁。故把等待延迟到
+    // awaitSession（调用方先投 answer，再 await）。
+    const abort = (): void => {
+      pc.close()
+    }
+    return {
+      answerTarget: fromNodeId,
+      answerPayload: answerEnvelope,
+      awaitSession: async () => {
+        const dc = await dcPromise
+        return {
+          dc,
+          pc,
+          close: () => {
+            dc.close()
+            pc.close()
+          },
+        }
+      },
+      abort,
+    }
+  } catch {
+    return null
+  }
 }

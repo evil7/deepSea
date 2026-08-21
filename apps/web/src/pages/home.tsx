@@ -230,10 +230,10 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
         {/* 手机端不显示 footer（后续单独做移动端 dock） */}
         <footer className="hidden shrink-0 border-t border-white/10 bg-slate-950/60 py-3 backdrop-blur-sm sm:block">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-4 text-sm text-white/70 sm:px-6">
-            <p>deepSea · DeepSeek Harness 插件生态聚合站</p>
             <a href="https://github.com/evil7/deepSea" target="_blank" rel="noopener noreferrer">
-              <p className="font-mono">evil7/deepSea<img src="https://img.shields.io/github/stars/evil7/deepSea.svg?style=social&label=Star" alt="GitHub stars" className="ml-2 inline-block h-4 w-auto" /></p>
+              <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/evil7/deepSea?style=social&label=Star" className="ml-2 inline-block h-4 w-auto" />
             </a>
+            <span>© 2026 deepSea</span>
           </div>
         </footer>
       </main>

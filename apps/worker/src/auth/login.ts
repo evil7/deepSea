@@ -7,7 +7,6 @@
 
 import type { Env } from "../index"
 import {
-  DEFAULT_OAUTH_SCOPE,
   SESSION_COOKIE,
   kvKeys,
   stateTtl,
@@ -48,7 +47,9 @@ export async function handleLogin(
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
     redirect_uri: `${env.DEEPSEA_BASE}/auth/callback`,
-    scope: env.GITHUB_OAUTH_SCOPE ?? DEFAULT_OAUTH_SCOPE,
+    // scope 权威来源 = wrangler.toml [vars] 的 GITHUB_OAUTH_SCOPE 环境变量；
+    // 改动 scope 只需改 wrangler 配置。此处仅兜底（环境变量缺失时的最小默认）。
+    scope: env.GITHUB_OAUTH_SCOPE ?? "read:user public_repo",
     state,
   })
   const authorize =

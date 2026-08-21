@@ -20,6 +20,24 @@ const root = resolve(__dirname, '..')
 const CLIENT_GLOBAL = '__deepcBridgeClient'
 const CLIENT_ID = '@deepsea/deepc-bridge'
 
+/**
+ * 环境基址（构建时注入 browser bundle）：
+ *   · DEEPC_SITE_BASE：主站基址（默认生产 https://deepc.cn）
+ *   · DEEPC_SIGNAL_BASE：Worker/信令基址（默认生产 https://deepc.cn）
+ * `--local`：本地 dev 一并指向本地（主站 127.0.0.1:5174 + Worker 127.0.0.1:8787）；
+ * 也可用环境变量单独覆盖（优先于 --local）。
+ */
+const isLocal = process.argv.includes('--local')
+const SITE_BASE =
+  process.env.DEEPC_SITE_BASE ?? (isLocal ? 'http://127.0.0.1:5174' : 'https://deepc.cn')
+const SIGNAL_BASE =
+  process.env.DEEPC_SIGNAL_BASE ?? (isLocal ? 'http://127.0.0.1:8787' : 'https://deepc.cn')
+
+const DEFINE = {
+  __DEEPC_SITE_BASE__: SITE_BASE,
+  __DEEPC_SIGNAL_BASE__: SIGNAL_BASE,
+}
+
 /** 查找 esbuild 可执行文件（优先 pnpm .pnpm 里的 @esbuild/win32-x64）。 */
 function findEsbuild() {
   const pnpmDir = join(root, '..', '..', 'node_modules', '.pnpm')
@@ -54,18 +72,18 @@ function buildNode(esbuildExe) {
 
 /** 用 esbuild 打包单文件 IIFE（可自动执行）。 */
 function bundleIife(esbuildExe, entry, outfile, globalName) {
-  execFileSync(
-    esbuildExe,
-    [
-      entry,
-      '--bundle',
-      '--format=iife',
-      `--global-name=${globalName}`,
-      '--target=es2022',
-      `--outfile=${outfile}`,
-    ],
-    { cwd: root, stdio: 'inherit' }
-  )
+  const args = [
+    entry,
+    '--bundle',
+    '--format=iife',
+    `--global-name=${globalName}`,
+    '--target=es2022',
+    `--outfile=${outfile}`,
+  ]
+  for (const [name, value] of Object.entries(DEFINE)) {
+    args.push(`--define:${name}=${JSON.stringify(value)}`)
+  }
+  execFileSync(esbuildExe, args, { cwd: root, stdio: 'inherit' })
   return readFileSync(outfile, 'utf8')
 }
 

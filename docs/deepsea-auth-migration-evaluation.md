@@ -2,6 +2,11 @@
 
 > 状态：**已实施 P1（双写）** · 关联：`deepsea-oauth-worker.md`、`deepsea-deepc-bridge-plan.md`
 > 编写：2026-08-20 · 目标：评估「用户/会话/deepc 偏好迁 D1、KV 只留临时口令信令」的可行性与方案
+>
+> ⚠️ **过时说明（2026-08-21）**：本文档部分内容已演进。①「临时口令信令」（方案 B）已移除；
+> ② `deepc_preferences` 表已删除（配置迁 `deepc_config`，见 config-sync.md）；③ 多端直连信令
+> 已从「D1 账号 roomId」演进为「nodeId + WS/DO 信号房」（见 signaling.md）。本文档保留
+> 「D1 vs KV 决策分析」（§3）的核心原则，现状盘点（§2）以下方修订为准。
 
 ## 1. 背景与目标
 
@@ -27,7 +32,10 @@ KV 退化为**单一职责**——临时口令分享互联的信令（一次性�
 | `state:{id}` | OAuth 防 CSRF 一次性 state | 短 TTL(7min)、一次性 | **KV（保留）** |
 | `session:{id}` | 登录会话（HttpOnly cookie 引用） | TTL 30d、单点读 | **D1** |
 | `user:{githubId}` | 用户档案 + 加密 token 缓存 | 按用户读/写 | **D1** |
-| `signal:{roomId}:{kind}` | 临时口令信令密文 | 短 TTL、一次性消费、高频 | **KV（保留）** |
+| `deviceGrant:{state}` | 设备授权收件箱（device_token 明文） | 短 TTL、一次性消费 | **KV（保留）** |
+
+> 已删除：`signal:{roomId}:{kind}`（临时口令信令，随临时连接移除）；
+> `nodeSignal:{nodeId}:{kind}`（信箱信令，随 WS+DO 贯通后 A2 移除）。
 
 ### 2.2 现有接口
 
@@ -37,7 +45,10 @@ KV 退化为**单一职责**——临时口令分享互联的信令（一次性�
 | `/auth/callback` | GET | 校验 state → 换 token → 建会话 | 用户/会话写 D1 |
 | `/auth/me` | GET | cookie → KV session → 用户档案 | D1 查询 + token 校验 |
 | `/auth/logout` | POST | 删 session | D1 删 session |
-| `/auth/signal/put` / `get` | POST | KV 信令 | **KV（保留）** |
+| `/auth/node/*` | GET/POST | 设备注册/列表/心跳/移除 | D1（deepc_nodes） |
+| `/auth/device-grant*` | POST | 设备授权流 | D1（token 哈希）+ KV（收件箱） |
+| `/auth/config/*` | GET/POST | 配置同步 | D1（deepc_config）+ DO 推送 |
+| `/ws/signal` | WS | 信令信号房 | DO 推送（offer/answer/config-changed） |
 
 ### 2.3 token 架构现状（2026-08-20 已加固）
 

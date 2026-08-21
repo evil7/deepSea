@@ -24,9 +24,11 @@
                      Cloudflare KV                Cloudflare D1
                     ┌──────────────┐            ┌──────────────────────┐
                     │ state（CSRF） │            │ users（用户，github_id）│
-                    │ signal（信令） │            │ sessions（多端会话）   │
-                    │ 限流计数       │            │ deepc_preferences    │
-                    └──────────────┘            │ interconnect_log     │
+                    │ deviceGrant   │            │ sessions（多端会话）   │
+                    │ 限流计数       │            │ deepc_nodes（设备）   │
+                    └──────────────┘            │ deepc_device_tokens  │
+                                                 │ deepc_config（配置）  │
+                                                 │ interconnect_log     │
                                                  └──────────────────────┘
 ```
 
@@ -36,7 +38,7 @@
 |----|----|
 | 域名 | `deepc.cn`（Cloudflare 托管） |
 | 运行时 | Cloudflare Workers（静态资源 + 路由逻辑同一 Worker） |
-| 存储 | **KV**（state / signal 信令 / 限流计数）+ **D1**（users / sessions / deepc_preferences / interconnect_log） |
+| 存储 | **KV**（state / deviceGrant 收件箱 / 限流计数）+ **D1**（users / sessions / deepc_nodes / deepc_device_tokens / deepc_config / interconnect_log） |
 | 密码学 | Web Crypto（AES-GCM 加密 token、ES256 签 JWT） |
 | 配置 | GitHub OAuth App（`client_id` / `client_secret`）+ KV namespace + D1 database |
 
@@ -44,8 +46,8 @@
 
 - `directory = "../web/dist"` + `binding = "ASSETS"`：Vite 构建产物直接作为静态资源
 - `not_found_handling = "single-page-application"`：SPA 路由（/plugins、/plugin/...）回退 index.html
-- **`run_worker_first`**：只让 `/auth/*` 路由先进 Worker（`/auth/login` `/auth/callback` `/auth/me`
-  `/auth/logout` `/auth/preferences` `/auth/interconnect-log` `/auth/signal/put` `/auth/signal/get`）。
+- **`run_worker_first`**：只让 `/auth/*` 与 `/ws/signal` 路由先进 Worker（`/auth/login` `/auth/callback` `/auth/me`
+  `/auth/logout` `/auth/interconnect-log` `/auth/node/*` `/auth/device-grant*` `/auth/config/*` `/ws/signal`）。
   浏览器导航（`Sec-Fetch-Mode: navigate`）到 `/auth/callback` 若被 Assets SPA 回退拦截会返回
   index.html，OAuth 回调失效。**不要用 `run_worker_first = true`**（所有静态资源都进 Worker，
   浪费计算额度）；路径数组模式下静态资源与 SPA 回退全部由 Assets 免费处理，零 Worker 消耗。
@@ -64,9 +66,11 @@
 | `/auth/callback` | GET | **GitHub OAuth callback**：校验 `state` → `code` 换 token → 查/建用户（D1 双写 KV）→ 签发会话 → 302 回跳首页 |
 | `/auth/me` | GET | 校验会话 cookie（D1 优先 KV 回退）→ 校验 token → 返回用户档案 |
 | `/auth/logout` | POST | 销毁会话（删 D1 + KV 会话 + 清 cookie） |
-| `/auth/preferences` | GET/PUT | deepc 偏好（theme + 自定义加密 key）读写 |
-| `/auth/interconnect-log` | GET | 登录用户查自己的互联日志 |
-| `/auth/signal/put` / `get` | POST | 临时口令信令（密文透传 + 一次性消费） |
+| `/auth/interconnect-log` | GET | 登录用户查自己的互联日志（安全审计） |
+| `/auth/node/*` | GET/POST | 设备注册/列表/心跳/移除（register/list/heartbeat/remove） |
+| `/auth/device-grant` / `poll` | POST | 设备授权流（登录态签发 device_token / state 换 token） |
+| `/auth/config/list` / `put` | GET/POST | 配置同步（账号级 key-value，D1 + DO 推送） |
+| `/ws/signal` | WS | 信令信号房（DO 推送 offer/answer + config-changed） |
 | `/*` | GET | 静态资源（Vite build 产物；`/` 返回 index.html，SPA 路由回退） |
 
 > 静态托管细节：Worker 直接 serve `dist/` 产物，或前端用 Cloudflare Pages、OAuth 逻辑放 Pages Functions（等价 Worker 运行时）。二选一，本构思按「单一 Worker」描述。
@@ -77,12 +81,13 @@
 
 ```
 state:{stateId}            → { redirectTo, exp }        // 一次性，TTL 7min
-signal:{roomId}:{kind}     → <密文 SDP>                 // 临时口令信令，TTL 60s
+deviceGrant:{state}        → <device_token 明文>        // 设备授权收件箱，TTL 5min
 ratelimit:{ip}:*           → <计数>                     // 限流（60min / 1s 窗口）
 ```
 
-**D1（关系型）**：`users`（github_id 主键）、`sessions`（多端）、`deepc_preferences`（theme +
-encryption_key_enc 密文）、`interconnect_log`（互联日志）。详见 `deepsea-auth-migration-evaluation.md`。
+**D1（关系型）**：`users`（github_id 主键）、`sessions`（多端）、`deepc_nodes`（设备注册表）、
+`deepc_device_tokens`（设备令牌哈希）、`deepc_config`（配置同步）、`interconnect_log`（互联日志）。
+详见 `deepsea-auth-migration-evaluation.md`。
 
 **token 缓存（避免重复请求 GitHub）**：
 
@@ -122,8 +127,12 @@ deepsea/
 │   │   │   ├── callback.ts   # GET /auth/callback（核心：state 校验/code 换 token/建会话）
 │   │   │   ├── me.ts         # GET /auth/me（会话 cookie → 用户档案）
 │   │   │   ├── logout.ts     # POST /auth/logout（销毁会话）
-│   │   │   ├── signal.ts     # POST /auth/signal/*（临时口令信令 + 错误限流）
-│   │   │   └── preferences.ts # GET/PUT /auth/preferences + GET /auth/interconnect-log
+│   │   │   ├── node.ts       # /auth/node/*（设备注册/列表/心跳/移除 + 配额校验）
+│   │   │   ├── device.ts     # /auth/device-grant*（设备授权流）
+│   │   │   ├── config.ts     # /auth/config/*（配置同步）
+│   │   │   └── preferences.ts # GET /auth/interconnect-log（互联日志）
+│   │   ├── durable/
+│   │   │   └── signal-room.ts # DO 信号房（WS 推送信令 + config-changed）
 │   │   ├── lib/
 │   │   │   ├── github.ts     # code 换 token、用户信息、token 三态校验（原生 fetch）
 │   │   │   ├── kv.ts         # KV 键设计 + TTL 常量（state / signal / 限流）

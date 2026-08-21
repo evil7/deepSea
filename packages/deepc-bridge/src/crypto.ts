@@ -1,27 +1,30 @@
 /**
- * deepc 配对码 + 密钥派生 + 信令加解密（浏览器端，Web Crypto API）。
+ * deepc 密钥派生 + 信令加解密（浏览器端，Web Crypto API）。
  *
- * 安全模型（§8c Plan A 配对码派生）：
- *   · 配对码（6 位易读字符）经用户亲眼传递（QR/文本），不落盘、不走网络明文。
- *   · roomId = HKDF(配对码) → 32 字节 → 64 hex，作为 Worker KV 信令键；
- *     Worker 只见 roomId 哈希，不见配对码本身。
- *   · signalKey = HKDF(配对码) → AES-GCM 256，加密 SDP 信令；
- *     KV 只存密文，Worker 永不见 SDP 明文。
+ * 安全模型（信箱式信令）：
+ *   · nodeId → HKDF → AES-GCM 256 信箱信令密钥（收件人 nodeId 派生）；
+ *     SDP 经 AES-GCM 加密后入信箱，Worker 只存密文，不见明文。
  */
 
 const encoder = new TextEncoder()
 
-/** 配对码字符集：排除易混淆字符（0/O、1/I/L）。 */
-const PAIR_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-/** 生成一次性临时口令（默认 8 位，32^8 ≈ 1.1×10^12 组合）。 */
-export function generatePairCode(len = 8): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(len))
-  let code = ""
-  for (let i = 0; i < len; i++) {
-    code += PAIR_CODE_ALPHABET[bytes[i] % PAIR_CODE_ALPHABET.length]
+/**
+ * 生成随机 UUID v4（122-bit 熵）。
+ * 用于 nodeId（设备标识）与 Device Grant 授权 state（一次性收件箱钥匙）。
+ */
+export function generateConnectId(): string {
+  if (typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID()
+    } catch {
+      /* 部分非安全上下文会抛错，回退到手工生成。 */
+    }
   }
-  return code
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40 // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80 // variant 10
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 /** HKDF-SHA256 派生指定位数（配对码为 IKM）。 */
@@ -50,19 +53,18 @@ async function deriveBits(
   )
 }
 
-/** 配对码 → roomId（64 hex，KV 信令键）。 */
-export async function deriveRoomId(pairingCode: string): Promise<string> {
-  const bits = await deriveBits(pairingCode, "deepc-room", "room-id", 256)
-  return bytesToHex(new Uint8Array(bits))
-}
-
-/** 配对码 → AES-GCM 信令密钥。 */
-export async function deriveSignalKey(
-  pairingCode: string
+/**
+ * nodeId → 信箱信令密钥（AES-GCM）。
+ * 多端直连（信箱式信令）：收件人 nodeId 派生密钥——offer 用目标设备 nodeId 密钥，
+ * answer 用发起方 nodeId 密钥，两端各自「收件箱密钥」独立。nodeId 登录态私有
+ * （同账号设备 list 可见），v1 简化安全边界足够。
+ */
+export async function deriveNodeSignalKey(
+  nodeId: string
 ): Promise<CryptoKey> {
   const bits = await deriveBits(
-    pairingCode,
-    "deepc-signal",
+    nodeId,
+    "deepc-node",
     "sdp-encryption",
     256
   )
@@ -110,12 +112,6 @@ export async function decryptSignal(
   } catch {
     return null
   }
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  let hex = ""
-  for (const b of bytes) hex += b.toString(16).padStart(2, "0")
-  return hex
 }
 
 function toBase64(bytes: Uint8Array): string {

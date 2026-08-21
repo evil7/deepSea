@@ -9,23 +9,15 @@
 //   其余（assistant/chunk、step/*、turn/*、approval/* 等）忽略
 // ---------------------------------------------------------------------------
 
-import type { AssistantBlock, HistoryEntry, SessionEvent } from "./protocol"
+import type {
+  AssistantBlock,
+  ContentBlock,
+  HistoryEntry,
+  SessionEvent,
+  StreamChunk,
+} from "./protocol"
 
-/** 内容块（宽松：text/reasoning/tool-call/image/tool-result 及未知）。 */
-export interface ContentBlock {
-  type: string
-  text?: string
-  thinking?: string
-  id?: string
-  name?: string
-  arguments?: string
-  toolCallId?: string
-  content?: ContentBlock[]
-  isError?: boolean
-  mediaType?: string
-  data?: string
-  [key: string]: unknown
-}
+export type { ContentBlock } from "./protocol"
 
 /** 折叠后的渲染节点。 */
 export type RenderNode =
@@ -57,7 +49,7 @@ export type RenderNode =
     }
 
 /** 把 ContentBlock[] 分类为 AssistantBlock[]（text/reasoning/tool-call/other）。 */
-function classifyBlocks(content: readonly unknown[]): AssistantBlock[] {
+export function classifyBlocks(content: readonly unknown[]): AssistantBlock[] {
   const blocks: AssistantBlock[] = []
   for (const raw of content) {
     const block = raw as ContentBlock
@@ -187,4 +179,100 @@ export function nodeSummary(node: RenderNode): string {
     case "tool":
       return `${node.name ?? node.callId}${node.isError ? "（出错）" : ""}`
   }
+}
+
+// ---------------------------------------------------------------------------
+// 流式输出累积（assistant/chunk 事件 → 实时打字机效果）
+//
+// 对齐 dsh `PartialAccumulator` 语义：按 index 累积 delta 拼块；
+// block-end 携带完整块替换该 index。返回新数组（不可变，便于 React 触发重渲染）。
+// ---------------------------------------------------------------------------
+
+/** 打开一个空块（block-start）。 */
+function emptyStreamBlock(blockType: "text" | "reasoning" | "tool-call"): AssistantBlock {
+  switch (blockType) {
+    case "reasoning":
+      return { kind: "reasoning", text: "" }
+    case "tool-call":
+      return { kind: "tool-call", callId: "", name: "", argsRaw: "" }
+    default:
+      return { kind: "text", text: "" }
+  }
+}
+
+/** 把 dsh ContentBlock 转成 AssistantBlock（block-end 最终态）。 */
+function contentBlockToAssistant(block: ContentBlock): AssistantBlock {
+  switch (block.type) {
+    case "reasoning":
+      return { kind: "reasoning", text: block.text ?? block.thinking ?? "" }
+    case "tool-call":
+      return {
+        kind: "tool-call",
+        callId: block.id ?? "",
+        name: block.name ?? "",
+        argsRaw: block.arguments ?? "",
+      }
+    case "image":
+      return { kind: "image", attachment: block }
+    case "text":
+      return { kind: "text", text: block.text ?? "" }
+    default:
+      return { kind: "other", block }
+  }
+}
+
+/**
+ * 应用一个 StreamChunk 到当前累积块，返回新块数组。
+ * 传入当前块（可为空数组）与一个 chunk，返回累积后的新数组。
+ */
+export function applyStreamChunk(
+  blocks: readonly AssistantBlock[],
+  chunk: StreamChunk
+): AssistantBlock[] {
+  const next = [...blocks]
+  switch (chunk.type) {
+    case "block-start": {
+      next[chunk.index] = emptyStreamBlock(chunk.blockType)
+      break
+    }
+    case "text-delta": {
+      const prev = next[chunk.index]
+      next[chunk.index] = {
+        kind: "text",
+        text: (prev?.kind === "text" ? prev.text : "") + chunk.text,
+      }
+      break
+    }
+    case "reasoning-delta": {
+      const prev = next[chunk.index]
+      next[chunk.index] = {
+        kind: "reasoning",
+        text: (prev?.kind === "reasoning" ? prev.text : "") + chunk.text,
+      }
+      break
+    }
+    case "tool-call-delta": {
+      const prev = next[chunk.index]
+      const base: AssistantBlock =
+        prev?.kind === "tool-call"
+          ? prev
+          : { kind: "tool-call", callId: "", name: "", argsRaw: "" }
+      next[chunk.index] = {
+        kind: "tool-call",
+        callId: base.callId || chunk.id,
+        name: chunk.name ?? base.name,
+        argsRaw: base.argsRaw + chunk.argumentsDelta,
+      }
+      break
+    }
+    case "block-end": {
+      next[chunk.index] = contentBlockToAssistant(chunk.block)
+      break
+    }
+    case "usage":
+    case "finish":
+      // 用量/结束标记不产生可见内容。
+      break
+  }
+  return next
 }

@@ -62,7 +62,7 @@ export interface DownstreamFrame {
 
 export interface ControlFrame {
   kind: "control"
-  cmd: "deepc:ping" | "deepc:pong"
+  cmd: "deepc:ping" | "deepc:pong" | "deepc:bye"
   seq: number
   ts: number
 }
@@ -100,6 +100,12 @@ export interface ThemeStateFrame {
   theme: unknown
 }
 
+/** 主站 → host 的 hello 握手确认。 */
+export interface HelloAckFrame {
+  kind: "hello-ack"
+  protocolVersion: number
+}
+
 // ── 帧联合类型 ────────────────────────────────────────────────────────────
 
 export type BridgeFrame =
@@ -111,6 +117,7 @@ export type BridgeFrame =
   | ControlFrame
   | HelloFrame
   | ThemeStateFrame
+  | HelloAckFrame
 
 // ── 会话 / 工作区数据（对齐 dsh-host-apiproxy schema）─────────────────────
 
@@ -153,12 +160,52 @@ export interface HistoryEntry {
 
 // ── 消息内容块（对齐 dsh-llm ContentBlock 分类）───────────────────────────
 
+/** 内容块（宽松：text/reasoning/tool-call/image/tool-result 及未知）。 */
+export interface ContentBlock {
+  type: string
+  text?: string
+  thinking?: string
+  id?: string
+  name?: string
+  arguments?: string
+  toolCallId?: string
+  content?: ContentBlock[]
+  isError?: boolean
+  mediaType?: string
+  data?: string
+  [key: string]: unknown
+}
+
 export type AssistantBlock =
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string }
   | { kind: "image"; attachment: unknown }
   | { kind: "tool-call"; callId: string; name: string; argsRaw: string }
   | { kind: "other"; block: unknown }
+
+// ── 流式输出（对齐 dsh `StreamChunk` 协议）────────────────────────────
+// assistant/chunk 事件的 data.chunk 字段；按 index 累积 delta 拼出完整块。
+//   · block-start      —— 打开一个内容块（text/reasoning/tool-call）
+//   · text-delta       —— 追加可见文本
+//   · reasoning-delta  —— 追加思考文本
+//   · tool-call-delta  —— 追加工具调用参数（id/name 首次 delta 携带）
+//   · block-end        —— 携带完整组装好的 ContentBlock（最终态）
+//   · usage / finish   —— 用量与结束标记（渲染可忽略）
+export type StreamChunk =
+  | { type: "block-start"; index: number; blockType: "text" | "reasoning" | "tool-call" }
+  | { type: "text-delta"; index: number; text: string }
+  | { type: "reasoning-delta"; index: number; text: string }
+  | { type: "tool-call-delta"; index: number; id: string; name?: string; argumentsDelta: string }
+  | { type: "block-end"; index: number; block: ContentBlock }
+  | { type: "usage"; usage: unknown }
+  | { type: "finish"; reason: unknown }
+
+/** assistant/chunk 事件 data（宽松）。 */
+export interface AssistantChunkData {
+  turn?: number
+  step?: number
+  chunk?: StreamChunk
+}
 
 export interface AssistantMessageNode {
   kind: "assistant"

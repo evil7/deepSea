@@ -16,13 +16,21 @@ import { handleCallback } from "./auth/callback"
 import { handleLogin } from "./auth/login"
 import { handleLogout } from "./auth/logout"
 import { handleMe } from "./auth/me"
+import { handleInterconnectLog } from "./auth/preferences"
 import {
-  handleInterconnectLog,
-  handlePreferencesGet,
-  handlePreferencesPut,
-} from "./auth/preferences"
-import { handleSignalGet, handleSignalOptions, handleSignalPut } from "./auth/signal"
+  handleNodeHeartbeat,
+  handleNodeList,
+  handleNodeRegister,
+  handleNodeRemove,
+} from "./auth/node"
+import {
+  handleDeviceGrant,
+  handleDeviceGrantPoll,
+} from "./auth/device"
+import { handleConfigList, handleConfigPut } from "./auth/config"
+import { purgeLogs, resolveActorUserId, resolveDeviceUserIdFromToken } from "./lib/d1"
 import { checkFreqLimit, getClientIp } from "./lib/ratelimit"
+import { SignalRoom } from "./durable/signal-room"
 
 /** Worker 环境变量 / 绑定 */
 export interface Env {
@@ -32,6 +40,8 @@ export interface Env {
   DEEPSEA_D1: D1Database
   /** 静态资源绑定（../web/dist 构建产物） */
   ASSETS: Fetcher
+  /** DO 信号房（WS 推送，方案 A；分区键 room:{githubId}） */
+  SIGNAL_ROOM: DurableObjectNamespace
   /** 站点基址：OAuth callback 为 {DEEPSEA_BASE}/auth/callback */
   DEEPSEA_BASE: string
   /** GitHub OAuth App client_id（secret 注入） */
@@ -50,18 +60,38 @@ export interface Env {
   STATE_TTL_SECONDS?: string
   /** 信令 TTL（秒，临时口令有效期，默认 60s） */
   SIGNAL_TTL_SECONDS?: string
+  /** 设备授权码 TTL（秒，state 换取 token 窗口，默认 5 分钟） */
+  DEVICE_GRANT_TTL_SECONDS?: string
+  /** device_token 有效期（秒，默认 30 天） */
+  DEVICE_TOKEN_TTL_SECONDS?: string
+}
+
+/** 需要跨域 CORS 的 /auth/* 路径（插件端/主站跨源调用：设备 + 授权 + me）。 */
+function isCorsAuthPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/auth/node/") ||
+    pathname.startsWith("/auth/config") ||
+    pathname === "/auth/device-grant" ||
+    pathname === "/auth/device-grant/poll" ||
+    pathname === "/auth/me"
+  )
 }
 
 const handler: ExportedHandler<Env> = {
   async fetch(request, env) {
     const url = new URL(request.url)
 
-    // 信令 CORS preflight（OPTIONS）
-    if (
-      request.method === "OPTIONS" &&
-      (url.pathname === "/auth/signal/put" || url.pathname === "/auth/signal/get")
-    ) {
-      return handleSignalOptions()
+    // 跨源 CORS preflight（OPTIONS）
+    if (request.method === "OPTIONS" && isCorsAuthPath(url.pathname)) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+        },
+      })
     }
 
     // 频次限流：信令 + 登录接口统一按 IP ≤5 req/s（防洪泛）。
@@ -76,17 +106,31 @@ const handler: ExportedHandler<Env> = {
             headers: {
               "Content-Type": "application/json; charset=utf-8",
               "Retry-After": String(rl.retryAfter ?? 1),
-              ...(url.pathname.startsWith("/auth/signal/")
+              ...(isCorsAuthPath(url.pathname)
                 ? {
                     "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "POST, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
                   }
                 : {}),
             },
           }
         )
       }
+    }
+
+    // WebSocket 信令（DO 信号房）：Upgrade 请求路由到 room:{githubId}。
+    // worker 层先拿 githubId 确定分区；DO 层再做完整认证 + nodeId 归属校验。
+    if (url.pathname === "/ws/signal") {
+      let githubId = await resolveActorUserId(request, env)
+      if (githubId === null) {
+        const token = url.searchParams.get("token")
+        if (token) githubId = await resolveDeviceUserIdFromToken(token, env)
+      }
+      if (githubId === null) return new Response("unauthorized", { status: 401 })
+      const id = env.SIGNAL_ROOM.idFromName(`room:${githubId}`)
+      const stub = env.SIGNAL_ROOM.get(id)
+      return stub.fetch(request)
     }
 
     // OAuth 路由由 Worker 处理（auth 到此为止，数据读写都在前端 octokit）
@@ -99,16 +143,24 @@ const handler: ExportedHandler<Env> = {
         return handleMe(request, env)
       case "/auth/logout":
         return handleLogout(request, env)
-      case "/auth/preferences":
-        return request.method === "PUT"
-          ? handlePreferencesPut(request, env)
-          : handlePreferencesGet(request, env)
       case "/auth/interconnect-log":
         return handleInterconnectLog(request, env)
-      case "/auth/signal/put":
-        return handleSignalPut(request, env)
-      case "/auth/signal/get":
-        return handleSignalGet(request, env)
+      case "/auth/node/register":
+        return handleNodeRegister(request, env)
+      case "/auth/node/list":
+        return handleNodeList(request, env)
+      case "/auth/node/heartbeat":
+        return handleNodeHeartbeat(request, env)
+      case "/auth/node/remove":
+        return handleNodeRemove(request, env)
+      case "/auth/device-grant":
+        return handleDeviceGrant(request, env)
+      case "/auth/device-grant/poll":
+        return handleDeviceGrantPoll(request, env)
+      case "/auth/config/list":
+        return handleConfigList(request, env)
+      case "/auth/config/put":
+        return handleConfigPut(request, env)
       default:
         break
     }
@@ -131,6 +183,18 @@ const handler: ExportedHandler<Env> = {
     // 其余请求回退到静态资源（SPA 路由由 assets 的 single-page-application 处理）
     return env.ASSETS.fetch(request)
   },
+
+  // 审计日志 30 天自动清除（Cron 每日触发；见 wrangler.toml [triggers]）。
+  async scheduled(_controller, env) {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+    const purged = await purgeLogs(env, cutoff)
+    if (purged > 0) {
+      console.log(`[audit] purged ${purged} interconnect_log rows older than 30d`)
+    }
+  },
 }
 
 export default handler
+
+// DO 信号房（wrangler.toml [[durable_objects.bindings]] class_name 需从 main 模块导出）。
+export { SignalRoom }

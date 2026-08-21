@@ -16,6 +16,7 @@ import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
 import { SonarPage } from "@/pages/sonar"
+import { DeviceLoginPage } from "@/pages/device-login"
 
 /** 旧路由 /community/:number → 跳转到 /community/dpc/:number（默认社区） */
 function CommunityNumberRedirect() {
@@ -103,6 +104,7 @@ export function App() {
         <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/plugin/:owner/:repo" element={<PluginDetailPage />} />
         <Route path="/sonar" element={<SonarPage />} />
+        <Route path="/device-login" element={<DeviceLoginPage />} />
         <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
         <Route path="/community/dsh" element={<CommunityPage />} />
         <Route path="/community/dpc" element={<CommunityPage />} />

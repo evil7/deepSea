@@ -4,21 +4,23 @@
  * 经 dsh 的 `dsh.client` 声明 + `exports["./client"]` 被 `dsh-client-modules`
  * 发现，注入 `__DSH_BOOT__` entry graph，随官方前端一起 boot。
  *
- * S0 骨架：不注入任何 UI。后续阶段在此接入：
- *   - 操作互联：自实现 chatUI 的引导入口（WebRtcApiClient）
- *   - 工程同步：工作区 + 聊天记录的增量传输入口
+ * apply 里注入「deepSea 互联」悬浮球（右上角 deepSea 图标）+ 卡片式 Sheet：
+ *   · header：`(deepc logo) deepSea` + 登录按钮（登录后显示头像）
+ *   · 临时互联开关（开启生成一次性 connectId/uuid，60s 失效 + 信令失效）
  *
  * 注意：browser 端的 entry id 由 `window.__ModuleLoader__.load({ id })` 提供
  * （= package name `@deepsea/deepc-bridge`），此处 `name` 仅作客户端 cordis runtime
  * 的服务名，不参与 entry 发现。
  */
 
+import { bootstrapHostUi } from '../host-ui'
+
 export const name = 'deepc-bridge'
 
 /**
- * browser 端 apply：操作互联 chatUI 引导 + 工程同步入口（S0 骨架）。
+ * browser 端 apply：注入「deepc 互联」悬浮球 + Sheet 侧栏。
  * deepc-bridge 不依赖任何 dsh 服务（纯 WebRTC + fetch 桥），故不声明 inject。
  */
 export function apply(_ctx: unknown): void {
-  // S0：仅证明 bundle 可挂载。后续阶段填充 chatUI 引导 + 工程同步。
+  bootstrapHostUi()
 }

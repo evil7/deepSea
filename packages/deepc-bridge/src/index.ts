@@ -27,9 +27,21 @@ export function apply(_ctx: Context): void {
   // 后续阶段在此暴露 host 会话能力并接入 ctx.apiProxy。
 }
 
-// 对外暴露 host 会话能力（deepc-sonar-bridge 底座：配对 + 信令 + DC 建立）。
-export { createHostOffer, finalizeHost, startHostSession } from './session'
-export type { HostOffer, HostSession, SessionOptions } from './session'
+// 对外暴露「多端直连信令」（nodeId 寻址 + 收件人 nodeId 派生密钥 + WS 推送）。
+export { respondMailboxOffer } from './session'
+export type {
+  ClientSession,
+  SessionOptions,
+  MailboxAnswer,
+} from './session'
+
+// 对外暴露「信箱信封编解码」（offer/answer 跨端契约）。
+export {
+  encodeEnvelope,
+  decodeEnvelope,
+  DEFAULT_SIGNAL_BASE as NODE_SIGNAL_BASE,
+} from './node-signaling'
+export type { MailboxEnvelope, MailboxKind } from './node-signaling'
 
 // 对外暴露「操作互联」数据面桥能力（S2：DataChannel 帧 → 本地 API）。
 export { installApiBridge } from './api-bridge'

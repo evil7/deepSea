@@ -15,6 +15,7 @@ import {
   deleteUserSessions,
   getSession,
   getUser,
+  resolveDeviceUserId,
 } from "../lib/d1"
 
 function json(data: unknown, status = 200): Response {
@@ -23,6 +24,10 @@ function json(data: unknown, status = 200): Response {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
+      // 插件端（127.0.0.1:3080）跨域用 device_token 查档案；用户档案非敏感
+      // （不含 GitHub token），允许任意 Origin + Authorization 头安全。
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   })
 }
@@ -44,22 +49,31 @@ interface UserProfile {
 export async function handleMe(request: Request, env: Env): Promise<Response> {
   const cookies = parseCookies(request.headers.get("Cookie"))
   const sessionId = cookies[SESSION_COOKIE]
-  if (!sessionId) return json({ authed: false })
 
-  // 1. 会话：D1 优先，回退 KV（P1 双写过渡，旧 KV-only 会话仍可用）
-  let githubId: number
-  const d1Session = await getSession(env, sessionId)
-  if (d1Session) {
-    githubId = d1Session.github_id
-  } else {
-    const raw = await env.DEEPSEA_KV.get(kvKeys.session(sessionId))
-    if (!raw) return json({ authed: false })
-    try {
-      githubId = Number((JSON.parse(raw) as { userId: string }).userId)
-    } catch {
-      return json({ authed: false })
+  // 1. 会话：D1 优先，回退 KV（P1 双写过渡，旧 KV-only 会话仍可用）。
+  //    cookie 无效时回退 device_token（插件端多端互联场景）。
+  let githubId: number | null = null
+  let viaDevice = false
+  if (sessionId) {
+    const d1Session = await getSession(env, sessionId)
+    if (d1Session) {
+      githubId = d1Session.github_id
+    } else {
+      const raw = await env.DEEPSEA_KV.get(kvKeys.session(sessionId))
+      if (raw) {
+        try {
+          githubId = Number((JSON.parse(raw) as { userId: string }).userId)
+        } catch {
+          githubId = null
+        }
+      }
     }
   }
+  if (githubId === null) {
+    githubId = await resolveDeviceUserId(request, env)
+    viaDevice = githubId !== null
+  }
+  if (githubId === null) return json({ authed: false })
 
   // 2. 用户：D1 优先，回退 KV
   let profile: UserProfile
@@ -110,12 +124,26 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  // 3. 解密 token 供前端 octokit 直调（不落盘，仅本次响应）
+  // 3. device_token 鉴权：返回轻量档案（不含 GitHub token —— 配置同步走 D1，
+  //    插件端不再直调 gist，故不下发 token）。
+  if (viaDevice) {
+    return json({
+      authed: true,
+      user: {
+        id: String(githubId),
+        login: profile.login,
+        avatar_url: profile.avatar_url,
+        name: profile.name,
+      },
+    })
+  }
+
+  // 4. 解密 token（仅 cookie 主站会话需要，供前端 octokit 直调）。
   const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
   const token = await decryptToken(encKey, profile.tokenEnc)
   if (!token) return json({ authed: false })
 
-  // 4. token 有效性校验：GitHub 明确拒绝（撤销/过期）时清理 D1 + KV 缓存 + 会话，
+  // 5. token 有效性校验：GitHub 明确拒绝（撤销/过期）时清理 D1 + KV 缓存 + 会话，
   // 返回 tokenExpired 供前端清 sessionStorage 并引导重新授权；网络错误降级
   // 视为有效（避免 GitHub 抖动误清登录态）。
   const verify = await verifyToken(token)

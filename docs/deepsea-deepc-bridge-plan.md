@@ -53,7 +53,7 @@
 | 候选 | 结论 |
 |------|------|
 | **node-datachannel** | ✅ **主线**。libdatachannel（C++，MPL-2.0）的 Node.js 绑定，headless WebRTC 端点 |
-| PeerJS | ⚠️ 备选。自带 broker，但信令已自建（worker `/auth/signal/*`），徒增部署 |
+| PeerJS | ⚠️ 备选。自带 broker，但信令已自建（worker `/ws/signal` DO 信号房），徒增部署 |
 | golang 插件 | 📋 中长期。能力最强，但需确认官方运行时是否允许非 JS 进程 |
 
 ### 3.2 node-datachannel 关键事实
@@ -76,12 +76,12 @@
         ├─ toFetchHandler(ctx.apiProxy) → 本地 API 处理器
         ├─ node-datachannel PeerConnection（headless 端点）
         │     └─ DataChannel（deepc-sonar-bridge 帧）
-        └─ 信令客户端 → worker /auth/signal/*（密文透传）
+        └─ 信令客户端 → worker /ws/signal（DO 信号房，WS 推送）
 
 [远端 deepc 主站 (浏览器)]
    └─ 自实现 chatUI（React）
         ├─ RTCPeerConnection（浏览器端点）
-        └─ 信令客户端 → worker /auth/signal/*
+        └─ 信令客户端 → worker /ws/signal
 ```
 
 **关键桥接点**：`toFetchHandler(ctx.apiProxy)` 把官方 API 网关变成「本地 fetch handler」，
@@ -100,9 +100,9 @@
 ```
 deepc-sonar-bridge 中间件
 ├── 传输层 transport     —— node-datachannel ↔ 浏览器 RTCPeerConnection 的 DataChannel
-├── 安全层 security      —— 配对码派生 + AES-GCM 信令加密 + 应用层数据加密
+├── 安全层 security      —— nodeId 派生密钥 + AES-GCM 信令加密 + 应用层数据加密
 ├── 分包层 framing       —— 大文件/长记录自动分块 + SHA-256 校验 + ACK/NACK + 乱序还原
-├── 会话层 session       —— 配对/信令交换/探活(deepc:ping·pong)/连接生命周期
+├── 会话层 session       —— 信令交换（WS+DO）/探活(deepc:ping·pong)/连接生命周期
 └── 应用帧 application   —— 操作互联帧（API 调用）+ 工程同步帧（数据迁移）
 ```
 
@@ -110,9 +110,9 @@ deepc-sonar-bridge 中间件
 
 | 项 | 机制 |
 |----|------|
-| 临时口令派生 | `roomId = HKDF(口令)`（KV 键）、`signalKey = HKDF(口令)`（AES-GCM 加密 SDP） |
-| 信令保密 | KV 只存密文，Worker 不见明文口令/SDP；`get` 一次性消费（读后即删） |
-| 口令防暴力 | 8 位（32^8 ≈ 1.1e12）+ 60s 失效 + 错误限流（60min/5 次）+ 频次限流（≤5 req/s） |
+| 信令密钥派生 | `deriveNodeSignalKey(nodeId)` = HKDF(nodeId)（AES-GCM 加密 SDP，收件人 nodeId 派生） |
+| 信令保密 | WS+DO 只透传密文，Worker/DO 不见明文 SDP；DO 分区键 `room:{githubId}` 账号隔离 |
+| 归属校验 | nodeId 归属校验（同账号才能投递/接收）+ device_token/cookie 鉴权 + 频次限流（≤5 req/s） |
 | 数据面加密 | WebRTC DataChannel 自带 DTLS；可选应用层 AES-GCM（自定义加密 key，见 Auth 文档） |
 | 工程同步加密 | 同步帧走同一 DataChannel（DTLS + 可选应用层 AES-GCM），绝不经服务器明文 |
 | 最小暴露 | 只桥本地 `/api`（127.0.0.1），绝不暴露 dsh host 端口公网 |
@@ -194,47 +194,54 @@ control       ping/pong        { kind:'control', cmd:'deepc:ping'|'deepc:pong', 
 
 ---
 
-## 6. 功能二：工程同步（工作区 + 聊天记录）
+## 6. 功能二：配置同步（+ session 迁移）
+
+> 定位修正（2026-08-21）：原「工程同步 = 工作区 + 聊天记录」已收敛为「配置同步 +
+> session 迁移」，详细方案与 D1/KV 存储偏向评估见
+> `docs/deepsea-deepc-bridge-config-sync.md`。此处保留总体语义。
 
 ### 6.1 定位
 
-登录 deepc 插件后，把本地 dsh 的**工程数据**（工作区目录 + 聊天记录）经
-`deepc-sonar-bridge` 的加密 RTC 通道**实时传输**到另一端（远端设备 / deepc 主站），
-实现「多端数据一致 / 备份 / 迁移」。
+deepc 插件的**多端一致性**对象从「工程」收窄到「配置」：
+
+| 能力 | 语义 | 时机 | 数据规模 |
+|------|------|------|---------|
+| **配置同步**（本期） | theme / 模型 / 偏好 / 插件开关跨端一致 | 登录即同步，改动即广播 | 极小（KB 级） |
+| **session 迁移**（后续） | 两 Node 在线时，某 session 聊天记录 A→B | 显式操作 | 中等（KB～MB） |
+| ~~工作区同步~~ | ❌ 移除（每 Node 本地工程各异，不跨端） | — | — |
+
+- **权威源 = D1**（`deepc_config`，worker 统一时间戳），**RTC 端到端 = 加速**（经
+  信箱信令实时广播）。两者复用既有 node 端点 + 信箱信令底座，零新增后端。
+- **时效优先级**：`last-write-wins` + worker 单调递增时间戳 + `node_id` 字典序 tie-break。
+- **冲突处理**：key 级粒度 LWW；敏感配置 E2E 加密。
 
 ### 6.2 同步对象与方向
 
-| 对象 | 内容 | 方向 |
-|------|------|------|
-| 工作区 workspace | dsh 工作区目录（文件树 + 文件内容 + 元数据） | 双向 / 单向备份 |
-| 聊天记录 sessions | 会话历史（session 元数据 + 消息流 + 附件引用） | 双向 / 单向备份 |
+| 对象 | 内容 | 方向 | 存储 |
+|------|------|------|------|
+| 配置 config | deepc 插件配置项（key-value） | 双向（LWW） | D1 `deepc_config` |
+| session 索引 | 迁移时 sessionId → 所在 Node 的索引 | 单向（迁移方向） | D1（仅索引） |
+| session 聊天记录 | 迁移时消息流（正文） | 单向（RTC 直传） | 不经服务器 |
 
-- **登录即触发**：账号绑定后（Auth D1 的 `sessions.github_id`），同账号多端自动发现、
-  建立 RTC，进入工程同步。
-- **实时传输**：新增/变更的会话、文件增量，经自动分包帧实时同步。
-
-### 6.3 工程同步帧协议（叠加在同一 DataChannel 之上）
+### 6.3 帧协议（session 迁移复用，叠加 DataChannel）
 
 ```
-sync-hello         host → peer   { txId, chunkBytes, scope:'workspace'|'sessions', total }
+sync-hello         host → peer   { txId, chunkBytes, scope:'session', total }
 sync-hello-ack     peer → host   { txId, chunkBytes }
-sync-file-meta     host → peer   { txId, path, mime, size, chunks, sha256 }
-sync-file ×N       host → peer   { txId, path, chunk, data(base64) }
-sync-file-ack      peer → host   { txId, path }
-sync-file-nack     peer → host   { txId, path, missing[] }
-sync-end           host → peer   { txId }
-sync-done          peer → host   { txId, received, failed }
+sync-file-meta     host → peer   { txId, sessionId, mime, size, chunks, sha256 }
+sync-file ×N       host → peer   { txId, sessionId, chunk, data(base64) }
+sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 ```
 
-> 与操作互联帧共用一条 DataChannel，靠 `kind` 字段路由；与旧 snapshot 帧协议同构，
-> 复用 `transfer.ts` + 可靠传输框架，仅改名 `snapshot-*` → `sync-*`。
+> 配置同步**不走帧协议**（走 D1 读写 + 信箱通知）；只有 session 迁移（大体积）复用
+> `transfer.ts` 可靠分包帧。`scope` 从 `workspace|sessions` 收窄为 `session`。
 
 ### 6.4 一致性与冲突
 
-- **增量优先**：首次全量，之后仅同步变更（chatUI 事件流 + fs.watch 工作区）。
-- **去重**：`sha256` + `mtime` 跳过未变文件，避免重复传输。
-- **冲突策略**：多端同时写时，以「本地权威 + 显式合并」为主，首版实现「本地优先 + 冲突
-  副本」即可，复杂 CRDT 延后。
+- **配置**：LWW（`updated_at` 大者赢，worker 统一时钟）+ `node_id` tie-break（见
+  config-sync 文档 §2）。
+- **session 迁移**：显式点对点、单向，天然无并发冲突；目标端已存在同 sessionId 时
+  提示用户覆盖/跳过。
 
 ---
 
@@ -244,8 +251,8 @@ sync-done          peer → host   { txId, received, failed }
 
 | 文件 | 复用点 |
 |------|--------|
-| `src/crypto.ts` | 配对码 + HKDF 派生 + AES-GCM 信令加密（两个功能共用） |
-| `src/signaling.ts` | Worker `/auth/signal/*` 密文透传信令 |
+| `src/crypto.ts` | generateConnectId(nodeId) + HKDF 派生(deriveNodeSignalKey) + AES-GCM 信令加密 |
+| `src/node-signaling.ts` | 信箱信封编解码（offer/answer 跨端契约，经 /ws/signal DO 推送） |
 | `src/heartbeat.ts` | deepc:ping/pong 探活 |
 | `src/transfer.ts` | base64 / sha256 / txId / concatBytes（自动分包工具） |
 | `src/protocol.ts` | 帧协议类型 + 常量（改造：四象限信封保留，去 snapshot 帧） |

@@ -96,8 +96,8 @@ export interface DownstreamEndFrame {
   subId: string
 }
 
-/** 私有控制命令：deepc:ping（探活请求）/ deepc:pong（探活应答）。 */
-export type ControlCmd = 'deepc:ping' | 'deepc:pong'
+/** 私有控制命令：deepc:ping（探活请求）/ deepc:pong（探活应答）/ deepc:bye（主动断开通知）。 */
+export type ControlCmd = 'deepc:ping' | 'deepc:pong' | 'deepc:bye'
 
 /**
  * 控制面心跳帧（deepc 私有通道，不经 dsh API）。

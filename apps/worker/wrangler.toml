@@ -33,11 +33,28 @@ run_worker_first = [
   "/auth/callback",
   "/auth/me",
   "/auth/logout",
-  "/auth/preferences",
   "/auth/interconnect-log",
-  "/auth/signal/put",
-  "/auth/signal/get",
+  "/auth/node/register",
+  "/auth/node/list",
+  "/auth/node/heartbeat",
+  "/auth/node/remove",
+  "/auth/device-grant",
+  "/auth/device-grant/poll",
+  "/auth/config/list",
+  "/auth/config/put",
+  "/ws/signal",
 ]
+
+# ── Durable Objects：信令房（WS 推送，方案 A）────────────────────────────
+# 同账号所有设备/主站路由到同一 DO 实例（分区键 room:{githubId}），跨连接推送信令。
+# SQLite-backed DO（Free 计划唯一支持）；Hibernation 空闲不占 CPU。
+[[durable_objects.bindings]]
+name = "SIGNAL_ROOM"
+class_name = "SignalRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SignalRoom"]
 
 # ── KV：state（防 CSRF）/ 临时口令信令（signal）/ 限流计数 ──────────────────
 # 创建：wrangler kv namespace create DEEPSEA_KV，然后把 id 填到下面
@@ -54,6 +71,11 @@ binding = "DEEPSEA_D1"
 database_name = "deepsea"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
+
+# ── Cron：审计日志 30 天自动清除（每日 0 点 UTC）───────────────────────────
+# scheduled handler 见 src/index.ts；purgeLogs 删 created_at < 30 天前的行。
+[triggers]
+crons = ["0 0 * * *"]
 
 # ── 变量（公开配置，随代码部署）────────────────────────────────────────────
 [vars]
