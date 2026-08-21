@@ -1,6 +1,6 @@
 # deepc-bridge 规划 —— 操作互联 + 工程同步
 
-> 状态：**规划定稿 · 待实现** · 本文档是 deepc 的**唯一正确方案文档**
+> 状态：**实现中（S1 底座已打通）** · 本文档是 deepc 的**唯一正确方案文档**
 > 编写：2026-08-21 · 取代旧「声纳互联」（寄生快照，`deepsea-suite-sonar-interconnect.md`）
 > 与「镜像 + 共享」双模式（`deepsea-sonar-mirror-shared-plan.md`），两者均已废弃删除
 > 关联：`deepsea-cordis-plugin-consensus.md`（官方插件 seam）· `deepsea-oauth-worker.md`（OAuth）
@@ -142,7 +142,7 @@ deepc-sonar-bridge 中间件
 ```
 deepc 主站 chatUI                    DataChannel               本地 dsh host
 ─────────────                       ───────────               ─────────────
-渲染会话列表/对话 ──API 帧──► DC ──API 帧──► toFetchHandler(ctx.apiProxy)
+渲染会话列表/对话 ──API 帧──► DC ──API 帧──► api-bridge → LocalApi
   ▲                                        └─► 命中 session.list/create/send...
   └──────────响应帧── DC ◄──响应帧──────────────┘
   下行事件流（events.mux/host）◄── server-request 帧 ── 本地事件流
@@ -152,6 +152,9 @@ deepc 主站 chatUI                    DataChannel               本地 dsh host
 - **只调稳定 API**：`session.list` / `session.create` / `session.send` / `host.describe` 等
   语义稳定的 RPC，不依赖官方 UI 结构。
 - **下行事件**：`events.mux` / `events.host` 帧回灌，chatUI 据此刷新会话状态/流式输出。
+- **本地端点（node 端）**：`api-bridge.ts` 绑定 DC，经 `LocalApi` 抽象落地——当前实现
+  `HttpLocalApi`（HTTP fetch unary + WS 下行，访问 `127.0.0.1:3080`，已端到端验证）；
+  未来切换 `toFetchHandler(ctx.apiProxy)` 直连官方网关（零网络）时仅换实现，调用方不变。
 
 ### 5.2 载体：`WebRtcApiClient extends AbstractApiClient`
 
@@ -251,8 +254,11 @@ sync-done          peer → host   { txId, received, failed }
 
 | 文件 | 改造方向 |
 |------|---------|
-| `src/index.ts` | node 端入口：注入 `ctx.apiProxy` → `toFetchHandler` → 中间件 |
-| `src/session.ts` | 底层 `RTCPeerConnection` → `node-datachannel`（headless 端点） |
+| `src/index.ts` | node 端入口：注入 RTC polyfill + re-export host 会话 API + 数据面桥；后续接 `ctx.apiProxy` → `toFetchHandler` |
+| `src/session.ts` | **零改动复用**：node 端经 `polyfill.ts` 注入 node-datachannel headless 端点（对齐浏览器 API） |
+| `src/polyfill.ts` | 新增：把 `node-datachannel/polyfill` 的 `RTCPeerConnection` 等注入 globalThis |
+| `src/local-api.ts` | 新增：`LocalApi` 抽象 + `HttpLocalApi`（fetch unary + WS 下行，访问本地 dsh host） |
+| `src/api-bridge.ts` | 新增：node 端数据面桥，DC 帧 → `LocalApi` → 回传（操作互联数据面入口） |
 | `src/client/index.ts` | browser 端：不再是「启动互联悬浮球」，改为 chatUI 引导 + 工程同步入口 |
 
 ### 7.3 删除（镜像/快照/复刻专属，本轮清理）
@@ -279,17 +285,21 @@ sync-done          peer → host   { txId, received, failed }
 
 ## 8. 落地顺序
 
-1. **底座先行**：目录改名 `deepc-bridge` + 包名 + 清理废弃文件 + 保留底座编译通过。
-2. **中间件打通**：`session.ts` 换 node-datachannel，跑通 headless ↔ 浏览器一条 DataChannel。
-3. **操作互联**：node 端接 `toFetchHandler(ctx.apiProxy)`；主站自实现 chatUI + `WebRtcApiClient`。
-4. **工程同步**：复用可靠传输框架，实现 `sync-*` 帧 + 工作区/聊天记录增量同步。
-5. **账号能力**：登录触发工程同步（Auth D1 `sessions.github_id`）+ 互联日志 + 自定义加密 key。
+1. **底座先行** ✅ 目录改名 `deepc-bridge` + 包名 + 清理废弃文件 + 保留底座编译通过。
+2. **中间件打通** ✅（node 端）`session.ts` 经 `polyfill.ts` 注入 node-datachannel，node 端
+   headless 端点 + 信令互通已验证（node↔node 端到端 PASS）；浏览器端互通随 chatUI 在 S2 落地。
+3. **操作互联** ⏳ node 端数据面桥已完成（`api-bridge.ts` + `HttpLocalApi` 端到端 PASS）；
+   下一步：主站自实现 chatUI + 浏览器端 `WebRtcApiClient` 连 node 端。
+4. **工程同步** ⏳ 复用可靠传输框架，实现 `sync-*` 帧 + 工作区/聊天记录增量同步。
+5. **账号能力** ⏳ 登录触发工程同步（Auth D1 `sessions.github_id`）+ 互联日志 + 自定义加密 key。
 
 ---
 
 ## 9. 疑点清单（待推敲）
 
-1. **node-datachannel 原生依赖**：预编译二进制覆盖情况需实测（win/mac/linux）。
+1. **node-datachannel 原生依赖** ✅ 已实测：`0.33.0` win-x64 预编译二进制正常加载，
+   `polyfill` 入口对齐浏览器 API（`RTCPeerConnection`/`RTCDataChannel` implements `globalThis.*`）。
+   mac/linux 待后续 CI 覆盖。
 2. **NAT 穿透边界**：libjuice 支持 STUN，对称 NAT 仍需 TURN —— 是否自建 TURN，还是接受边界？
 3. **`ctx.apiProxy` 精确桥接点**：确认 node 端能否拿到 `ctx.apiProxy`（inject 声明依赖），
    `toFetchHandler(apiProxy)` 是否可直接用于 DataChannel 帧 → 本地调用。

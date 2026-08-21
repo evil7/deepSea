@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // deepc-bridge build —— 产出可安装插件（node 端 + browser 端）
 //
-//   · node 端：tsc 编译 src/index.ts → dist/index.js（占 Loader entry，空 apply）
+//   · node 端：esbuild 打包 src/index.ts → dist/index.js（ESM，external node-datachannel）
 //   · browser 端：esbuild 打包 src/client/index.ts → 包装成
 //     `window.__ModuleLoader__.load({...})` 格式 → dist/deepc-bridge-client.js
 //     （dsh-client-modules 发现 dsh.client 声明后，serve 此文件并注入 __DSH_BOOT__）
@@ -34,13 +34,22 @@ function findEsbuild() {
   return 'esbuild'
 }
 
-/** 运行 tsc 编译 node 端。 */
-function buildHost() {
-  execFileSync('npx', ['tsc', '-p', 'tsconfig.build.json'], {
-    cwd: root,
-    stdio: 'inherit',
-    shell: true,
-  })
+/** 用 esbuild 打包 node 端（ESM，external node-datachannel 原生模块）。 */
+function buildNode(esbuildExe) {
+  execFileSync(
+    esbuildExe,
+    [
+      'src/index.ts',
+      '--bundle',
+      '--format=esm',
+      '--platform=node',
+      '--target=es2022',
+      '--external:node-datachannel',
+      '--external:node-datachannel/polyfill',
+      '--outfile=dist/index.js',
+    ],
+    { cwd: root, stdio: 'inherit' }
+  )
 }
 
 /** 用 esbuild 打包单文件 IIFE（可自动执行）。 */
@@ -92,8 +101,8 @@ function main() {
   const esbuildExe = findEsbuild()
 
   console.log('# deepc-bridge build')
-  console.log('# 1/2 node 端（tsc → dist/index.js）')
-  buildHost()
+  console.log('# 1/2 node 端（esbuild → dist/index.js）')
+  buildNode(esbuildExe)
 
   console.log('# 2/2 browser 端（esbuild → dist/deepc-bridge-client.js）')
   const iife = bundleClient(esbuildExe)

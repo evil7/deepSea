@@ -120,6 +120,9 @@ export type BridgeFrame =
   | DownstreamFrame
   | DownstreamEndFrame
   | ControlFrame
+  | HelloFrame
+  | HelloAckFrame
+  | ThemeStateFrame
   | SyncHelloFrame
   | SyncHelloAckFrame
   | SyncFileMetaFrame
@@ -128,6 +131,58 @@ export type BridgeFrame =
   | SyncFileNackFrame
   | SyncEndFrame
   | SyncDoneFrame
+
+// ---------------------------------------------------------------------------
+// 连接握手 + 基础信息对齐（node → chatUI）
+// ---------------------------------------------------------------------------
+
+/** 协议版本（hello/hello-ack 交换，向前兼容基准）。 */
+export const PROTOCOL_VERSION = 1
+
+/** host.describe 的响应值（对齐 host.schema.js hostDescribeValueSchema）。 */
+export interface HostInfo {
+  version: string
+  cwd: string
+  provider?: string
+  model?: string
+  attachedSessions: number
+  home: string
+  canOpenPath: boolean
+}
+
+/** 模型选择（对齐 session.models 的 current）。 */
+export interface ModelSelection {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
+/**
+ * 连接建立后的握手帧（node 端主动推送）：一次性对齐基础信息，
+ * chatUI 无需逐个 unary 即可渲染 host 元信息 / 主题 / 模型。
+ */
+export interface HelloFrame {
+  kind: 'hello'
+  protocolVersion: number
+  host: HostInfo
+  theme: unknown
+  model?: ModelSelection
+}
+
+/** 握手确认帧（chatUI → node）。 */
+export interface HelloAckFrame {
+  kind: 'hello-ack'
+  protocolVersion: number
+}
+
+/**
+ * 主题状态推送帧（node → chatUI）：连接后随 hello 或主题变更时下发。
+ * theme 为 settings 里 theme 命名空间的 value（passthrough，不深校验）。
+ */
+export interface ThemeStateFrame {
+  kind: 'theme-state'
+  theme: unknown
+}
 
 // ---------------------------------------------------------------------------
 // 工程同步帧（工作区 + 聊天记录经自动分包传输）

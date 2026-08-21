@@ -164,6 +164,10 @@ importers:
         version: 4.124.0
 
   packages/deepc-bridge:
+    dependencies:
+      node-datachannel:
+        specifier: 0.33.0
+        version: 0.33.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -945,6 +949,50 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@node-datachannel/android-arm64@0.33.0':
+    resolution: {integrity: sha512-3/Q8koe++/4X8jh5HvNH4/VTh+4XPHVAuBNZVsE9eI50tyOb9j21rxSfLJTZRK1KL16ELtD7okCMhLx7B/Lpgg==}
+    cpu: [arm64]
+    os: [android]
+
+  '@node-datachannel/darwin-arm64@0.33.0':
+    resolution: {integrity: sha512-Tfctuy/yGNTqJbp/1rS4kObSkkKirjNoSVbU8gTzSFpJuWvzqcxhOJEO7Mlq6vYxMXIdsBaXxrQz5eFQkor3KA==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@node-datachannel/darwin-x64@0.33.0':
+    resolution: {integrity: sha512-IFh3uU3RIJE8MbK1Z9DneD9n6uLK0+25F+Q8jZVcQEYN20gYtC9s0Dffbx++weKPYQcVlPtNRdooVqWfzt60EQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@node-datachannel/linux-arm64-gnu@0.33.0':
+    resolution: {integrity: sha512-IbaWEU9hK5JCCx4mYIev4xRrY9WFLIBA7DumBlN28GoMvKzhUOsWc8FbGtpojxP3dCR2wVTOaSAPntFhSDmJDg==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-arm64-musl@0.33.0':
+    resolution: {integrity: sha512-Ls8RgduLiYrg21gLc5foFfFjerrxJ5LfO7ba7Cv8GNIYiDd9EsvzcvHCy3yVP5ZAWUhRveVPpzl8kAy3yVEfRQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/linux-x64-gnu@0.33.0':
+    resolution: {integrity: sha512-z2miAZvM8tV5z1hO31DOiWd5nLWugxWOSHhq1h6uPtH4kcwlAixo1+AUpRSLqprfTB4NA0evlzKmanCemv2haQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-x64-musl@0.33.0':
+    resolution: {integrity: sha512-XMM+2VUpy2zP4/ZDdLvckPKLNUlWmof+P1K2jSLMrherVEcQGMYvPKCvrXhAsgdB+a46BR4q2bmauizO99oARw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/win32-x64-msvc@0.33.0':
+    resolution: {integrity: sha512-k12NK45DHWIb3yPBGaP7+wBYfCr8WpWW3O/+cUmveSx1M0f955bY2kP1f+6ZAKADziuOCS2Ye4tZLye9HXQrfQ==}
+    cpu: [x64]
+    os: [win32]
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -3726,6 +3774,10 @@ packages:
       react: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
       react-dom: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
 
+  node-datachannel@0.33.0:
+    resolution: {integrity: sha512-V1Igkn6UWQbcbdD4Bk7ODtUu3G+2G3LFR4fGxO+DUQqdienoHhIpmosJfMQ6ci8i07IFDhvnYn/Cpftq799msA==}
+    engines: {node: '>=18.20.0'}
+
   node-releases@2.0.53:
     resolution: {integrity: sha512-D9UOmYG3UH1V+ENW56t5QXBwJw1YEY18ruVeus89Rw+SyIgjPkCO84bRzO3uNIYosJbNwiabWVn48o3uJLjxFQ==}
     engines: {node: '>=18'}
@@ -5277,6 +5329,30 @@ snapshots:
       - supports-color
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
+    optional: true
+
+  '@node-datachannel/android-arm64@0.33.0':
+    optional: true
+
+  '@node-datachannel/darwin-arm64@0.33.0':
+    optional: true
+
+  '@node-datachannel/darwin-x64@0.33.0':
+    optional: true
+
+  '@node-datachannel/linux-arm64-gnu@0.33.0':
+    optional: true
+
+  '@node-datachannel/linux-arm64-musl@0.33.0':
+    optional: true
+
+  '@node-datachannel/linux-x64-gnu@0.33.0':
+    optional: true
+
+  '@node-datachannel/linux-x64-musl@0.33.0':
+    optional: true
+
+  '@node-datachannel/win32-x64-msvc@0.33.0':
     optional: true
 
   '@nodelib/fs.scandir@2.1.5':
@@ -7984,6 +8060,19 @@ snapshots:
     dependencies:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
+
+  node-datachannel@0.33.0:
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@node-datachannel/android-arm64': 0.33.0
+      '@node-datachannel/darwin-arm64': 0.33.0
+      '@node-datachannel/darwin-x64': 0.33.0
+      '@node-datachannel/linux-arm64-gnu': 0.33.0
+      '@node-datachannel/linux-arm64-musl': 0.33.0
+      '@node-datachannel/linux-x64-gnu': 0.33.0
+      '@node-datachannel/linux-x64-musl': 0.33.0
+      '@node-datachannel/win32-x64-msvc': 0.33.0
 
   node-releases@2.0.53: {}
 

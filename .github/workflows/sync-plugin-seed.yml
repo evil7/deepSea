@@ -58,8 +58,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 官方 deepseek-ai 讨论需个人 PAT（GITHUB_TOKEN 是 integration token，
-          # 无法读未安装 App 的外部仓库 discussions）
-          DEEPSEA_PAT: ${{ secrets.DEEPSEA_PAT }}
+
         # 脚本照常写 scripts/output/*.json，供 publish:cache 读取。
         # 仅索引官方 topic dsh-plugin（无 star 门槛 / 关键词等其它条件）；
         # 并发 6 + 全局限速 30 req/min。
