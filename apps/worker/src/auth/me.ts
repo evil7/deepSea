@@ -9,6 +9,13 @@ import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys } from "../lib/kv"
 import { parseCookies } from "../lib/cookies"
 import { decryptToken } from "../lib/crypto"
+import { verifyToken } from "../lib/github"
+import {
+  deleteUser,
+  deleteUserSessions,
+  getSession,
+  getUser,
+} from "../lib/d1"
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -20,58 +27,120 @@ function json(data: unknown, status = 200): Response {
   })
 }
 
+/** 统一用户档案字段（D1 行 snake_case / KV JSON camelCase 归一化）。 */
+interface UserProfile {
+  login: string
+  email: string | null
+  avatar_url: string
+  name: string | null
+  bio: string | null
+  html_url: string
+  followers: number
+  following: number
+  public_repos: number
+  tokenEnc: string
+}
+
 export async function handleMe(request: Request, env: Env): Promise<Response> {
   const cookies = parseCookies(request.headers.get("Cookie"))
   const sessionId = cookies[SESSION_COOKIE]
   if (!sessionId) return json({ authed: false })
 
-  const raw = await env.DEEPSEA_KV.get(kvKeys.session(sessionId))
-  if (!raw) return json({ authed: false })
-
-  let userId: string
-  try {
-    userId = (JSON.parse(raw) as { userId: string }).userId
-  } catch {
-    return json({ authed: false })
-  }
-
-  const userRaw = await env.DEEPSEA_KV.get(kvKeys.user(userId))
-  if (!userRaw) return json({ authed: false })
-
-  try {
-    const user = JSON.parse(userRaw) as {
-      login: string
-      email: string | null
-      avatar_url: string
-      tokenEnc: string
-      name?: string | null
-      bio?: string | null
-      html_url?: string
-      followers?: number
-      following?: number
-      public_repos?: number
+  // 1. 会话：D1 优先，回退 KV（P1 双写过渡，旧 KV-only 会话仍可用）
+  let githubId: number
+  const d1Session = await getSession(env, sessionId)
+  if (d1Session) {
+    githubId = d1Session.github_id
+  } else {
+    const raw = await env.DEEPSEA_KV.get(kvKeys.session(sessionId))
+    if (!raw) return json({ authed: false })
+    try {
+      githubId = Number((JSON.parse(raw) as { userId: string }).userId)
+    } catch {
+      return json({ authed: false })
     }
-    // 解密 token 供前端 octokit 直调（不落盘，仅本次响应）
-    const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
-    const token = await decryptToken(encKey, user.tokenEnc)
-    if (!token) return json({ authed: false })
-    return json({
-      authed: true,
-      user: {
-        id: userId,
-        login: user.login,
-        email: user.email,
-        avatar_url: user.avatar_url,
-        name: user.name ?? null,
-        bio: user.bio ?? null,
-        html_url: user.html_url ?? `https://github.com/${user.login}`,
-        followers: user.followers ?? 0,
-        following: user.following ?? 0,
-        public_repos: user.public_repos ?? 0,
-      },
-      token,
-    })
-  } catch {
-    return json({ authed: false })
   }
+
+  // 2. 用户：D1 优先，回退 KV
+  let profile: UserProfile
+  const d1User = await getUser(env, githubId)
+  if (d1User) {
+    profile = {
+      login: d1User.login,
+      email: d1User.email,
+      avatar_url: d1User.avatar_url,
+      name: d1User.name,
+      bio: d1User.bio,
+      html_url: d1User.html_url,
+      followers: d1User.followers,
+      following: d1User.following,
+      public_repos: d1User.public_repos,
+      tokenEnc: d1User.token_enc,
+    }
+  } else {
+    const userRaw = await env.DEEPSEA_KV.get(kvKeys.user(String(githubId)))
+    if (!userRaw) return json({ authed: false })
+    try {
+      const u = JSON.parse(userRaw) as {
+        login: string
+        email: string | null
+        avatar_url: string
+        tokenEnc: string
+        name?: string | null
+        bio?: string | null
+        html_url?: string
+        followers?: number
+        following?: number
+        public_repos?: number
+      }
+      profile = {
+        login: u.login,
+        email: u.email,
+        avatar_url: u.avatar_url,
+        name: u.name ?? null,
+        bio: u.bio ?? null,
+        html_url: u.html_url ?? `https://github.com/${u.login}`,
+        followers: u.followers ?? 0,
+        following: u.following ?? 0,
+        public_repos: u.public_repos ?? 0,
+        tokenEnc: u.tokenEnc,
+      }
+    } catch {
+      return json({ authed: false })
+    }
+  }
+
+  // 3. 解密 token 供前端 octokit 直调（不落盘，仅本次响应）
+  const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
+  const token = await decryptToken(encKey, profile.tokenEnc)
+  if (!token) return json({ authed: false })
+
+  // 4. token 有效性校验：GitHub 明确拒绝（撤销/过期）时清理 D1 + KV 缓存 + 会话，
+  // 返回 tokenExpired 供前端清 sessionStorage 并引导重新授权；网络错误降级
+  // 视为有效（避免 GitHub 抖动误清登录态）。
+  const verify = await verifyToken(token)
+  if (verify === "invalid") {
+    await deleteUser(env, githubId)
+    await deleteUserSessions(env, githubId)
+    await env.DEEPSEA_KV.delete(kvKeys.user(String(githubId)))
+    await env.DEEPSEA_KV.delete(kvKeys.session(sessionId))
+    return json({ authed: false, tokenExpired: true })
+  }
+
+  return json({
+    authed: true,
+    user: {
+      id: String(githubId),
+      login: profile.login,
+      email: profile.email,
+      avatar_url: profile.avatar_url,
+      name: profile.name,
+      bio: profile.bio,
+      html_url: profile.html_url,
+      followers: profile.followers,
+      following: profile.following,
+      public_repos: profile.public_repos,
+    },
+    token,
+  })
 }

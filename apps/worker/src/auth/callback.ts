@@ -9,6 +9,8 @@
 
 import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys, sessionTtl } from "../lib/kv"
+import { createSession, upsertUser } from "../lib/d1"
+import { getClientIp } from "../lib/ratelimit"
 import { serializeCookie } from "../lib/cookies"
 import { encryptToken } from "../lib/crypto"
 import { exchangeCode, fetchGitHubUser } from "../lib/github"
@@ -57,6 +59,8 @@ export async function handleCallback(
   // token 加密缓存（避免重复请求 GitHub）；无 TOKEN_ENC_KEY 时退化为明文存 KV 的调用约定（生产必须配置）
   const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
   const tokenEnc = await encryptToken(encKey, accessToken)
+
+  // 双写（P1）：KV user 保留（回退兜底）+ D1 users 表（关系型主存储）
   await env.DEEPSEA_KV.put(
     kvKeys.user(String(user.id)),
     JSON.stringify({
@@ -73,6 +77,19 @@ export async function handleCallback(
       updatedAt: Date.now(),
     })
   )
+  await upsertUser(env, {
+    githubId: user.id,
+    login: user.login,
+    email: user.email,
+    avatar_url: user.avatar_url,
+    name: user.name,
+    bio: user.bio,
+    html_url: user.html_url,
+    followers: user.followers,
+    following: user.following,
+    public_repos: user.public_repos,
+    tokenEnc,
+  })
 
   // 签发会话
   const sessionId = crypto.randomUUID()
@@ -82,6 +99,14 @@ export async function handleCallback(
     JSON.stringify({ userId: String(user.id), createdAt: Date.now() }),
     { expirationTtl: ttl }
   )
+  // 双写（P1）：D1 sessions 表（支持多端会话 + 审计）
+  await createSession(env, {
+    id: sessionId,
+    githubId: user.id,
+    expiresAt: Date.now() + ttl * 1000,
+    userAgent: request.headers.get("User-Agent"),
+    ip: getClientIp(request),
+  })
 
   const cookie = serializeCookie(SESSION_COOKIE, sessionId, {
     maxAge: ttl,

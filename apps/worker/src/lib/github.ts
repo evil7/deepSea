@@ -95,3 +95,32 @@ export async function fetchGitHubUser(
     public_repos: data.public_repos ?? 0,
   }
 }
+
+/**
+ * 校验 access_token 是否仍被 GitHub 认可（/auth/me 用，防「token 已撤销但 KV
+ * 缓存仍在」的假登录态）。
+ *
+ * 三态结果，关键区分「真失效」与「网络故障」：
+ *   · 'valid'   —— GitHub 明确认可 token（2xx）
+ *   · 'invalid' —— GitHub 明确拒绝（401/403：token 已撤销/过期/权限不足）
+ *   · 'unknown' —— 网络错误/超时等无法判定，**降级视为有效**（避免误清登录态）
+ */
+export async function verifyToken(
+  accessToken: string
+): Promise<"valid" | "invalid" | "unknown"> {
+  let res: Response
+  try {
+    res = await fetch(GITHUB_USER_ENDPOINT, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "deepsea",
+      },
+    })
+  } catch {
+    return "unknown"
+  }
+  if (res.status === 401 || res.status === 403) return "invalid"
+  if (res.ok) return "valid"
+  return "unknown"
+}

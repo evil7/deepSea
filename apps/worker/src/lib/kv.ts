@@ -12,7 +12,15 @@ export const kvKeys = {
   state: (id: string) => `state:${id}`,
   session: (id: string) => `session:${id}`,
   user: (githubId: string) => `user:${githubId}`,
+  /** WebRTC 信令（密文透传）：signal:{roomId}:{kind}，一次性消费 */
+  signal: (roomId: string, kind: "offer" | "answer") =>
+    `signal:${roomId}:${kind}`,
 } as const
+
+/** 信令 TTL（秒）：临时口令有效期 60s（对齐 host 端倒计时与一次性消费语义） */
+export function signalTtl(env: Env): number {
+  return Number(env.SIGNAL_TTL_SECONDS ?? 60)
+}
 
 /** 会话 TTL（秒） */
 export function sessionTtl(env: Env): number {

@@ -3,4 +3,4 @@
 GITHUB_CLIENT_ID=your_github_oauth_client_id
 GITHUB_CLIENT_SECRET=your_github_oauth_client_secret
 TOKEN_ENC_KEY=change-me-to-a-long-random-secret
-DEEPSEA_BASE=http://localhost:8787
+DEEPSEA_BASE=http://127.0.0.1:5174

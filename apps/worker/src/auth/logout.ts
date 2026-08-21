@@ -5,6 +5,7 @@
 import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys } from "../lib/kv"
 import { parseCookies, serializeCookie } from "../lib/cookies"
+import { deleteSession } from "../lib/d1"
 
 export async function handleLogout(
   request: Request,
@@ -13,6 +14,8 @@ export async function handleLogout(
   const cookies = parseCookies(request.headers.get("Cookie"))
   const sessionId = cookies[SESSION_COOKIE]
   if (sessionId) {
+    // 双删：D1 sessions 表 + KV 会话（P1 过渡，保证两处都清干净）
+    await deleteSession(env, sessionId)
     await env.DEEPSEA_KV.delete(kvKeys.session(sessionId))
   }
 

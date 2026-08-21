@@ -33,13 +33,27 @@ run_worker_first = [
   "/auth/callback",
   "/auth/me",
   "/auth/logout",
+  "/auth/preferences",
+  "/auth/interconnect-log",
+  "/auth/signal/put",
+  "/auth/signal/get",
 ]
 
-# ── KV：state（防 CSRF）/ 会话 / 用户档案（token 加密缓存）──────────────────
+# ── KV：state（防 CSRF）/ 临时口令信令（signal）/ 限流计数 ──────────────────
 # 创建：wrangler kv namespace create DEEPSEA_KV，然后把 id 填到下面
+# 用户/会话/profile 已迁 D1（见 [[d1_databases]]），KV 不再存 user/session。
 [[kv_namespaces]]
 binding = "DEEPSEA_KV"
 id = "a282b972ccde4838ac2bb101f5fb6e72"
+
+# ── D1：用户 / 会话 / profile（关系型，支撑多端会话 + 审计 + profile 页）────
+# 上线前：wrangler d1 create deepsea 拿到真实 database_id 替换占位 UUID。
+# 本地开发：wrangler d1 migrations apply deepsea --local 应用迁移。
+[[d1_databases]]
+binding = "DEEPSEA_D1"
+database_name = "deepsea"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
 
 # ── 变量（公开配置，随代码部署）────────────────────────────────────────────
 [vars]
