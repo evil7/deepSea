@@ -7,7 +7,6 @@ import {
   Radio,
   RefreshCw,
   ShieldCheck,
-  Star,
 } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 
@@ -133,76 +132,76 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
   const slides = isMobile
     ? [heroSlide]
     : [
-        heroSlide,
-        {
-          // 万物皆插件：原第三屏（核心能力）上移到第二屏；轻雾遮罩
-          id: "dsh-ecosystem",
-          label: "万物皆插件",
-          overlayClassName: "bg-slate-950/40 backdrop-blur-[2px]",
-          node: <Features active={seaState === "deep"} />,
-        },
-            {
-              // 插件精选：原第二屏移到第三屏；中雾遮罩
-              id: "dsh-curated",
-              label: "插件精选",
-              overlayClassName: "bg-slate-950/55 backdrop-blur-md",
-              node: <PluginPreview />,
-            },
-            {
-              // 讨论交流：官方 discussions 最热/最新帖子（GraphQL 抓取）；深雾遮罩
-              id: "dsh-community",
-              label: "讨论交流",
-              overlayClassName: "bg-slate-950/65 backdrop-blur-md",
-              node: <CommunitySlide />,
-            },
-            {
-              // 深海套装：占位（后续提供 deepsea 主题/插件管理/多端互联）；浓雾遮罩
-              id: "dsh-deepsea-kit",
-              label: "深海套装",
-              overlayClassName: "bg-slate-950/75 backdrop-blur-lg",
-              node: (
-                <ComingSoonSlide
-                  eyebrow="05 · DEEPSEA KIT"
-                  title="深海套装"
-                  description="把 deepSea 装进口袋：一套 deepc-bridge 组合包，搞定远程控制、工程同步与插件管理。"
-                  items={[
-                    {
-                      id: "bridge",
-                      icon: Radio,
-                      title: "操作互联",
-                      description:
-                        "deepc 主站自实现 chatUI，经 deepc-sonar-bridge 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
-                      tag: "bridge",
-                    },
-                    {
-                      id: "sync",
-                      icon: RefreshCw,
-                      title: "工程同步",
-                      description:
-                        "登录后把本地工作区 + 聊天记录经同一加密 RTC 通道实时传输，多端数据一致、备份与迁移。",
-                      tag: "sync",
-                    },
-                    {
-                      id: "manage",
-                      icon: Package,
-                      title: "插件管理",
-                      description:
-                        "本地管理点注入 dsh 设置页，异步执行安装/卸载/更新与安全审计，插件与主题共用一个设置页，多 profile 一站式管理。",
-                      tag: "deepc",
-                    },
-                    {
-                      id: "security",
-                      icon: ShieldCheck,
-                      title: "安全护栏",
-                      description:
-                        "沙箱命名空间映射白名单、动态安全路径、危险操作二次验证与审计日志，同步密钥自协商派生不出设备。",
-                      tag: "security",
-                    },
-                  ]}
-                />
-              ),
-            },
-        ]
+      heroSlide,
+      {
+        // 万物皆插件：原第三屏（核心能力）上移到第二屏；轻雾遮罩
+        id: "dsh-ecosystem",
+        label: "万物皆插件",
+        overlayClassName: "bg-slate-950/40 backdrop-blur-[2px]",
+        node: <Features active={seaState === "deep"} />,
+      },
+      {
+        // 插件精选：原第二屏移到第三屏；中雾遮罩
+        id: "dsh-curated",
+        label: "插件精选",
+        overlayClassName: "bg-slate-950/55 backdrop-blur-md",
+        node: <PluginPreview />,
+      },
+      {
+        // 讨论交流：官方 discussions 最热/最新帖子（GraphQL 抓取）；深雾遮罩
+        id: "dsh-community",
+        label: "讨论交流",
+        overlayClassName: "bg-slate-950/65 backdrop-blur-md",
+        node: <CommunitySlide />,
+      },
+      {
+        // 深海套装：占位（后续提供 deepsea 主题/插件管理/多端互联）；浓雾遮罩
+        id: "dsh-deepsea-kit",
+        label: "深海套装",
+        overlayClassName: "bg-slate-950/75 backdrop-blur-lg",
+        node: (
+          <ComingSoonSlide
+            eyebrow="05 · DEEPSEA KIT"
+            title="深海套装"
+            description="把 deepSea 装进口袋：一套 deepc-bridge 组合包，搞定远程控制、工程同步与插件管理。"
+            items={[
+              {
+                id: "bridge",
+                icon: Radio,
+                title: "操作互联",
+                description:
+                  "deepc 主站自实现 chatUI，经 deepc-sonar-bridge 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
+                tag: "bridge",
+              },
+              {
+                id: "sync",
+                icon: RefreshCw,
+                title: "工程同步",
+                description:
+                  "登录后把本地工作区 + 聊天记录经同一加密 RTC 通道实时传输，多端数据一致、备份与迁移。",
+                tag: "sync",
+              },
+              {
+                id: "manage",
+                icon: Package,
+                title: "插件管理",
+                description:
+                  "本地管理点注入 dsh 设置页，异步执行安装/卸载/更新与安全审计，插件与主题共用一个设置页，多 profile 一站式管理。",
+                tag: "deepc",
+              },
+              {
+                id: "security",
+                icon: ShieldCheck,
+                title: "安全护栏",
+                description:
+                  "沙箱命名空间映射白名单、动态安全路径、危险操作二次验证与审计日志，同步密钥自协商派生不出设备。",
+                tag: "security",
+              },
+            ]}
+          />
+        ),
+      },
+    ]
 
   return (
     <>
@@ -233,7 +232,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
           <div className="mx-auto flex max-w-7xl items-center justify-between px-4 text-sm text-white/70 sm:px-6">
             <p>deepSea · DeepSeek Harness 插件生态聚合站</p>
             <a href="https://github.com/evil7/deepSea" target="_blank" rel="noopener noreferrer">
-              <p className="font-mono">evil7/deepSea</p><Star /><p>{123}</p>
+              <p className="font-mono">evil7/deepSea<img src="https://img.shields.io/github/stars/evil7/deepSea.svg?style=social&label=Star" alt="GitHub stars" className="ml-2 inline-block h-4 w-auto" /></p>
             </a>
           </div>
         </footer>
