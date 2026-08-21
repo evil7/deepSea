@@ -1,0 +1,312 @@
+# deepc-bridge 规划 —— 操作互联 + 工程同步
+
+> 状态：**规划定稿 · 待实现** · 本文档是 deepc 的**唯一正确方案文档**
+> 编写：2026-08-21 · 取代旧「声纳互联」（寄生快照，`deepsea-suite-sonar-interconnect.md`）
+> 与「镜像 + 共享」双模式（`deepsea-sonar-mirror-shared-plan.md`），两者均已废弃删除
+> 关联：`deepsea-cordis-plugin-consensus.md`（官方插件 seam）· `deepsea-oauth-worker.md`（OAuth）
+> · `deepsea-auth-migration-evaluation.md`（Auth/D1）
+
+---
+
+## 1. 一句话定位
+
+**deepc 只做一个本地插件 + 一个远程 RTC 通信中间件**：
+
+- 插件包名 **`deepc-bridge`**（目录 `packages/deepc-bridge`），是挂到 dsh host 的 Cordis 插件，
+  未来还承载插件管理、主题管理等能力注入（故不叫 sonar）。
+- 插件内部的核心通信底座是 **`deepc-sonar-bridge` 中间件**：安全加密、自动分包、远程 RTC
+  通信（NodeRTC-WebRTC 实现，即 node-datachannel headless 端点）。
+- 在中间件之上实现**两个语义正交的功能**：
+
+| 功能 | 语义 | 一句话 |
+|------|------|--------|
+| **操作互联** | 远程控制 | deepc 主站**自实现 chatUI**，经加密 RTC 通道调本地 dsh host API |
+| **工程同步** | 数据迁移/备份 | 登录后，把本地**工作区 + 聊天记录**经同一加密 RTC 通道实时传输 |
+
+**核心原则**：操作互联靠「自实现 chatUI + 只调稳定 API」隔离官方前端变动风险；
+工程同步靠「同一中间件 + 自动分包」复用全部安全底座。两者**共用同一套
+`deepc-sonar-bridge` 底座**（信令 / 加密 / 配对 / 探活 / 帧协议 / 可靠分包）。
+
+---
+
+## 2. 为什么推翻旧方案（镜像 / 快照 / 复刻）
+
+| 旧方案 | 核心问题 | 处置 |
+|--------|---------|------|
+| 寄生快照（Plan B，`suite-sonar-interconnect`） | 需要 SW 静态壳 + 路径重写 + snapshot 实时流 + on-demand 回源，四层复杂度 | ❌ 废弃 |
+| 镜像 Mirror（抓 DOM 树 + CSS） | 受控组件 native setter、坐标归一化、循环防环、Canvas/Shadow DOM 边界，永远修不完 | ❌ 废弃 |
+| 复刻官方 dsh 前端（零走样） | 官方破坏性更新 / 布局接口变动 → 零维护承诺落空 | ❌ 废弃 |
+
+**新方案的隔离思路**：不直播像素、不复刻 DOM、不寄生快照。deepc 主站**自己写一个 chatUI**
+（渲染会话列表 + 对话流 + 发送消息），它只调用本地 dsh host 的**稳定 API**（`session.list` /
+`session.create` / `session.send` / `llm.*` 等），接触面收敛到「API 契约 + RTC 通道」两个
+稳定底座。官方前端怎么改、布局怎么变，对 chatUI **零影响**。
+
+---
+
+## 3. 技术路线：NodeRTC-WebRTC（node-datachannel）
+
+### 3.1 选型结论
+
+本地 dsh host 是 Node 进程，deepc 插件（node 端）需要**无浏览器**的 WebRTC 端点：
+
+| 候选 | 结论 |
+|------|------|
+| **node-datachannel** | ✅ **主线**。libdatachannel（C++，MPL-2.0）的 Node.js 绑定，headless WebRTC 端点 |
+| PeerJS | ⚠️ 备选。自带 broker，但信令已自建（worker `/auth/signal/*`），徒增部署 |
+| golang 插件 | 📋 中长期。能力最强，但需确认官方运行时是否允许非 JS 进程 |
+
+### 3.2 node-datachannel 关键事实
+
+- **API 与浏览器对齐**：`PeerConnection`（`createPeerConnection` / `setLocalDescription` /
+  `setRemoteDescription` / `onLocalCandidate`）+ `DataChannel`（`createDataChannel` /
+  `onMessage` / `send`），迁移成本低。
+- **ICE backend = libjuice**：自带 STUN/TURN，`iceServers` 配置格式与浏览器一致
+  （`stun:stun.l.google.com:19302`）。
+- **DataChannel 可靠性**：`ordered` + `reliable`（默认）可配，可靠有序是工程同步的基线。
+- **预编译二进制**：win/mac/linux × x64/arm64 预编译，`pnpm install` 即装，无编译链。
+- **与浏览器互通**：标准 SCTP/DTLS/UDP 协议栈，与 Chromium/Firefox/Safari 互通。
+
+### 3.3 两端进程模型
+
+```
+[本地 dsh host 进程 (Node)]
+   └─ deepc-bridge node 端 (Cordis 插件)
+        ├─ ctx.apiProxy（dsh 本地功能网关，官方 seam）
+        ├─ toFetchHandler(ctx.apiProxy) → 本地 API 处理器
+        ├─ node-datachannel PeerConnection（headless 端点）
+        │     └─ DataChannel（deepc-sonar-bridge 帧）
+        └─ 信令客户端 → worker /auth/signal/*（密文透传）
+
+[远端 deepc 主站 (浏览器)]
+   └─ 自实现 chatUI（React）
+        ├─ RTCPeerConnection（浏览器端点）
+        └─ 信令客户端 → worker /auth/signal/*
+```
+
+**关键桥接点**：`toFetchHandler(ctx.apiProxy)` 把官方 API 网关变成「本地 fetch handler」，
+远端 chatUI 的 API 调用经 DataChannel 帧回本地命中该 handler，响应原路返回。这正是官方
+`InProcessApiClient` 的「transport 换成 DataChannel」变体，符合 `AbstractApiClient` 正统
+扩展点（见 `deepsea-cordis-plugin-consensus.md` §4）。
+
+---
+
+## 4. 核心中间件：deepc-sonar-bridge
+
+> 一个「安全加密 + 自动分包 + 远程 RTC 通信」的复用底座，两个功能都建立在它之上。
+
+### 4.1 职责分层
+
+```
+deepc-sonar-bridge 中间件
+├── 传输层 transport     —— node-datachannel ↔ 浏览器 RTCPeerConnection 的 DataChannel
+├── 安全层 security      —— 配对码派生 + AES-GCM 信令加密 + 应用层数据加密
+├── 分包层 framing       —— 大文件/长记录自动分块 + SHA-256 校验 + ACK/NACK + 乱序还原
+├── 会话层 session       —— 配对/信令交换/探活(deepc:ping·pong)/连接生命周期
+└── 应用帧 application   —— 操作互联帧（API 调用）+ 工程同步帧（数据迁移）
+```
+
+### 4.2 安全模型
+
+| 项 | 机制 |
+|----|------|
+| 临时口令派生 | `roomId = HKDF(口令)`（KV 键）、`signalKey = HKDF(口令)`（AES-GCM 加密 SDP） |
+| 信令保密 | KV 只存密文，Worker 不见明文口令/SDP；`get` 一次性消费（读后即删） |
+| 口令防暴力 | 8 位（32^8 ≈ 1.1e12）+ 60s 失效 + 错误限流（60min/5 次）+ 频次限流（≤5 req/s） |
+| 数据面加密 | WebRTC DataChannel 自带 DTLS；可选应用层 AES-GCM（自定义加密 key，见 Auth 文档） |
+| 工程同步加密 | 同步帧走同一 DataChannel（DTLS + 可选应用层 AES-GCM），绝不经服务器明文 |
+| 最小暴露 | 只桥本地 `/api`（127.0.0.1），绝不暴露 dsh host 端口公网 |
+
+### 4.3 自动分包（工程同步的关键底座）
+
+工程同步会传输**工作区文件 + 长聊天记录**，可能数百 KB～数 MB，DataChannel 单消息
+有上限（SCTP 单消息理论 ~256KB，实践 16~64KB 更稳），必须**自动分包**：
+
+- **分块**：按 `CHUNK_BYTES = 16KB` 切块，逐块 `base64`（`transfer.ts` 已有
+  `bytesToBase64` / `concatBytes`）。
+- **会话边界**：`txId` 隔离新旧批次帧串扰。
+- **校验**：每文件 `sha256Hex`，收齐后比对。
+- **确认/重发**：`file-ack` / `file-nack(missing[])`，`MAX_NACK_ROUNDS = 3` 限轮防死循环。
+- **乱序还原**：slot 数组按标号落位，天然支持乱序。
+- **背压**：`waitForDrain` 避免发送端打满 SCTP buffer。
+
+> 该能力由旧 `snapshot-sender.ts` / `snapshot-receiver.ts` 的可靠传输框架**直接复用改造**，
+> payload 从「前端静态资源」换成「工作区 + 聊天记录」字节。
+
+---
+
+## 5. 功能一：操作互联（远程控制 · 自实现 chatUI）
+
+### 5.1 拓扑：chatUI → RTC → 本地 API
+
+```
+deepc 主站 chatUI                    DataChannel               本地 dsh host
+─────────────                       ───────────               ─────────────
+渲染会话列表/对话 ──API 帧──► DC ──API 帧──► toFetchHandler(ctx.apiProxy)
+  ▲                                        └─► 命中 session.list/create/send...
+  └──────────响应帧── DC ◄──响应帧──────────────┘
+  下行事件流（events.mux/host）◄── server-request 帧 ── 本地事件流
+```
+
+- **chatUI 自实现**：不复刻官方前端，deepc 主站自己渲染「会话树 + 消息流 + 输入框」。
+- **只调稳定 API**：`session.list` / `session.create` / `session.send` / `host.describe` 等
+  语义稳定的 RPC，不依赖官方 UI 结构。
+- **下行事件**：`events.mux` / `events.host` 帧回灌，chatUI 据此刷新会话状态/流式输出。
+
+### 5.2 载体：`WebRtcApiClient extends AbstractApiClient`
+
+官方 `AbstractApiClient` 持有全部协议不变量（rpcId mint、四象限信封 wrap/unwrap、zod 解析、
+SSE 帧解码），平台差异只在 `doFetch` + `openMux` / `openHost`。deepc 自实现 chatUI 直接
+继承它，把 transport 换成 DataChannel：
+
+```ts
+class WebRtcApiClient extends AbstractApiClient {
+  protected doFetch(input: URL, init?: RequestInit): Promise<Response> {
+    return this.dataChannelUnary(input, init)   // 发 (method, payload, rpcId) 帧，等 server-response
+  }
+  protected override openMux(...) { return this.dataChannelStream('mux', ...) }
+  protected override openHost(...) { return this.dataChannelStream('host', ...) }
+}
+```
+
+- 协议不变量全交基类，只写「DataChannel 传输」一个 aspect，无全局副作用、无 WS 语义复刻。
+- 相比旧 monkey-patch（patch `window.fetch` / `window.WebSocket`），**无黑屏风险**、无复刻负担。
+
+### 5.3 操作互联帧协议（叠加在 DataChannel 之上）
+
+```
+unary         chatUI → host    { kind:'unary', rpcId, method, payload }
+unary-result  host → chatUI    { kind:'unary-result', rpcId, result }
+subscribe     chatUI → host    { kind:'subscribe', subId, stream:'mux'|'host' }
+downstream    host → chatUI    { kind:'downstream', subId, envelope:ServerRequest }
+downstream-end host → chatUI   { kind:'downstream-end', subId }
+control       ping/pong        { kind:'control', cmd:'deepc:ping'|'deepc:pong', seq, ts }
+```
+
+### 5.4 并发与权限
+
+- **会话隔离**：每个远端连接独立会话上下文，调用序列互不可见。
+- **并发安全**：本地 API 调用串行化或按资源加锁（多人同时 `session.create` 幂等/有序）。
+- **权限审计**：复用 `interconnect_log`；敏感操作（删会话、改凭据）二次验证。
+
+---
+
+## 6. 功能二：工程同步（工作区 + 聊天记录）
+
+### 6.1 定位
+
+登录 deepc 插件后，把本地 dsh 的**工程数据**（工作区目录 + 聊天记录）经
+`deepc-sonar-bridge` 的加密 RTC 通道**实时传输**到另一端（远端设备 / deepc 主站），
+实现「多端数据一致 / 备份 / 迁移」。
+
+### 6.2 同步对象与方向
+
+| 对象 | 内容 | 方向 |
+|------|------|------|
+| 工作区 workspace | dsh 工作区目录（文件树 + 文件内容 + 元数据） | 双向 / 单向备份 |
+| 聊天记录 sessions | 会话历史（session 元数据 + 消息流 + 附件引用） | 双向 / 单向备份 |
+
+- **登录即触发**：账号绑定后（Auth D1 的 `sessions.github_id`），同账号多端自动发现、
+  建立 RTC，进入工程同步。
+- **实时传输**：新增/变更的会话、文件增量，经自动分包帧实时同步。
+
+### 6.3 工程同步帧协议（叠加在同一 DataChannel 之上）
+
+```
+sync-hello         host → peer   { txId, chunkBytes, scope:'workspace'|'sessions', total }
+sync-hello-ack     peer → host   { txId, chunkBytes }
+sync-file-meta     host → peer   { txId, path, mime, size, chunks, sha256 }
+sync-file ×N       host → peer   { txId, path, chunk, data(base64) }
+sync-file-ack      peer → host   { txId, path }
+sync-file-nack     peer → host   { txId, path, missing[] }
+sync-end           host → peer   { txId }
+sync-done          peer → host   { txId, received, failed }
+```
+
+> 与操作互联帧共用一条 DataChannel，靠 `kind` 字段路由；与旧 snapshot 帧协议同构，
+> 复用 `transfer.ts` + 可靠传输框架，仅改名 `snapshot-*` → `sync-*`。
+
+### 6.4 一致性与冲突
+
+- **增量优先**：首次全量，之后仅同步变更（chatUI 事件流 + fs.watch 工作区）。
+- **去重**：`sha256` + `mtime` 跳过未变文件，避免重复传输。
+- **冲突策略**：多端同时写时，以「本地权威 + 显式合并」为主，首版实现「本地优先 + 冲突
+  副本」即可，复杂 CRDT 延后。
+
+---
+
+## 7. 复用 / 改造 / 删除清单（现状 → deepc-bridge）
+
+### 7.1 保留复用（确定性底座，随目录改名）
+
+| 文件 | 复用点 |
+|------|--------|
+| `src/crypto.ts` | 配对码 + HKDF 派生 + AES-GCM 信令加密（两个功能共用） |
+| `src/signaling.ts` | Worker `/auth/signal/*` 密文透传信令 |
+| `src/heartbeat.ts` | deepc:ping/pong 探活 |
+| `src/transfer.ts` | base64 / sha256 / txId / concatBytes（自动分包工具） |
+| `src/protocol.ts` | 帧协议类型 + 常量（改造：四象限信封保留，去 snapshot 帧） |
+
+### 7.2 改造复用（保留文件、重写内部）
+
+| 文件 | 改造方向 |
+|------|---------|
+| `src/index.ts` | node 端入口：注入 `ctx.apiProxy` → `toFetchHandler` → 中间件 |
+| `src/session.ts` | 底层 `RTCPeerConnection` → `node-datachannel`（headless 端点） |
+| `src/client/index.ts` | browser 端：不再是「启动互联悬浮球」，改为 chatUI 引导 + 工程同步入口 |
+
+### 7.3 删除（镜像/快照/复刻专属，本轮清理）
+
+| 文件 | 废弃原因 |
+|------|---------|
+| `src/client-bridge.ts` | monkey-patch `fetch`/`WebSocket`（寄生快照专属） |
+| `src/inject.ts` | 快照引导脚本（document.write 重放） |
+| `src/relay.ts` | 本地同源重放器（快照方案） |
+| `src/snapshot-sender.ts` | 快照发送（静态资源流） |
+| `src/snapshot-receiver.ts` | 快照接收（静态资源流） |
+| `src/host-bootstrap.ts` | 悬浮球 UI（镜像/快照入口） |
+| `poc/`（rtc-datachannel.html 等） | POC 调试资产 |
+| `apps/web/public/deepc/{inject.js,host-bootstrap.js}` | 快照静态产物 |
+
+### 7.4 目录与包名变更
+
+- 目录：`packages/deepc` → **`packages/deepc-bridge`**
+- 包名：`@deepsea/deepc` → **`@deepsea/deepc-bridge`**
+- 描述：从「声纳互联 bridge（寄生式透明桥接）」→「deepc 本地插件 + 远程 RTC 通信中间件
+  （操作互联 + 工程同步）」
+
+---
+
+## 8. 落地顺序
+
+1. **底座先行**：目录改名 `deepc-bridge` + 包名 + 清理废弃文件 + 保留底座编译通过。
+2. **中间件打通**：`session.ts` 换 node-datachannel，跑通 headless ↔ 浏览器一条 DataChannel。
+3. **操作互联**：node 端接 `toFetchHandler(ctx.apiProxy)`；主站自实现 chatUI + `WebRtcApiClient`。
+4. **工程同步**：复用可靠传输框架，实现 `sync-*` 帧 + 工作区/聊天记录增量同步。
+5. **账号能力**：登录触发工程同步（Auth D1 `sessions.github_id`）+ 互联日志 + 自定义加密 key。
+
+---
+
+## 9. 疑点清单（待推敲）
+
+1. **node-datachannel 原生依赖**：预编译二进制覆盖情况需实测（win/mac/linux）。
+2. **NAT 穿透边界**：libjuice 支持 STUN，对称 NAT 仍需 TURN —— 是否自建 TURN，还是接受边界？
+3. **`ctx.apiProxy` 精确桥接点**：确认 node 端能否拿到 `ctx.apiProxy`（inject 声明依赖），
+   `toFetchHandler(apiProxy)` 是否可直接用于 DataChannel 帧 → 本地调用。
+4. **node 端进程模型**：headless 端点跑在 dsh host Node 进程内（Cordis 插件），还是独立
+   Node 进程经 IPC 接 `ctx.apiProxy`？
+5. **工程同步触发**：登录即全量同步 vs 手动触发？首次全量 + 增量，还是纯增量？
+6. **工程同步粒度**：工作区文件是「整目录镜像」还是「仅 dsh 会话相关文件」？聊天记录是
+   「纯文本」还是「含附件/工具调用轨迹」？
+7. **操作互联的 chatUI 范围**：首版只做「会话列表 + 对话 + 发送」，还是含工具调用审批、
+   权限提示等完整交互？
+
+---
+
+## 10. 参考
+
+- 插件开发 + Cordis 共识：`docs/deepsea-cordis-plugin-consensus.md`（§4 `AbstractApiClient` / `ctx.apiProxy` / `toFetchHandler`）
+- OAuth：`docs/deepsea-oauth-worker.md` · Auth/D1：`docs/deepsea-auth-migration-evaluation.md`
+- node-datachannel（libdatachannel Node.js 绑定）：API 与浏览器 `RTCPeerConnection` 对齐
+- 旧方案（已废弃，供对照）：镜像+共享 `deepsea-sonar-mirror-shared-plan.md`、寄生快照
+  `deepsea-suite-sonar-interconnect.md`

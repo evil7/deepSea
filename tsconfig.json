@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./apps/web" },
-    { "path": "./apps/worker" }
+    { "path": "./apps/worker" },
+    { "path": "./packages/deepc-bridge" }
   ]
 }

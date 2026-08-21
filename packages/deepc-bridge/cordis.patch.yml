@@ -1,0 +1,15 @@
+# deepc bundle patch —— 挂载 deepc node 端插件。
+#
+# 顶层 YAML 数组（loader patch entries），每项 { id, name, config? }，
+# id 定向、后写赢（patch 替换整行 config，非深合并）。
+# 该文件由 package.json 的 `dsh.bundle.patch` 字段解析，被 profile 组合器按
+# `dsh.profile.bundles` 顺序应用。
+#
+# S0 骨架：仅挂载 deepc node 端（空 apply），使 deepc 出现在 Loader / --dump-config。
+# browser 端（dsh.client 声明 + exports["./client"]）延后到 S2/S3（需 tsdown 构建链）。
+#
+# 注意：deepc 是「插入新 entry」，必须用 insert 列表；
+# 顶层 `- id: xxx` 是「定向覆盖已有 entry」（id 须已存在，否则报 entry not found）。
+- insert:
+    - id: deepc-bridge
+      name: '@deepsea/deepc-bridge'
