@@ -36,6 +36,21 @@
 | 寄生快照（Plan B，`suite-sonar-interconnect`） | 需要 SW 静态壳 + 路径重写 + snapshot 实时流 + on-demand 回源，四层复杂度 | ❌ 废弃 |
 | 镜像 Mirror（抓 DOM 树 + CSS） | 受控组件 native setter、坐标归一化、循环防环、Canvas/Shadow DOM 边界，永远修不完 | ❌ 废弃 |
 | 复刻官方 dsh 前端（零走样） | 官方破坏性更新 / 布局接口变动 → 零维护承诺落空 | ❌ 废弃 |
+| **DOM snapshot + MutationObserver 双向控制**（2026-08-21 再评估） | 快照同步链路可行（rrweb 同款），但**操作回传链路**（坐标→推测元素→回传→dispatch 触发 React）是 hack 堆砌：受控输入需 native setter、DOM 路径随官方结构漂移、循环防环、全量 DOM+状态暴露 | ❌ 否决（见下） |
+
+> **2026-08-21 再评估结论**：用户重新提出「DOM snapshot + MutationObserver 增量同步 +
+> 远端操作蒙版捕捉回传」。经评估，拆成两条链路——**快照同步（host→远端）技术成熟**
+> （rrweb 的 session-replay 思路），但 **操作回传（远端→host）才是 deepc 双向控制的核心，
+> 恰恰最脆弱**：远端 DOM 是「死的」（无 React fiber / 无事件处理器 / 无状态），要靠
+> 坐标 → `elementFromPoint` 推测目标 → 回传元素标识 → host `dispatchEvent` 触发 React 合成
+> 事件；受控输入框更需 React 官方文档里的 native-setter hack。且 DOM snapshot 是「最依赖
+> 官方 DOM 结构」的方案，官方前端改个 class/层级即崩——与本节否决「复刻官方前端」是
+> **同一根因**。
+>
+> **核心洞察**：DOM 是「渲染结果」，session 事件流才是「真相」；官方前端与自实现 chatUI
+> 都是「拿事件流 → 渲染 DOM」的同一次渲染的两份拷贝。同步真相（事件流）永远比同步渲染
+> 结果（DOM）稳。故**维持「结构化事件 + 自实现 chatUI」主线不变**；DOM snapshot 仅在
+> 未来若出现「只读观战/协助」需求时，作为独立旁路单独评估（rrweb 已证其可行性）。
 
 **新方案的隔离思路**：不直播像素、不复刻 DOM、不寄生快照。deepc 主站**自己写一个 chatUI**
 （渲染会话列表 + 对话流 + 发送消息），它只调用本地 dsh host 的**稳定 API**（`session.list` /
@@ -155,6 +170,13 @@ deepc 主站 chatUI                    DataChannel               本地 dsh host
 - **本地端点（node 端）**：`api-bridge.ts` 绑定 DC，经 `LocalApi` 抽象落地——当前实现
   `HttpLocalApi`（HTTP fetch unary + WS 下行，访问 `127.0.0.1:3080`，已端到端验证）；
   未来切换 `toFetchHandler(ctx.apiProxy)` 直连官方网关（零网络）时仅换实现，调用方不变。
+
+> **chatUI 已完整化（2026-08-21）**：主站自实现 chatUI 已从「会话列表 + 对话 + 发送」
+> 扩展到与官方 dsh 前端操作对齐——两行 composer 工具栏（命令 / 访问模式 / 模型选择 +
+> 推理等级）、设置 dialog 真实读写（`settings.describe`/`update`，含权限/语言/外观/
+> Enter 行为/模型/插件清单 166 项）、`session.models`/`session.selectModel` 会话模型切换、
+> `events.host` 的 `settings/document-updated` 实时同步、消息流（user/assistant/error/tool/
+> 上下文注入）对齐。详见 `docs/deepsea-deepc-bridge-roadmap.md` M8。
 
 ### 5.2 载体：`WebRtcApiClient extends AbstractApiClient`
 
@@ -295,10 +317,11 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 1. **底座先行** ✅ 目录改名 `deepc-bridge` + 包名 + 清理废弃文件 + 保留底座编译通过。
 2. **中间件打通** ✅（node 端）`session.ts` 经 `polyfill.ts` 注入 node-datachannel，node 端
    headless 端点 + 信令互通已验证（node↔node 端到端 PASS）；浏览器端互通随 chatUI 在 S2 落地。
-3. **操作互联** ⏳ node 端数据面桥已完成（`api-bridge.ts` + `HttpLocalApi` 端到端 PASS）；
-   下一步：主站自实现 chatUI + 浏览器端 `WebRtcApiClient` 连 node 端。
-4. **工程同步** ⏳ 复用可靠传输框架，实现 `sync-*` 帧 + 工作区/聊天记录增量同步。
-5. **账号能力** ⏳ 登录触发工程同步（Auth D1 `sessions.github_id`）+ 互联日志 + 自定义加密 key。
+3. **操作互联** ✅ node 端数据面桥（`api-bridge.ts` + `HttpLocalApi`）→ 主站自实现 chatUI
+   （会话/消息流/composer/设置页/实时同步）已端到端贯通，并完整化对齐官方（见 §5.1 注）。
+4. **工程同步 → 配置同步** ✅ 已收敛为「配置同步（D1 权威 + DO 推送 config-changed，已实现）
+   + session 迁移（后续，RTC 直传 + D1 索引，见 `deepsea-deepc-bridge-config-sync.md`）」。
+5. **账号能力** ⏳ 互联日志 + 30 天审计清理 ✅；自定义加密 key 待定（见 §9 疑点 5）。
 
 ---
 
@@ -309,14 +332,14 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
    mac/linux 待后续 CI 覆盖。
 2. **NAT 穿透边界**：libjuice 支持 STUN，对称 NAT 仍需 TURN —— 是否自建 TURN，还是接受边界？
 3. **`ctx.apiProxy` 精确桥接点**：确认 node 端能否拿到 `ctx.apiProxy`（inject 声明依赖），
-   `toFetchHandler(apiProxy)` 是否可直接用于 DataChannel 帧 → 本地调用。
+   `toFetchHandler(apiProxy)` 是否可直接用于 DataChannel 帧 → 本地调用。当前用 `HttpLocalApi`
+   （HTTP fetch 127.0.0.1:3080）兜底，零网络直连切换待验证。
 4. **node 端进程模型**：headless 端点跑在 dsh host Node 进程内（Cordis 插件），还是独立
    Node 进程经 IPC 接 `ctx.apiProxy`？
-5. **工程同步触发**：登录即全量同步 vs 手动触发？首次全量 + 增量，还是纯增量？
-6. **工程同步粒度**：工作区文件是「整目录镜像」还是「仅 dsh 会话相关文件」？聊天记录是
-   「纯文本」还是「含附件/工具调用轨迹」？
-7. **操作互联的 chatUI 范围**：首版只做「会话列表 + 对话 + 发送」，还是含工具调用审批、
-   权限提示等完整交互？
+5. **自定义加密 key**：配置同步已落地（非敏感明文 + 敏感 E2E），但「应用层自定义加密 key」
+   尚未落地——待后续需要时评估。
+6. **chatUI 完整交互范围**：会话列表/对话流/发送/composer/设置页/实时同步已实现 ✅；
+   工具调用审批（approval/requested）、权限二次确认（Full access）等完整交互仍待后续。
 
 ---
 
