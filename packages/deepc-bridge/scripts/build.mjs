@@ -54,20 +54,23 @@ function findEsbuild() {
 
 /** 用 esbuild 打包 node 端（ESM，external node-datachannel 原生模块）。 */
 function buildNode(esbuildExe) {
-  execFileSync(
-    esbuildExe,
-    [
-      'src/index.ts',
-      '--bundle',
-      '--format=esm',
-      '--platform=node',
-      '--target=es2022',
-      '--external:node-datachannel',
-      '--external:node-datachannel/polyfill',
-      '--outfile=dist/index.js',
-    ],
-    { cwd: root, stdio: 'inherit' }
-  )
+  const args = [
+    'src/index.ts',
+    '--bundle',
+    '--format=esm',
+    '--platform=node',
+    '--target=es2022',
+    '--external:node-datachannel',
+    '--external:node-datachannel/polyfill',
+    '--outfile=dist/index.js',
+  ]
+  // node 端同样依赖 site/signal 基址常量（device-auth / node-registry / node-host），
+  // 必须与 browser 端一致地注入，否则运行时 __DEEPC_SITE_BASE__ 未定义抛 ReferenceError，
+  // 导致 node 端 apply 失败、/deepc 路由不注册。
+  for (const [name, value] of Object.entries(DEFINE)) {
+    args.push(`--define:${name}=${JSON.stringify(value)}`)
+  }
+  execFileSync(esbuildExe, args, { cwd: root, stdio: 'inherit' })
 }
 
 /** 用 esbuild 打包单文件 IIFE（可自动执行）。 */

@@ -8,6 +8,30 @@
 
 ---
 
+## 0. 开发理念与红线（统一底稿）
+
+> 本节是 deepc-bridge 全部开发的**理念 + 红线唯一权威**；`.github/instructions/deepc-bridge.instructions.md`
+> 与 skill `dsh-deepc-interconnect` 均由此派生。改动前必读。
+
+### 0.1 四条理念
+
+1. **Worker = auth 最小边界**：`apps/worker` 只承载身份与授权（OAuth / 设备授权 / 设备注册 /
+   信令 DO / 账号配置 / 审计）；**数据面一律 P2P，绝不进 Worker**。
+2. **插件前后端分层**：前端（browser）只做展示；后端（node）承载连接层 + 逻辑 + 底层能力。
+3. **能走 P2P 绝不走 Worker；能走 WS 消息绝不发 HTTP；能一次性/按需绝不轮询**（额度红线）。
+4. **结构化事件 + 自实现 chatUI**：不直播 DOM、不复刻官方前端、不 monkey-patch。
+
+### 0.2 六条红线
+
+1. 禁止给 Worker 加 `/api/*` 代理路由（dsh 官方 gateway 独占，数据面走 P2P）。
+2. 禁止信令退回轮询（WS + DO 是唯一通道）。
+3. 禁止会话消息/工作区/配置详情落 Worker 存储（走 RTC 直传）。
+4. 禁止复刻官方前端 / DOM snapshot / monkey-patch `fetch`/`WebSocket`。
+5. 禁止插件端在浏览器侧注册/心跳/连信令/派生 nodeId（token/nodeId 一律 node 后端注入自持）。
+6. 禁止密钥/device_token 落明文（Worker 只见 AES-GCM 密文）。
+
+---
+
 ## 1. 一句话定位
 
 **deepc 只做一个本地插件 + 一个远程 RTC 通信中间件**：
@@ -103,6 +127,64 @@
 远端 chatUI 的 API 调用经 DataChannel 帧回本地命中该 handler，响应原路返回。这正是官方
 `InProcessApiClient` 的「transport 换成 DataChannel」变体，符合 `AbstractApiClient` 正统
 扩展点（见 `deepsea-cordis-plugin-consensus.md` §4）。
+
+### 3.4 前后端分层与两条正交链路
+
+deepc-bridge 作为 Cordis 插件，天然分**前端（browser）**与**后端（node）**两个运行时。
+本节是**目标架构**（含实现进度标注），核心原则：**前端只做展示交互，逻辑/连接/底层能力全部
+在后端**。
+
+#### 运行时边界
+
+| 端 | 运行环境 | 职责 | 准入边界 |
+|----|---------|------|---------|
+| **插件后端（node）** | dsh host Node 进程（`index.ts` `apply` 启动） | 设备注册/心跳、WS 信令（DO 信号房）、配置同步、`deepc.*` 底层能力、HTTP 路由 | 能 `node:os` / `node:fs`；唯一的“真本机”执行者 |
+| **插件前端（browser）** | dsh 页面 `127.0.0.1:3080`（`host-ui.ts` 悬浮球 + Sheet） | 只读展示：登录态/开关/同步/断开 | 无 localStorage 之外的逻辑；**不**注册/心跳/连信令 |
+
+> 关键点：**前端** `localStorage` 里只有 token 等**展示用**状态，它无法（也不应）执行 `node:fs` /
+> `node:os`。所以**真本机能力只能在插件后端**。这也是为什么 deepc 要“分前后端”——前端只是
+> 一个在 dsh 页面上浮动的展示壳，真实连接与文件操作全部在后端进程内完成。
+
+#### 两条正交链路（务必分清）
+
+| 链路 | 通道 | 承载内容 | 语义 |
+|------|------|---------|------|
+| **① 主站 sonar ↔ 插件后端** | WebRTC DataChannel（信箱信令） | `deepc.*`（os/fs 能力）+ `session.*` / `workspace.*` 等本地 API | **远端远程控制**：跨设备枚举远端主机、调本地 dsh 稳定 API |
+| **② 插件前端 ↔ 插件后端** | 后端专用 HTTP 前缀路由（`webServer.register`，如 `/deepc`） | auth/state（token/登录态/开关/同步） | **同机凭证传递**：前端只展示，把登录结果同步给后端 |
+
+> **结论**：`deepc.fs.listDirectories` / `deepc.os.hostname` 这类**底层能力**，是服务链路①
+> （主站 sonar 跨设备 RTC 命令）的，由后端 `deepc-api.ts`（`wrapLocalApi`）在 node 进程内执行
+> 真实 `node:fs` / `node:os`。而链路②的 token/state 传递，走**后端专用的前缀路由**
+> （非 dsh 官方 `/api` —— 该通道被官方 gateway 独占，`RpcMethodMap` 编译期封闭，插件无法注入
+> 自定义 method）。
+
+#### 为什么链路②不用 dsh 官方 `/api`
+
+- dsh 官方 `/api` 通道的 method 路由表（`RpcMethodMap`）是**编译期封闭**的，`/api/deepc.*`
+  会 404，插件无法注入自定义 method（`methodFor` 查的是一张写死的 `UNARY_ROUTES` 表）。
+- 官方 `/api` 的 interceptor 通道（`connection.rpc.intercept('/api', ...)`）**只能有一个**，
+  已被官方 gateway 占用。
+- 因此 token/state 传递走**插件自注册的前缀路由**（`ctx.webServer.register`，如 `/deepc`），
+  与官方 `/api` 完全隔离，互不干扰。
+
+#### 当前实现进度标注
+
+- ✅ **已验证**：`deepc.*` 经 RTC → node 后端 `wrapLocalApi` 本地处理（`node:os`/`node:fs`）；
+  `HostInfo.hostname` 经握手下发；设备 registry/心跳/WS 信令支持 token 注入。
+- ✅ **已完成（链路②通道已切换）**：`node-host.ts` 已改用官方 `ctx.webServer.register` 注册
+  `/deepc` 前缀路由（`NODE_CTRL_PATH='/deepc'`，含 status/login/logout/allow/sync/disconnect 六个
+  POST 路由），**不再自起 3099 回环 server**。`index.ts` 声明 `inject:['webServer']` +
+  `ctx.effect` 注册路由。前端 `host-ui.ts` 已改为**纯展示**：`deepcCall('*')` 经 `/deepc/*` 调
+  后端，`bootstrapHostUi()` 不再接收 opts、不再在浏览器端注册/心跳/连信令。
+- ✅ **已接通（新建工作区枚举系统路径）**：`deepc.fs.listDirectories` 已有调用方——主站
+  `/sonar` 的 `FolderPicker`（`apps/web/src/components/sonar/folder-picker.tsx`）经
+  `deepcClient.call("deepc.fs.listDirectories", { path })` 走链路①（RTC → node 后端
+  `deepc-api.ts` 的 `wrapLocalApi` → `node:fs`）跨设备枚举远端主机目录树，取代旧的
+  `workspace.readDir`（已不再走 `HttpLocalApi→3080` 的 workspace API）；Win 盘符切换 +
+  Unix 根目录双模态，供「新建工作区」选路径。
+- ⚠️ **待做**：token 目前后端 `NodeTokenStore` 仅内存自持（`restore()` 仅进程内复用）；
+  跨 dsh host 重启的 token 持久化、`HttpLocalApi` → `toFetchHandler(ctx.apiProxy)` 零网络
+  直连切换仍待后续（见 §9 疑点 3/5）。
 
 ---
 

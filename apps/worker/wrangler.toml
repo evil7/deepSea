@@ -56,7 +56,7 @@ class_name = "SignalRoom"
 tag = "v1"
 new_sqlite_classes = ["SignalRoom"]
 
-# ── KV：state（防 CSRF）/ 临时口令信令（signal）/ 限流计数 ──────────────────
+# ── KV：state（防 CSRF）/ session / user / deviceGrant（设备授权）/ 限流计数 ──────────────────
 # 创建：wrangler kv namespace create DEEPSEA_KV，然后把 id 填到下面
 # 用户/会话/profile 已迁 D1（见 [[d1_databases]]），KV 不再存 user/session。
 [[kv_namespaces]]

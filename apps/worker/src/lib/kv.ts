@@ -3,6 +3,7 @@
 //   state:{id}      —— 防 CSRF 一次性 state（TTL 7min）
 //   session:{id}    —— 登录会话（TTL 30d，可续）
 //   user:{githubId} —— 用户档案 + 加密 GitHub token 缓存（避免重复请求）
+//   deviceGrant:{state} —— 设备授权码收件箱（Device Grant，TTL 5min）
 // ---------------------------------------------------------------------------
 
 import type { Env } from "../index"

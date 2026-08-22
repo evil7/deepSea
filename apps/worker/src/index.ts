@@ -34,7 +34,7 @@ import { SignalRoom } from "./durable/signal-room"
 
 /** Worker 环境变量 / 绑定 */
 export interface Env {
-  /** KV：state / 临时口令信令（signal）/ 限流计数 */
+  /** KV：state / session / user / deviceGrant（设备授权码）/ 限流计数 */
   DEEPSEA_KV: KVNamespace
   /** D1：用户 / 会话 / profile（关系型） */
   DEEPSEA_D1: D1Database
@@ -58,8 +58,6 @@ export interface Env {
   SESSION_TTL_SECONDS?: string
   /** state TTL（秒，默认 7 分钟） */
   STATE_TTL_SECONDS?: string
-  /** 信令 TTL（秒，临时口令有效期，默认 60s） */
-  SIGNAL_TTL_SECONDS?: string
   /** 设备授权码 TTL（秒，state 换取 token 窗口，默认 5 分钟） */
   DEVICE_GRANT_TTL_SECONDS?: string
   /** device_token 有效期（秒，默认 30 天） */

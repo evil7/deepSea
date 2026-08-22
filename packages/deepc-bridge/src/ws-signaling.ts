@@ -31,22 +31,15 @@ export interface WsSignalClient {
   isConnected: () => boolean
 }
 
-/** 读本地 device_token（device-auth.ts 持久化）。 */
-function storedToken(): string | null {
-  try {
-    return localStorage.getItem('deepc.deviceToken')
-  } catch {
-    return null
-  }
-}
-
 /**
- * 创建 WS 信令客户端。signalBase 为 http(s) 基址，内部转 ws(s)。
- * nodeId 经 query 传递；token 经 query 传递（浏览器 WS 无法设 Authorization）。
+ * 创建 WS 信令客户端（node 端专属）。signalBase 为 http(s) 基址，内部转 ws(s)。
+ * nodeId 经 query 传递；token 经 query 传递（WS 无法设 Authorization）。
  */
 export function createWsSignalClient(opts: {
   signalBase: string
   nodeId: string
+  /** device_token（node 端注入，必填）。 */
+  token: string
 }): WsSignalClient {
   const { signalBase, nodeId } = opts
   let ws: WebSocket | null = null
@@ -58,8 +51,7 @@ export function createWsSignalClient(opts: {
 
   function wsUrl(): string {
     const wsBase = signalBase.replace(/^http/, 'ws')
-    const token = storedToken() ?? ''
-    return `${wsBase}/ws/signal?nodeId=${encodeURIComponent(nodeId)}&token=${encodeURIComponent(token)}`
+    return `${wsBase}/ws/signal?nodeId=${encodeURIComponent(nodeId)}&token=${encodeURIComponent(opts.token)}`
   }
 
   /** 意外断线后指数退避重连（1s→2s→4s…封顶 30s）；主动 disconnect 则不重连。 */

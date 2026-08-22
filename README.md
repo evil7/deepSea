@@ -12,7 +12,8 @@
 | 框架   | Vite + React 19 + TypeScript                               |
 | UI     | shadcn/ui（Radix + Tailwind CSS v4）                       |
 | 动效   | animejs（仅用于展示 / 落地页）                             |
-| 数据   | 无后端，全部通过 octokit 直连 GitHub API（REST + GraphQL） |
+| GitHub 数据 | 前端 octokit 直连 GitHub API（REST + GraphQL）        |
+| 鉴权/互联 | Cloudflare Worker = auth 最小边界（OAuth + 设备授权 + 信令 DO + 配置 + 审计） |
 | 包管理 | pnpm workspace monorepo                                    |
 
 ## 结构
@@ -20,13 +21,14 @@
 ```
 deepSea/
 ├── apps/
-│   ├── web/          # 主站点（Vite + React + shadcn/ui）
-│   └── worker/       # Cloudflare Worker（GitHub OAuth 登录 + 静态资源 ASSETS 托管）
-├── packages/         # 预留：共享包（github 客户端、类型、hooks 等）
+│   ├── web/          # 主站点（Vite + React + shadcn/ui + 操作互联 chatUI）
+│   └── worker/       # Cloudflare Worker（auth 最小边界：OAuth + 设备授权 + 信令 DO + 配置 + 审计 + ASSETS）
+├── packages/
+│   └── deepc-bridge/ # 深海套装互联插件（前后端分层 + RTC 数据面 + WS 信令）
 ├── .github/
-│   ├── instructions/ # 项目级 Copilot 指令（架构 / GitHub API / UI 规范）
-│   └── skills/       # dsh 生态工作流技能
-├── docs/             # 设计构思文档（deepsea-oauth-worker、deepsea-suite-* 等）
+│   ├── instructions/ # 项目级 Copilot 指令（架构 / GitHub API / UI / deepc-bridge 互联规范）
+│   └── skills/       # dsh 生态 + 互联工作流技能
+├── docs/             # 设计文档（deepsea-deepc-bridge-* 互联方案 + oauth-worker 等）
 ├── pnpm-workspace.yaml
 └── package.json
 ```

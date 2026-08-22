@@ -4,9 +4,9 @@
  * 经 dsh 的 `dsh.client` 声明 + `exports["./client"]` 被 `dsh-client-modules`
  * 发现，注入 `__DSH_BOOT__` entry graph，随官方前端一起 boot。
  *
- * apply 里注入「deepSea 互联」悬浮球（右上角 deepSea 图标）+ 卡片式 Sheet：
+ * apply 里注入「deepSea 互联」悬浮球（右下角 deepSea 图标）+ 卡片式 Sheet：
  *   · header：`(deepc logo) deepSea` + 登录按钮（登录后显示头像）
- *   · 临时互联开关（开启生成一次性 connectId/uuid，60s 失效 + 信令失效）
+ *   · body：配置同步 + 多端直连状态（纯展示，经 /deepc/* 调 node 后端）
  *
  * 注意：browser 端的 entry id 由 `window.__ModuleLoader__.load({ id })` 提供
  * （= package name `@deepsea/deepc-bridge`），此处 `name` 仅作客户端 cordis runtime

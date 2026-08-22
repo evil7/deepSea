@@ -2,7 +2,7 @@
  * deepc-bridge 插件端配置同步 —— 账号级 key-value，D1 存储 + DO 推送通知。
  *
  * 已移回 D1（WS+DO 方案，见 docs/deepsea-deepc-bridge-config-gist.md 回退）：
- *   · 本地缓存一份「配置快照」{ key → { value, updatedAt } }（localStorage）
+ *   · 本地缓存一份「配置快照」{ key → { value, updatedAt } }（node 进程内存）
  *   · 登录后立即全量拉取（since=0）合并进本地
  *   · 收到 config-changed 通知（DO 推送，经 mailbox-host 的 WS）→ 拉增量
  *     （since=本地 maxUpdatedAt，since 下推 SQL 无变更读 0 行，零轮询）
@@ -11,7 +11,7 @@
  * 时效：LWW + worker 单调递增时间戳；本地合并 updatedAt 大者赢。
  */
 
-import { DEFAULT_SIGNAL_BASE, getStoredToken } from './device-auth'
+import { DEFAULT_SIGNAL_BASE } from './device-auth'
 
 export interface ConfigSnapshot {
   /** key → value。 */
@@ -29,38 +29,17 @@ interface RemoteConfigItem {
   updatedAt: number
 }
 
-/** 本地缓存键（localStorage）。 */
-const SNAPSHOT_KEY = 'deepc.configSnapshot'
+/** node 端进程内缓存快照（node 无 localStorage，用内存变量）。 */
+let snapshot: ConfigSnapshot = { values: {}, updated: {}, maxUpdatedAt: 0 }
 
-/** 读本地缓存快照（无则空）。 */
+/** 读本地缓存快照。 */
 function readSnapshot(): ConfigSnapshot {
-  try {
-    const raw = localStorage.getItem(SNAPSHOT_KEY)
-    if (raw) return JSON.parse(raw) as ConfigSnapshot
-  } catch {
-    /* ignore */
-  }
-  return { values: {}, updated: {}, maxUpdatedAt: 0 }
+  return snapshot
 }
 
 /** 写本地缓存快照。 */
 function writeSnapshot(snap: ConfigSnapshot): void {
-  try {
-    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap))
-  } catch {
-    /* ignore */
-  }
-}
-
-/** 读本地某配置值（无返回 null）。 */
-export function getLocalConfig(key: string): string | null {
-  const snap = readSnapshot()
-  return snap.values[key] ?? null
-}
-
-/** 读本地全量配置快照。 */
-export function getConfigSnapshot(): ConfigSnapshot {
-  return readSnapshot()
+  snapshot = snap
 }
 
 /** 合并远端增量到本地快照（updatedAt 大者赢），返回新增 key 数。 */
@@ -81,9 +60,9 @@ function applyRemote(items: RemoteConfigItem[]): number {
 /** 拉增量（since 下推），返回 items 或 null（未登录 / 失败）。 */
 export async function listConfig(
   signalBase: string,
-  since: number
+  since: number,
+  token: string
 ): Promise<RemoteConfigItem[] | null> {
-  const token = getStoredToken()
   if (!token) return null
   try {
     const res = await fetch(
@@ -102,9 +81,9 @@ export async function listConfig(
 export async function putConfig(
   signalBase: string,
   key: string,
-  value: string
+  value: string,
+  token: string
 ): Promise<number | null> {
-  const token = getStoredToken()
   if (!token) return null
   try {
     const res = await fetch(`${signalBase}/auth/config/put`, {
@@ -133,7 +112,7 @@ export interface ConfigSync {
 }
 
 /** 启动配置同步（登录后调用）：立即全量拉取 + 暴露 sync() 供 config-changed 通知触发。 */
-export function startConfigSync(opts: { signalBase?: string } = {}): ConfigSync {
+export function startConfigSync(opts: { signalBase?: string; token: string }): ConfigSync {
   const signalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
 
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -149,7 +128,7 @@ export function startConfigSync(opts: { signalBase?: string } = {}): ConfigSync 
     running = true
     try {
       const snap = readSnapshot()
-      const items = await listConfig(signalBase, snap.maxUpdatedAt)
+      const items = await listConfig(signalBase, snap.maxUpdatedAt, opts.token)
       if (items && items.length > 0) applyRemote(items)
     } finally {
       running = false
@@ -174,7 +153,7 @@ export function startConfigSync(opts: { signalBase?: string } = {}): ConfigSync 
   return {
     sync: scheduleSync,
     put: async (key, value) => {
-      const updatedAt = await putConfig(signalBase, key, value)
+      const updatedAt = await putConfig(signalBase, key, value, opts.token)
       if (updatedAt === null) return false
       // 回填本地快照（自己的写入立即生效，无需等通知回环）。
       const snap = readSnapshot()

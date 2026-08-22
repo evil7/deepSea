@@ -6,6 +6,10 @@
 > 互联」的架构依据。
 > **信令传输层（2026-08-21 定稿）**：从「KV 轮询」升级为「WebSocket + Durable
 > Objects 推送」（方案 A），消灭设备侧轮询浪费，详见 §11。
+>
+> ⚠️ **现状（2026-08-22）**：临时连接（connectId 临时口令）已在 PDCA-G3 **移除**，
+> 唯一链路 = **账号内多端直连（WS+DO）**。下文 §2.1/§2.3/§3.1/§6.3/§8 的临时口令 /
+> connectId 描述为历史演进记录，**勿据此实现新代码**；唯一权威见 `plan.md` §0 与 §3.4。
 
 ---
 
@@ -15,8 +19,8 @@ deepc-bridge 的连接从「临时口令单次连接」升级为**两条互补�
 
 | 链路 | 授权凭证 | 生命周期 | 用途 |
 |------|---------|---------|------|
-| **临时互联**（既有） | connectId（UUID v4，122-bit 熵） | 单次 60s，自动关闭 | 跨账号 / 未登录的临时授权 |
-| **多端直连**（新增） | GitHub 登录态 + 设备注册 | 长期，自动连接 | 自己的多设备无感互连 |
+| ~~临时互联~~（已移除，PDCA-G3） | ~~connectId~~ | ~~单次 60s~~ | ~~跨账号 / 未登录的临时授权~~ |
+| **多端直连**（唯一链路） | GitHub 登录态 + 设备注册 | 长期，自动连接 | 自己的多设备无感互连 |
 
 **产品形态**（对齐 SSH 多端管理心智）：
 
@@ -55,15 +59,16 @@ signalKey = HKDF(connectId)                 → AES-GCM 加密 SDP
 持久」——连接方随时发起，目标设备**被动接收推送**即可接入（不再轮询）。
 
 ```
-寻址   = nodeId（随机 UUID，仅账号持有者经 /auth/node/list 可见）
+寻址   = nodeId（插件后端 hostname 派生，同主机 = 同 ID，仅账号持有者经 /auth/node/list 可见）
 signalKey = 收件人 nodeId 派生（deriveNodeSignalKey，AES-GCM 加密 SDP）
-传输   = WebSocket（插件端常驻长连接 ↔ Durable Objects 信号房）
+传输   = WebSocket（插件端常驻长连接 ↔ Durable Objects 信号房，无轮询）
 ```
 
-- **寻址**：`nodeId`（随机 UUID，不可枚举；只有账号持有者经 `/auth/node/list` 可见）。
-- **投递**：主站发起方 → `POST /auth/node/signal/put`（加密 offer）→ DO 信号房经
-  WebSocket **推**给目标 node 端 → node 端经 WebSocket **回投**加密 answer → DO 推回
-  主站侧（或主站短轮询接收）。
+- **寻址**：`nodeId` = 插件后端（node 端）由主机 `hostname` SHA-256 派生 UUID v4
+  （同主机 = 同 ID；主站 console 端另用 GitHub 账号派生），不可枚举；只有账号持有者经
+  `/auth/node/list` 可见。
+- **投递**：主站发起方 → 经 `/ws/signal`（DO 信号房）→ DO **推**给目标 node 端 →
+  node 端经同一 WS **回投**加密 answer → DO 推回主站侧。**全程 WS 推送，无轮询**。
 - **存储**：DO 内存持有 `nodeId → WebSocket` 映射（Hibernation 空闲不收费）；设备元数据、
   在线状态仍落 D1（关系型，见 §4）；信令密文仅在传输窗口内存中，不落持久层。
 - **适用**：同账号设备长期自动连接（无轮询、无人工传码）。
@@ -83,8 +88,33 @@ signalKey = 收件人 nodeId 派生（deriveNodeSignalKey，AES-GCM 加密 SDP�
 走临时口令信令（2.1），连接目标即该设备。link code 只是「选择目标设备」的 UI 辅助，
 授权仍由 connectId 承载——**不引入第二个密钥体系**。
 
-> 结论：**信令底层只有两套**（临时口令 KV + 账号内信箱 KV），connectId 是临时口令
+> 结论：**信令底层只有两套**（临时口令 KV + 账号内信箱 WS+DO 推送），connectId 是临时口令
 > 的 UI 呈现；link code 是设备定位符，不参与密钥派生。
+
+---
+
+### 2.4 前后端 token 传递（方案 A · 连接层在 node 端）
+
+WS 信令 `/ws/signal?token=xxx` 与设备注册 `/auth/node/*`（`Authorization: Bearer`）都需
+`device_token`。由于**连接层在插件后端（node 端）**，token 由后端持有。
+
+**传递链路（文字描述）**：
+
+1. **插件前端**（`host-ui.ts`，纯展示）点「登录」→ 经 `/deepc/login` 调**插件后端**
+   （`node-host.ts`），后端生成 state 并返回主站授权 URL。
+2. **插件前端**打开授权确认页（`/device-login?state=xxx`），用户在主站确认授权。
+3. **插件后端**（`node-host.ts`）轮询 `POST /auth/device-grant/poll`（一次性消费）换取
+   `device_token`，token 直接落后端内存（`NodeTokenStore`），**不经前端、不落 localStorage**。
+4. **插件后端**自持 token，据此完成：设备注册（`/auth/node/register`）、心跳（`/auth/node/heartbeat`）、
+   WS 信令（`/ws/signal?token=xxx`）、配置同步（`/auth/config/*`）。
+
+**token 落地**：后端自持（内存），不落前端 localStorage 之外的明文、不落盘。
+
+- **为何不用官方 `/api`**：dsh 的 `/api` 通道被官方 gateway 独占，`RpcMethodMap` 编译期
+  封闭，插件无法注入自定义 method（`/api/deepc.*` 会 404）。用**隔离前缀 `/deepc`**
+  （`ctx.webServer.register` 前缀路由）作为后端专用通道，避开冲突。
+- **前端职责收窄**：前端只负责打开授权确认页、展示登录态/开关/同步结果；登录、注册、
+  心跳、信令、`deepc.*` 能力全部在 node 后端执行。
 
 ---
 
@@ -110,7 +140,7 @@ signalKey = 收件人 nodeId 派生（deriveNodeSignalKey，AES-GCM 加密 SDP�
 
 | 威胁 | 缓解 |
 |------|------|
-| nodeId 被枚举/猜测 | nodeId 为随机 UUID（122-bit 熵），不可遍历；仅登录账号可查询 |
+| nodeId 被枚举/猜测 | nodeId 为 hostname 派生 UUID（SHA-256 → UUID v4），不可遍历；仅登录账号可查询 |
 | 信箱被投毒（跨账号投递） | 信箱信令端点校验登录态 + `github_id` 归属，非本账号设备不可投递 |
 | SDP 明文泄露 | 设备配对密钥（每设备独立）派生的 AES-GCM 加密，Worker 只存密文 |
 | 设备丢失/被盗 | 设备可删除（吊销），删除后信箱失效 + 连接断开 |
@@ -136,9 +166,9 @@ signalKey = 收件人 nodeId 派生（deriveNodeSignalKey，AES-GCM 加密 SDP�
 
 ```sql
 CREATE TABLE IF NOT EXISTS deepc_nodes (
-  node_id    TEXT PRIMARY KEY,        -- 随机 UUID（插件首次启动生成，持久化本地）
+  node_id    TEXT PRIMARY KEY,        -- 插件后端 hostname SHA-256 派生（同主机 = 同 ID）
   github_id  INTEGER NOT NULL,        -- 归属账号（登录态绑定）
-  name       TEXT NOT NULL,           -- 本端名称（用户可改，默认 hostname）
+  name       TEXT NOT NULL,           -- 本端名称（hostname，用户可改）
   last_seen  INTEGER,                 -- 心跳时间戳（毫秒）
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -158,8 +188,6 @@ CREATE INDEX IF NOT EXISTS idx_nodes_github ON deepc_nodes(github_id);
 | `/auth/node/list` | GET | 列出同账号设备（含 online 计算） |
 | `/auth/node/heartbeat` | POST | 心跳续期（nodeId 归属校验；A2 后降级为「WS 断连写离线」兜底，见 §12.5） |
 | `/auth/node/remove` | POST | 删除设备（吊销，下线，释放配额） |
-| `/auth/node/signal/put` | POST | 信箱式信令写入（定向，归属校验；触发 DO 经 WS 推送给目标 node） |
-| `/auth/node/signal/get` | POST | 信箱式信令读取（主站侧读取 answer；归属校验；**过渡期保留**，WS 贯通后移除） |
 | `/ws/signal` | WS | 插件端/主站信令长连接（Upgrade；DO 信号房，见 §11） |
 
 ### 4.3 归属校验（安全核心）
@@ -199,7 +227,7 @@ device_token 插件端），再以 `github_id` 过滤 node 行。**连接方只�
 ② 建立 WS 长连接 /ws/signal（带 device_token）
    → DO 信号房登记 {nodeId → socket}（Hibernation）
 ③ 常驻监听 WS 推送（不再轮询）
-                                           ④ 点 B 卡片 → POST /auth/node/signal/put
+                                           ④ 点 B 卡片 → 经 /ws/signal 发 offer
                                               （加密 offer，target=B）
                                            ⑤ DO 信号房经 WS 推送 offer 给 B
 ⑥ 收到 offer 推送 → 解密 → createAnswer
@@ -208,11 +236,10 @@ device_token 插件端），再以 `github_id` 过滤 node 行。**连接方只�
                                            ⑧ setRemoteDescription → DC open → ping/pong
 ```
 
-- **无轮询**：B 端常驻 WS 长连接被动接收；主站侧在连接窗口内接收 answer（或经同一 WS）。
+- **无轮询**：B 端常驻 WS 长连接被动接收；主站侧经同一 WS 接收 answer。
 - **配额前置**：① 步先完成「是否在列表内 + 配额」判断，超限则不建 WS/不启动心跳（0 额度）。
 - **自动连接**：主站看到 B 在线即可随时发起；B 端无感接入。
-- **降级兜底**：WS 不可用（网络异常）时，回退 `POST /auth/node/signal/get` 轮询
-  （过渡期保留），保证链路不中断。
+- **断连自愈**：WS 意外断开走指数退避重连（1s→2s→…→30s 封顶），**不回退轮询**。
 
 ---
 
@@ -230,23 +257,23 @@ deepc 主站登录态是 `ds_session` cookie（HttpOnly + Secure + SameSite=Lax�
 无需预先建连，插件端即可换取长期设备凭证：
 
 ```
-插件端（127.0.0.1:3080）               deepc 主站（deepc.cn）
+插件后端（node-host，Node 进程）          deepc 主站（deepc.cn）
 ─────────────                          ─────────────
-① 点「登录」→ 本地生成 state（uuid）     ② 打开 /device-login?state=xxx
-   （localStorage 暂存 state）             · 未登录 → GitHub OAuth → 回跳该页
+① 前端点「登录」→ 经 /deepc/login 调      ② 前端打开 /device-login?state=xxx
+   后端生成 state（uuid），返回授权 URL     · 未登录 → GitHub OAuth → 回跳该页
                                           · 已登录 → 展示「确认授权此设备」
-③ 轮询 GET /auth/device-grant/poll       ④ 用户点确认 → POST /auth/device-grant
-   ?state=xxx（每 2s）                     （cookie + state）→ Worker 签发
+③ 后端轮询 POST /auth/device-grant/poll   ④ 用户点确认 → POST /auth/device-grant
+   { state }（每 2s）                      （cookie + state）→ Worker 签发
                                           device_token，KV 暂存（TTL 5min）
-⑤ 换取 device_token（一次性消费）→
-   持久化本地（localStorage）
-⑥ 后续 register/heartbeat/signal 均带
+⑤ 后端换取 device_token（一次性消费）→
+   落后端内存（NodeTokenStore，不落 localStorage）
+⑥ 后端后续 register/heartbeat/signal 均带
    Authorization: Bearer device_token
 ```
 
 - **device_token**：设备级长期凭证（默认 30 天，可配置），随机 256-bit，仅经授权码
   一次性换取；设备删除（吊销）时同步失效。
-- **授权码 state**：插件端本地生成的 uuid，作为换取凭证的「收件箱键」，一次性消费 +
+- **授权码 state**：插件后端生成的 uuid，作为换取凭证的「收件箱键」，一次性消费 +
   短 TTL，防重放/劫持。
 - **CORS**：`device-grant/poll` 需允许 127.0.0.1:3080 等本地 origin（白名单）。
 
@@ -302,7 +329,7 @@ WebRTC 本身**不做设备发现**——它需要先经信令交换 SDP 才能�
 1. **worker 端（信令传输层改造，方案 A）**：新增 Durable Objects 信号房 class +
    `/ws/signal` WebSocket 端点 + 归属校验（device_token/cookie）→ 见 §11。
 2. **worker 端（既有）**：D1 `deepc_nodes` 表 + register/list/heartbeat/remove +
-   信令端点（node/signal/put|get）+ 设备授权端点（device-grant/poll）。
+   设备授权端点（device-grant/poll）。
 3. **插件端**：deepSea 悬浮球 → Sheet（header 登录/头像 + 配置备份/还原）；接入设备
    授权流 + 注册/心跳；**接入 WS 信令长连接**（替换轮询）。
 4. **主站 `/sonar`**：SSH 风格设备卡片面板 + 点卡片直连（经 WS 信令）+ ping/pong 在线确认。
@@ -521,7 +548,7 @@ graph TD
 
 | 异常 | 降级路径 | 代价 |
 |------|---------|------|
-| WS 建连失败 | 回退 `POST /auth/node/signal/get` 轮询（A1 保留） | 临时回到轮询 |
+| WS 建连失败 | 指数退避重连（不回退轮询） | 短暂延迟 |
 | DO 实例被 evict | 插件端重连，DO 重建 socket 映射 | 短暂断连 |
 | WS 断连 | 指数退避重连（1s→2s→…→30s 封顶） | 信令延迟 |
 | 主站查在线失败 | 回退 D1 `last_seen`（90s 阈值） | 在线态粗粒度 |

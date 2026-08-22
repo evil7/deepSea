@@ -52,6 +52,14 @@ export function installHostHandshake(dc: RTCDataChannel, api: LocalApi): HostHan
     const hostRes = await api.callUnary('host.describe', {})
     if (hostRes.ok && hostRes.value) host = hostRes.value as HostInfo
 
+    // 注入本机主机名（node os.hostname；deepc.os.hostname 被 wrapLocalApi 本地拦截）。
+    if (host) {
+      const nInfoRes = await api.callUnary('deepc.os.hostname', {})
+      if (nInfoRes.ok && nInfoRes.value) {
+        host.hostname = (nInfoRes.value as { hostname?: string }).hostname ?? host.hostname
+      }
+    }
+
     const settingsRes = await api.callUnary('settings.describe', {})
     if (settingsRes.ok && settingsRes.value) {
       theme = extractTheme(settingsRes.value)

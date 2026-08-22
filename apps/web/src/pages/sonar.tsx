@@ -1,13 +1,15 @@
 // ---------------------------------------------------------------------------
-// /sonar —— 操作互联（deepc-bridge 远程控制 · 自实现 chatUI）
+// /sonar · /sonar/:nodeId —— 操作互联（deepc-bridge 远程控制 · 自实现 chatUI）
 //
-// 复刻官方前端结构：
-//   左 sidebar —— 工作区 + 会话列表（workspace.list + session.list）
-//   右聊天区 —— 消息流（session.history 折叠）+ 思考/审计板块 + 输入框
+// 无 nodeId → 设备列表（选择要连接的节点）。
+// 有 nodeId → 自动连接该节点；断联 3 次（10s 间隔，总计 30s）后回到设备列表。
+// 左 sidebar —— 工作区 + 会话列表（workspace.list + session.list）
+// 右聊天区 —— 消息流（session.history 折叠）+ 思考/审计板块 + 输入框
 // 数据经 deepc-bridge 加密 RTC 通道（WebRTC DataChannel）访问本地 dsh host。
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useNavigate, useParams } from "react-router-dom"
 import {
   ChevronDown,
   ChevronRight,
@@ -39,12 +41,13 @@ import {
 import { PageHeader } from "@/components/layout/page-header"
 import { Textarea } from "@/components/ui/textarea"
 import { ChatMessageList } from "@/components/sonar/chat-message"
+import { FolderPicker } from "@/components/sonar/folder-picker"
 import { useDeepcBridge } from "@/hooks/use-deepc-bridge"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
-import { deepcClient, type ClientState } from "@/lib/deepc-bridge/client"
+import type { ClientState } from "@/lib/deepc-bridge/client"
 import type { SessionSummary } from "@/lib/deepc-bridge/protocol"
-import { listNodes, getOrCreateConsoleNodeId, registerConsoleNode, removeNode, type NodeView } from "@/lib/deepc-bridge/nodes"
+import { listNodes, registerConsoleNode, removeNode, heartbeatNode, isConsoleNode, type NodeView } from "@/lib/deepc-bridge/nodes"
 
 const STATE_META: Record<ClientState, { label: string; tone: string }> = {
   idle: { label: "未连接", tone: "bg-slate-500/20 text-slate-300" },
@@ -150,6 +153,8 @@ export function SonarPage() {
   } = useDeepcBridge()
 
   const { user } = useAuth()
+  const { nodeId: urlNodeId } = useParams<{ nodeId: string }>()
+  const navigate = useNavigate()
   const [nodes, setNodes] = useState<NodeView[]>([])
   const [nodesLoaded, setNodesLoaded] = useState(false)
   const [consoleNodeId, setConsoleNodeId] = useState<string | null>(null)
@@ -165,6 +170,8 @@ export function SonarPage() {
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   // 已收起的工作区 id 集合（默认全部展开）。
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set())
+  // 文件夹选择器（添加工作区）。
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
 
@@ -198,22 +205,41 @@ export function SonarPage() {
   }, [])
 
   // 登录后注册主站控制端节点（多端直连发起方的 answer 收件箱）。
+  // console nodeId 由 GitHub 账号确定性派生（同账号 = 同身份，不随设备变化）。
+  // 注册后每 30s 心跳续期（worker 在线阈值 90s），保持在线状态。
+  // URL 携带 /sonar/:nodeId 时自动连接该节点；否则仅注册。
   useEffect(() => {
     if (!user) {
       setConsoleNodeId(null)
       return
     }
     let cancelled = false
-    void registerConsoleNode().then((id) => {
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+    void registerConsoleNode(user.id).then((id) => {
       if (cancelled) return
       setConsoleNodeId(id)
-      // 刷新后自动恢复上次连接（vite full reload / 手滑刷新无感重连）。
-      deepcClient.resumeLastConnection()
+      // 立即心跳一次 + 每 30s 续期
+      void heartbeatNode(id)
+      heartbeatTimer = setInterval(() => {
+        void heartbeatNode(id)
+      }, 30_000)
+      // URL 携带 nodeId → 自动连接；页面刷新后也走这条路径（替代 sessionStorage resume）。
+      if (urlNodeId) {
+        void connectToNode(urlNodeId, id)
+      }
     })
     return () => {
       cancelled = true
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
     }
-  }, [user])
+  }, [user, urlNodeId, connectToNode])
+
+  // 重连耗尽（error）或主动断开（disconnected）→ 回到设备列表（/sonar）。
+  useEffect(() => {
+    if ((state === "error" || state === "disconnected") && urlNodeId) {
+      navigate("/sonar", { replace: true })
+    }
+  }, [state, urlNodeId, navigate])
 
   // 登录态加载设备列表（SSH 风格面板）；过滤掉主站自身的控制端节点。
   const refreshNodes = useCallback(async () => {
@@ -223,8 +249,8 @@ export function SonarPage() {
       return
     }
     const list = await listNodes()
-    const selfId = getOrCreateConsoleNodeId()
-    setNodes(list.filter((n) => n.nodeId !== selfId))
+    // 只展示 DSH 设备节点；console（浏览器控制端）节点用前缀识别并隐藏。
+    setNodes(list.filter((n) => !isConsoleNode(n)))
     setNodesLoaded(true)
   }, [user])
 
@@ -341,7 +367,7 @@ export function SonarPage() {
       <main className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
         <PageHeader
           title="操作互联"
-          description="连接本机 dsh，远程控制 · 多端设备管理"
+          description="连接同账号DSH节点，实现远程控制、多端管理"
           sticky={false}
           showTopButton={false}
         />
@@ -384,9 +410,9 @@ export function SonarPage() {
                   key={node.nodeId}
                   node={node}
                   onConnect={() => {
-                    // 多端直连：点卡片直接经信箱信令连接（无需 connectId）。
+                    // 导航到 /sonar/:nodeId → useEffect 自动触发连接。
                     if (consoleNodeId) {
-                      void connectToNode(node.nodeId, consoleNodeId)
+                      navigate(`/sonar/${node.nodeId}`)
                     }
                   }}
                   onRemove={() => {
@@ -446,9 +472,15 @@ export function SonarPage() {
             <div className="mt-2 flex shrink-0 items-center gap-1 px-3">
               <span className="text-sm text-muted-foreground">工作区</span>
               <div className="ml-auto flex items-center gap-1">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground">
-                  <Search className="size-4" />
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 text-muted-foreground"
+                  onClick={() => setFolderPickerOpen(true)}
+                  title="添加工作区"
+                >
+                  <Plus className="size-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -558,9 +590,9 @@ export function SonarPage() {
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {hostInfo?.model && (
+              {currentModelEntry && (
                 <span className="hidden text-xs text-muted-foreground lg:inline">
-                  {hostInfo.model}
+                  {currentModelEntry.name}
                 </span>
               )}
               <Badge variant="outline" className={cn("border-transparent", STATE_META[state].tone)}>
@@ -586,8 +618,16 @@ export function SonarPage() {
                 加载会话…
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                选择左侧会话，或发送第一条消息开始
+              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10">
+                  <Waves className="size-6 text-primary" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">开始一段对话</p>
+                  <p className="text-xs text-muted-foreground">
+                    选择左侧会话继续，或发送第一条消息开始
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="mx-auto max-w-3xl">
@@ -602,29 +642,27 @@ export function SonarPage() {
             )}
           </div>
 
-          {/* 输入框（composer）：两行——输入区 + 工具栏 + 底部统计 */}
-          <div className="shrink-0 border-t border-border/60 px-3 pb-2 pt-3">
-            <div className="mx-auto max-w-3xl">
-              {/* 输入卡片 */}
-              <div className="rounded-xl border border-border/60 bg-background/40 focus-within:border-border">
-                {/* 第一行：输入区 */}
-                <Textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
-                  disabled={!activeSessionId}
-                  rows={2}
-                  className="min-h-0 resize-none border-0 bg-transparent focus-visible:ring-0"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault()
-                      void handleSend()
-                    }
-                  }}
-                />
-                {/* 第二行：工具栏 */}
-                <div ref={toolbarRef} className="flex items-center justify-between gap-2 px-2 pb-2">
-                  <div className="flex items-center gap-1">
+          {/* 输入框（composer）：直接放置，无外部容器 */}
+          <div className="shrink-0 border-t border-border/60">
+            <div className="mx-auto max-w-3xl px-4 pt-2.5 pb-1.5">
+              {/* 输入区 */}
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
+                disabled={!activeSessionId}
+                rows={2}
+                className="min-h-0 resize-none border-0 bg-transparent px-0 focus-visible:ring-0"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    void handleSend()
+                  }
+                }}
+              />
+              {/* 工具栏 */}
+              <div ref={toolbarRef} className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1">
                     {/* 命令按钮（+） */}
                     <div className="relative">
                       <Button
@@ -654,6 +692,7 @@ export function SonarPage() {
                                 setCommandMenuOpen(false)
                                 if (c.id === "model") setModelMenuOpen(true)
                                 else if (c.id === "permission") setPermissionMenuOpen(true)
+                                else if (activeSessionId) void sendPrompt(`/${c.id}`)
                               }}
                             >
                               <span className="text-xs font-medium text-foreground">{c.name}</span>
@@ -810,15 +849,25 @@ export function SonarPage() {
                     </Button>
                   </div>
                 </div>
-              </div>
               {/* 底部统计：X 轮 · Y 步 */}
-              <div className="flex justify-center py-1.5 text-xs text-muted-foreground/70">
+              <div className="flex justify-center pt-1.5 text-xs text-muted-foreground/70">
                 {sessionStats.turns} 轮 · {sessionStats.steps} 步
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* 虚拟文件夹选择窗口 */}
+      <FolderPicker
+        open={folderPickerOpen}
+        onOpenChange={setFolderPickerOpen}
+        onSelect={(path) => {
+          setFolderPickerOpen(false)
+          void createSession(path)
+        }}
+        homePath={hostInfo?.home}
+      />
 
       {/* 设置面板（复刻官方 dialog：导航 + 分页内容） */}
       {settingsOpen && (
@@ -947,7 +996,7 @@ export function SonarPage() {
                       </div>
                     ) : (
                       [...plugins]
-                        .sort((a, b) => Number(b.enabled) - Number(a.enabled))
+                        .toSorted((a, b) => Number(b.enabled) - Number(a.enabled))
                         .map((p) => (
                           <div
                             key={p.entryId}
@@ -1146,57 +1195,62 @@ function NodeCard({
             <Laptop className="size-5 shrink-0 text-primary" />
             <CardTitle className="truncate text-base">{node.name}</CardTitle>
           </div>
-          <Badge
-            variant="outline"
-            className={cn(
-              "shrink-0 border-transparent",
-              node.online
-                ? "bg-emerald-500/20 text-emerald-300"
-                : "bg-slate-500/20 text-slate-400"
-            )}
-          >
-            {node.online ? "在线" : "离线"}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge
+              variant="outline"
+              className={cn(
+                "shrink-0 border-transparent",
+                node.online
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "bg-slate-500/20 text-slate-400"
+              )}
+            >
+              {node.online ? "在线" : "离线"}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "shrink-0 gap-1 px-1.5 transition-all",
+                confirmRemove
+                  ? "text-rose-400 hover:text-rose-300"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => {
+                if (confirmRemove) {
+                  setConfirmRemove(false)
+                  onRemove()
+                } else {
+                  setConfirmRemove(true)
+                  setTimeout(() => setConfirmRemove(false), 3000)
+                }
+              }}
+            >
+              <Trash2 className="size-3.5" />
+              {confirmRemove && <span>确认删除？</span>}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="truncate font-mono text-xs text-muted-foreground">
           {node.nodeId}
         </p>
-        <div className="flex gap-2">
-          <Button
-            onClick={onConnect}
-            disabled={!node.online}
-            variant="outline"
-            size="sm"
-            className="flex-1 gap-2"
-          >
-            <Link2 className="size-3.5" />
-            连接
-          </Button>
-          <Button
-            onClick={() => {
-              if (confirmRemove) {
-                setConfirmRemove(false)
-                onRemove()
-              } else {
-                setConfirmRemove(true)
-                setTimeout(() => setConfirmRemove(false), 3000)
-              }
-            }}
-            variant="outline"
-            size="sm"
-            className={cn(
-              "shrink-0 gap-1.5",
-              confirmRemove
-                ? "border-rose-500/50 bg-rose-500/10 text-rose-300 hover:border-rose-500/60 hover:bg-rose-500/20 hover:text-rose-200"
-                : "text-muted-foreground"
-            )}
-          >
-            <Trash2 className="size-3.5" />
-            {confirmRemove ? "确认删除？" : "删除"}
-          </Button>
-        </div>
+        {node.lastSeen && (
+          <p className="text-xs text-muted-foreground">
+            最后活跃 {relativeTime(node.lastSeen)}
+          </p>
+        )}
+        <Button
+          onClick={onConnect}
+          disabled={!node.online}
+          variant="outline"
+          size="sm"
+          className="w-full gap-2"
+        >
+          <Link2 className="size-3.5" />
+          连接
+        </Button>
       </CardContent>
     </Card>
   )

@@ -25,11 +25,24 @@ packages/deepc-bridge/
 ├── cordis.patch.yml    # 组合包：挂载 deepc-bridge node 端插件
 ├── tsconfig.json       # 继承根风格，strict
 └── src/
-    ├── index.ts        # node 端入口：注入 ctx.apiProxy → toFetchHandler → 中间件
+    ├── index.ts        # node 端入口：启动 node-host + 注入 ctx.apiProxy → toFetchHandler → 中间件
+    ├── node-host.ts    # node 端连接层：Device Grant 登录/设备注册/心跳/WS 信令/deepc.* 能力
+    ├── node-registry.ts# 设备注册/心跳：nodeId=hostname 派生，token 注入
+    ├── host-ui.ts      # browser 端悬浮球 Sheet：纯展示，经 /deepc/* 调后端
     ├── client/
-    │   └── index.ts    # browser 端：chatUI 引导 + 工程同步入口
+    │   └── index.ts    # browser 端入口：bootstrapHostUi 注入互联悬浮球
     └── （底座）crypto / signaling / heartbeat / transfer / protocol / session
 ```
+
+## 设备身份模型
+
+- **nodeId**：插件后端（node 端）由主机 `hostname` SHA-256 派生的确定性 UUID v4（同主机 = 同 ID），
+  见 `node-host.ts` 的 `deriveNodeId`；worker upsert 不重复创建。
+- **设备名**：默认取主机 `hostname`（`os.hostname()`），用户可改。
+- **Console（主站控制端）**：以 GitHub 账号派生确定性 nodeId（同账号 = 同身份，不随设备变化）。
+
+> 插件端 nodeId 在后端（node 进程）派生，token 亦由后端注入自持——浏览器端（host-ui）只做展示，
+> 不参与注册/心跳/信令/派生（见 `docs/deepsea-deepc-bridge-plan.md` §3.4）。
 
 ## 阶段
 

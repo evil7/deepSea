@@ -108,7 +108,8 @@ export class DeepcClient {
   private _state: ClientState = "idle"
   private wsSignal: WsSignalClient | null = null
 
-  // 意外断连自动恢复：记住「连谁 + 我是谁」，dc close 后指数退避重连。
+  // 意外断连自动恢复：记住「连谁 + 我是谁」，dc close 后固定间隔重连。
+  // 断联 3 次（每次 10s，共 30s）后清除意图，进入 error 态（由页面负责回首页）。
   private lastTarget: string | null = null
   private lastSelf: string | null = null
   private userDisconnect = false
@@ -145,11 +146,13 @@ export class DeepcClient {
     for (const handler of this.listeners[event]) handler(payload)
   }
 
-  /** 断开连接（用户主动）。清除重连意图，不再自动恢复。 */
+  /** 断开连接（用户主动）。发送 deepc:bye 通知远端，清除重连意图，不再自动恢复。 */
   disconnect(): void {
     this.userDisconnect = true
     this.connectionGeneration++
     this.cancelReconnect()
+    // 通知远端「主动断开」——远端收到后标记 userDisconnect，不触发自动重连。
+    this.send({ kind: "control", cmd: "deepc:bye", seq: 0, ts: Date.now() })
     this.lastTarget = null
     this.lastSelf = null
     clearLastConnection()
@@ -174,24 +177,27 @@ export class DeepcClient {
     void this.connectToNode(conn.target, conn.self)
   }
 
-  /** 意外断连后的指数退避重连（1s→2s→4s…封顶 15s）。重试耗尽后停止并进入 error。 */
-  private readonly MAX_RECONNECT_ATTEMPTS = 15
+  /** 意外断连后的固定间隔重连：每 10s 尝试一次，最多 3 次（共 30s）。 */
+  private readonly MAX_RECONNECT_ATTEMPTS = 3
+  private readonly RECONNECT_INTERVAL_MS = 10_000
 
   private scheduleReconnect(): void {
     if (this.userDisconnect) return
     if (!this.lastTarget || !this.lastSelf) return
     if (this.reconnectTimer) return
     if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-      // 重试耗尽（约 3 分钟）：目标仍未就绪，停止重连，回到失败态。
+      // 重试耗尽（60s）：目标仍未就绪，停止重连，清除连接意图，回到失败态。
+      this.lastTarget = null
+      this.lastSelf = null
+      clearLastConnection()
       this.setState("error")
       return
     }
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000)
     this.reconnectAttempts++
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       void this.connectToNode(this.lastTarget!, this.lastSelf!)
-    }, delay)
+    }, this.RECONNECT_INTERVAL_MS)
   }
 
   private cancelReconnect(): void {

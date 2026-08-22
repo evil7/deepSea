@@ -79,6 +79,8 @@ export interface HostInfo {
   attachedSessions: number
   home: string
   canOpenPath: boolean
+  /** 本机主机名（node os.hostname；插件 node 端注入，浏览器拿不到）。 */
+  hostname?: string
 }
 
 export interface ModelSelection {
