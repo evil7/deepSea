@@ -3,6 +3,6 @@
   "references": [
     { "path": "./apps/web" },
     { "path": "./apps/worker" },
-    { "path": "./packages/deepc-bridge" }
+    { "path": "./packages/deepc-link" }
   ]
 }

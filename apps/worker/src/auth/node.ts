@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// /auth/node/* —— deepc-bridge 多端设备注册
+// /auth/node/* —— deepc-link 多端设备注册
 //
 // 设备注册：登录账号绑定 node（D1 deepc_nodes），支持心跳续期、改名、删除（吊销）。
 // 信令（offer/answer）已由 WS+DO 信号房承载（/ws/signal），不再经 HTTP 信箱轮询。
@@ -14,7 +14,6 @@ import {
   appendLog,
   countNodesByGithub,
   getNode,
-  heartbeatNode,
   listNodes,
   removeNode,
   resolveActorUserId,
@@ -45,11 +44,28 @@ const NODE_ID_RE = /^[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]
 /** 名称长度上限（本端名称）。 */
 const MAX_NAME_LEN = 128
 
-/** 心跳阈值（毫秒）：last_seen 距今 < 阈值视为 online。 */
-const ONLINE_THRESHOLD_MS = 90_000
-
 /** 每账号最多纳管的 dsh 节点数（防单用户资源滥用）。 */
 const MAX_NODES_PER_USER = 3
+
+/**
+ * 查询 DO 信号房的在线 nodeId 集合（WS socket 存活 = online，0 HTTP 心跳）。
+ * 在线判定权威源 = DO 内存态；last_seen 仅作「最后活跃」展示，不再驱动 online。
+ */
+async function queryOnlineNodeIds(
+  env: Env,
+  githubId: number
+): Promise<Set<string>> {
+  try {
+    const id = env.SIGNAL_ROOM.idFromName(`room:${githubId}`)
+    const stub = env.SIGNAL_ROOM.get(id)
+    const res = await stub.fetch(new Request("https://signal-room/presence"))
+    if (!res.ok) return new Set()
+    const arr = (await res.json()) as string[]
+    return new Set(arr)
+  } catch {
+    return new Set()
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 设备注册 / 列表 / 心跳 / 删除
@@ -118,14 +134,14 @@ export async function handleNodeList(
   if (githubId === null) return json({ authed: false })
 
   const nodes = await listNodes(env, githubId)
-  const now = Date.now()
+  const online = await queryOnlineNodeIds(env, githubId)
   return json({
     authed: true,
     nodes: nodes.map((n) => ({
       nodeId: n.node_id,
       name: n.name,
       lastSeen: n.last_seen,
-      online: n.last_seen !== null && now - n.last_seen < ONLINE_THRESHOLD_MS,
+      online: online.has(n.node_id),
       createdAt: n.created_at,
     })),
   })
@@ -133,29 +149,6 @@ export async function handleNodeList(
 
 interface NodeIdBody {
   nodeId?: unknown
-}
-
-/** POST /auth/node/heartbeat —— 心跳续期（归属校验）。 */
-export async function handleNodeHeartbeat(
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const githubId = await resolveActorUserId(request, env)
-  if (githubId === null) return json({ authed: false })
-
-  let body: NodeIdBody
-  try {
-    body = (await request.json()) as NodeIdBody
-  } catch {
-    return json({ ok: false, error: "invalid-json" }, 400)
-  }
-  if (typeof body.nodeId !== "string" || !NODE_ID_RE.test(body.nodeId)) {
-    return json({ ok: false, error: "bad-node-id" }, 400)
-  }
-
-  const ok = await heartbeatNode(env, body.nodeId, githubId)
-  if (!ok) return json({ ok: false, error: "not-found" }, 404)
-  return json({ ok: true })
 }
 
 /** POST /auth/node/remove —— 删除设备（吊销）。 */

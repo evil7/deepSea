@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// /auth/device-grant —— deepc-bridge 设备授权流（Device Grant）
+// /auth/device-grant —— deepc-link 设备授权流（Device Grant）
 //
 // 背景：插件端跑在 http://127.0.0.1:3080（本地 dsh 前端），拿不到 deepc 主站
 // 的 ds_session cookie（domain 绑定 deepc.cn）。因此需要独立设备凭证 device_token：

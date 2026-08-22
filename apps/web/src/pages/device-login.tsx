@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// /device-login —— 设备授权确认页（deepc-bridge Device Grant 流）
+// /device-login —— 设备授权确认页（deepc-link Device Grant 流）
 //
 // 注意：本页路径不能用 /auth/* 前缀——vite dev 会把 /auth 代理到 worker，而 worker
 // 没有该前端路由，会回退到 ASSETS（dist 构建产物）。故用 /device-login 独立命名。
@@ -122,7 +122,7 @@ export function DeviceLoginPage() {
               <p className="text-sm text-muted-foreground">
                 正在为账号{" "}
                 <span className="font-medium text-foreground">{user.login}</span>{" "}
-                授权本机 dsh 插件（deepc-bridge）接入多端互联…
+                授权本机 dsh 插件（deepc-link）接入多端互联…
               </p>
               <div className="flex items-center justify-center gap-2 py-2 text-sm text-sky-400">
                 <Loader2 className="size-4 animate-spin" />

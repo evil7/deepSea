@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// SignalRoom —— deepc-bridge 信令房（Durable Object，方案 A：WS 推送）
+// SignalRoom —— deepc-link 信令房（Durable Object，方案 A：WS 推送）
 //
 // 目标：消灭设备侧「5s 轮询信箱」的浪费，改为被动推送（见
 // docs/deepsea-deepc-bridge-signaling.md §11/§12）。
@@ -47,6 +47,12 @@ interface OutboundSignalFrame {
   payload: string
 }
 
+/** presence 帧（DO → 所有 socket）：当前在线 nodeId 全集（上线/下线即广播）。 */
+interface OutboundPresenceFrame {
+  type: "presence"
+  online: string[]
+}
+
 /** socket attachment：登记时的 nodeId（webSocketMessage 里读取发送方）。 */
 interface SocketAttachment {
   nodeId: string
@@ -83,6 +89,14 @@ export class SignalRoom {
       return new Response("ok")
     }
 
+    // 内部查询：返回当前在线 nodeId 集合（worker handleNodeList 用，取代 HTTP 心跳）。
+    // 由 worker 内部 stub 按 room:{githubId} 分区调用，天然账号隔离，无需额外认证。
+    if (url.pathname === "/presence") {
+      return new Response(JSON.stringify(this.listOnlineNodeIds()), {
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      })
+    }
+
     const nodeId = url.searchParams.get("nodeId")
 
     // 认证：cookie（主站）/ Bearer device_token（插件端 HTTP fetch）；
@@ -109,6 +123,9 @@ export class SignalRoom {
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket]
     this.state.acceptWebSocket(server, [nodeId])
     server.serializeAttachment({ nodeId } satisfies SocketAttachment)
+
+    // 上线：广播 presence（新 socket 已入 DO 内存态，同账号所有连接即时可见）。
+    this.broadcastPresence()
 
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -149,6 +166,33 @@ export class SignalRoom {
     const targets = this.state.getWebSockets(frame.target)
     for (const target of targets) {
       target.send(JSON.stringify(outbound))
+    }
+  }
+
+  /** socket 关闭（Hibernation）：广播 presence（该 socket 已移出 DO 内存态）。 */
+  async webSocketClose(): Promise<void> {
+    this.broadcastPresence()
+  }
+
+  /** 收集当前在线 nodeId（去重；socket 存活 = online，权威源）。 */
+  private listOnlineNodeIds(): string[] {
+    const set = new Set<string>()
+    for (const ws of this.state.getWebSockets()) {
+      const att = ws.deserializeAttachment() as SocketAttachment | null
+      if (att?.nodeId) set.add(att.nodeId)
+    }
+    return [...set]
+  }
+
+  /** 向所有 socket 广播 presence 帧。 */
+  private broadcastPresence(): void {
+    const frame: OutboundPresenceFrame = {
+      type: "presence",
+      online: this.listOnlineNodeIds(),
+    }
+    const payload = JSON.stringify(frame)
+    for (const ws of this.state.getWebSockets()) {
+      ws.send(payload)
     }
   }
 }

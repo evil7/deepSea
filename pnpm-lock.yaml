@@ -163,7 +163,7 @@ importers:
         specifier: ^4.124.0
         version: 4.124.0
 
-  packages/deepc-bridge:
+  packages/deepc-link:
     dependencies:
       animejs:
         specifier: ^4.5.0

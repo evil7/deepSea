@@ -321,22 +321,6 @@ export async function upsertNode(
     .run()
 }
 
-/** 心跳续期（仅更新 last_seen / updated_at，不改名）。 */
-export async function heartbeatNode(
-  env: Env,
-  nodeId: string,
-  githubId: number
-): Promise<boolean> {
-  const now = Date.now()
-  const result = await env.DEEPSEA_D1.prepare(
-    `UPDATE deepc_nodes SET last_seen = ?, updated_at = ?
-     WHERE node_id = ? AND github_id = ?`
-  )
-    .bind(now, now, nodeId, githubId)
-    .run()
-  return result.meta.changes > 0
-}
-
 /** 读单个设备（归属校验：node_id + github_id 同时匹配）。 */
 export async function getNode(
   env: Env,

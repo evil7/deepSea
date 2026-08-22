@@ -36,10 +36,10 @@ deepSea 是 DeepSeek Harness（dsh）插件生态聚合站：
    - **能前端化的 GitHub 数据一律前端 octokit 直调**（搜索 / discussions 列表详情回复表情发帖 /
      issues / releases），前端 access token 由 `/auth/me` 返回（内存保存）。
      **禁止给 Worker 加 `/api/*` 代理路由**。
-   - **deepc-bridge 互联数据**（`/auth/node/*` 设备注册、`/auth/device-grant*` 设备授权、
+   - **deepc-link 互联数据**（`/auth/node/*` 设备注册、`/auth/device-grant*` 设备授权、
      `/ws/signal` 信令 DO、`/auth/config/*` 账号配置、审计日志）属于 auth 边界，允许；
      但**数据面（会话消息 / 工作区内容 / 配置详情）一律走 P2P DataChannel，绝不进 Worker**。
-   - 详细红线与前后端分层见 `deepc-bridge.instructions.md`。
+   - 详细红线与前后端分层见 `deepc-link.instructions.md`。
 4. **路径别名 `@/*` 指向 `apps/web/src/*`**（见 `apps/web/tsconfig.app.json` 与 `vite.config.ts`）。
 5. animejs 只允许用于展示/落地页的动效，业务 UI 保持克制，避免影响可读性与性能。
 6. 新增共享代码（GitHub 客户端、类型、hooks）应放入 `packages/*`，通过 workspace 依赖引用。
@@ -52,11 +52,11 @@ apps/web/src/
 ├── components/     # 业务组件（按功能分子目录）
 │   ├── ui/         # shadcn 生成组件（CLI 管理，禁止手改）
 │   ├── layout/     # 跨页面布局组件（Topbar、PageHeader 共享页头）
-│   ├── sonar/      # 操作互联 chatUI（消息流 / composer / FolderPicker）
+│   ├── link/      # 操作互联 chatUI（消息流 / composer / FolderPicker）
 │   └── showcase/   # 展示/落地页动效（Ocean、插件码牌、usePageEnter/useSlideReveal 过渡 hook）
 ├── lib/
 │   ├── github/     # octokit 封装（client、search、discussions、issues）
-│   ├── deepc-bridge/ # 主站 RTC client（DeepcClient / WS 信令 / nodes / fold）
+│   ├── deepc-link/ # 主站 RTC client（DeepcClient / WS 信令 / nodes / fold）
 │   ├── theme/      # 配色自适应（auto-color 背景图取色纯函数）
 │   └── utils.ts    # cn() 等工具
 ├── hooks/          # 自定义 hooks（数据获取、缓存、鉴权、use-auto-color 取色）

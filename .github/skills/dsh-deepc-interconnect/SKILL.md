@@ -1,20 +1,20 @@
 ---
 name: dsh-deepc-interconnect
-description: 'deepc-bridge 操作互联 + 多端直连架构。Use when: 开发/调试 deepc-bridge 前后端分层、WebRTC 数据面桥、WS+DO 信令、设备注册与授权、配置同步、RTC 直连、nodeId/token 注入、chatUI 数据面。'
+description: 'deepc-link 操作互联 + 多端直连架构。Use when: 开发/调试 deepc-link 前后端分层、WebRTC 数据面桥、WS+DO 信令、设备注册与授权、配置同步、RTC 直连、nodeId/token 注入、chatUI 数据面。'
 argument-hint: '要处理的互联场景，例如 "多端直连信令" 或 "RTC 数据面桥" 或 "设备授权流"'
 user-invocable: true
 ---
 
-# deepc-bridge 互联架构
+# deepc-link 互联架构
 
 ## 目标
 
-为 deepSea 的「深海套装互联底座」提供领域知识：deepc-bridge 插件如何把本地 dsh host 的
+为 deepSea 的「深海套装互联底座」提供领域知识：deepc-link 插件如何把本地 dsh host 的
 能力经加密 RTC 通道暴露给 deepc 主站，实现**操作互联**（远程控制）与**工程同步**（配置同步）。
 
 ## 何时使用
 
-- 开发 / 调试 deepc-bridge 的前后端分层与两条链路
+- 开发 / 调试 deepc-link 的前后端分层与两条链路
 - 处理 WebRTC DataChannel 数据面桥（unary / subscribe / downstream）
 - 处理 WS + Durable Objects 信令（offer / answer 推送）
 - 处理设备注册 / 心跳 / Device Grant 授权 / 配置同步
@@ -26,7 +26,7 @@ user-invocable: true
 
 | 链路 | 通道 | 承载 | 语义 |
 |------|------|------|------|
-| ① 主站 sonar ↔ 插件后端 | WebRTC DataChannel（WS 信令） | `deepc.*` + `session.*`/`workspace.*` | 远端远程控制 |
+| ① 主站 links ↔ 插件后端 | WebRTC DataChannel（WS 信令） | `deepc.*` + `session.*`/`workspace.*` | 远端远程控制 |
 | ② 插件前端 ↔ 插件后端 | `/deepc` 前缀路由（`ctx.webServer.register`） | token/登录态/开关 | 同机凭证传递 |
 
 - **前端（`host-ui.ts`，browser）只做展示**：登录态/开关/同步/断开经 `/deepc/*` 转发后端。
@@ -73,7 +73,7 @@ user-invocable: true
 
 | 关注点 | 文件 |
 |--------|------|
-| node 端入口 + `/deepc` 路由 | `packages/deepc-bridge/src/index.ts` |
+| node 端入口 + `/deepc` 路由 | `packages/deepc-link/src/index.ts` |
 | node 端连接层 | `src/node-host.ts` |
 | `deepc.*` 能力 | `src/deepc-api.ts` |
 | 信箱 host（WS 应答 + 装桥） | `src/mailbox-host.ts` |
@@ -82,8 +82,8 @@ user-invocable: true
 | 设备注册/心跳 | `src/node-registry.ts` |
 | 配置同步 | `src/config-sync.ts` |
 | Worker 信令 DO | `apps/worker/src/durable/signal-room.ts` |
-| 主站 RTC client | `apps/web/src/lib/deepc-bridge/client.ts` |
-| 主站设备节点 API | `apps/web/src/lib/deepc-bridge/nodes.ts` |
+| 主站 RTC client | `apps/web/src/lib/deepc-link/client.ts` |
+| 主站设备节点 API | `apps/web/src/lib/deepc-link/nodes.ts` |
 
 ## 已知坑（务必规避）
 

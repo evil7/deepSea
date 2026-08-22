@@ -16,7 +16,7 @@ export const AUTH_EXPIRED_EVENT = "deepsea:auth-expired"
 
 /**
  * 广播「授权已失效」：由 octokit 401 检测触发，通知所有 useAuth 实例清缓存登出。
- * 用事件而非模块级回调，避免多个 useAuth 实例（topbar/sonar 等）互相覆盖 handler。
+ * 用事件而非模块级回调，避免多个 useAuth 实例（topbar/links 等）互相覆盖 handler。
  */
 export function notifyAuthExpired(): void {
   window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))

@@ -24,9 +24,9 @@ deepSea/
 │   ├── web/          # 主站点（Vite + React + shadcn/ui + 操作互联 chatUI）
 │   └── worker/       # Cloudflare Worker（auth 最小边界：OAuth + 设备授权 + 信令 DO + 配置 + 审计 + ASSETS）
 ├── packages/
-│   └── deepc-bridge/ # 深海套装互联插件（前后端分层 + RTC 数据面 + WS 信令）
+│   └── deepc-link/ # 深海套装互联插件（前后端分层 + RTC 数据面 + WS 信令）
 ├── .github/
-│   ├── instructions/ # 项目级 Copilot 指令（架构 / GitHub API / UI / deepc-bridge 互联规范）
+│   ├── instructions/ # 项目级 Copilot 指令（架构 / GitHub API / UI / deepc-link 互联规范）
 │   └── skills/       # dsh 生态 + 互联工作流技能
 ├── docs/             # 设计文档（deepsea-deepc-bridge-* 互联方案 + oauth-worker 等）
 ├── pnpm-workspace.yaml

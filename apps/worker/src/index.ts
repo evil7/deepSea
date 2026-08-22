@@ -18,7 +18,6 @@ import { handleLogout } from "./auth/logout"
 import { handleMe } from "./auth/me"
 import { handleInterconnectLog } from "./auth/preferences"
 import {
-  handleNodeHeartbeat,
   handleNodeList,
   handleNodeRegister,
   handleNodeRemove,
@@ -147,8 +146,6 @@ const handler: ExportedHandler<Env> = {
         return handleNodeRegister(request, env)
       case "/auth/node/list":
         return handleNodeList(request, env)
-      case "/auth/node/heartbeat":
-        return handleNodeHeartbeat(request, env)
       case "/auth/node/remove":
         return handleNodeRemove(request, env)
       case "/auth/device-grant":

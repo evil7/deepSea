@@ -85,7 +85,7 @@ function writeCached(data: { user: AuthUser; token: string } | null): void {
 }
 
 /**
- * in-flight 单例：并发调用（App/Topbar/SonarPage 各自 useAuth 首次挂载）复用同一
+ * in-flight 单例：并发调用（App/Topbar/LinksPage 各自 useAuth 首次挂载）复用同一
  * 请求，避免一次页面加载对 /auth/me 发多次并发请求（P0-1 消除业务自身浪费）。
  */
 let fetchMeInFlight: Promise<{ user: AuthUser; token: string } | null> | null =
@@ -154,7 +154,7 @@ export function useAuth() {
   }, [location.search])
 
   // 监听授权失效事件（octokit 401 检测触发）：token 被撤销/过期时，清缓存
-  // 并登出。所有 useAuth 实例（topbar/sonar 等）各自监听，统一回到未登录态，
+  // 并登出。所有 useAuth 实例（topbar/links 等）各自监听，统一回到未登录态，
   // UI 自然显示「登录」按钮引导重新授权。
   useEffect(() => {
     const onAuthExpired = () => {

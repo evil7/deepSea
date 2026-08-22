@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// 配置同步端点 —— deepc-bridge 账号级配置（key-value，D1 存储 + DO 推送通知）
+// 配置同步端点 —— deepc-link 账号级配置（key-value，D1 存储 + DO 推送通知）
 //
 //   · GET /auth/config/list?since={updatedAt}：增量拉取（since 下推 SQL 走索引，
 //     无变更读 0 行，见 docs/deepsea-deepc-bridge-config-sync.md §4）。

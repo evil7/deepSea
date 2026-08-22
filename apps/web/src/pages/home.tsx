@@ -163,15 +163,15 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
           <ComingSoonSlide
             eyebrow="05 · DEEPSEA KIT"
             title="深海套装"
-            description="把 deepSea 装进口袋：一套 deepc-bridge 组合包，搞定远程控制、工程同步与插件管理。"
+            description="把 deepSea 装进口袋：一套 deepc-link 组合包，搞定远程控制、工程同步与插件管理。"
             items={[
               {
-                id: "bridge",
+                id: "link",
                 icon: Radio,
                 title: "操作互联",
                 description:
-                  "deepc 主站自实现 chatUI，经 deepc-sonar-bridge 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
-                tag: "bridge",
+                  "deepc 主站自实现 chatUI，经 deepc-link 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
+                tag: "link",
               },
               {
                 id: "sync",

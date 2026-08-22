@@ -105,8 +105,9 @@ WS 信令 `/ws/signal?token=xxx` 与设备注册 `/auth/node/*`（`Authorization
 2. **插件前端**打开授权确认页（`/device-login?state=xxx`），用户在主站确认授权。
 3. **插件后端**（`node-host.ts`）轮询 `POST /auth/device-grant/poll`（一次性消费）换取
    `device_token`，token 直接落后端内存（`NodeTokenStore`），**不经前端、不落 localStorage**。
-4. **插件后端**自持 token，据此完成：设备注册（`/auth/node/register`）、心跳（`/auth/node/heartbeat`）、
+4. **插件后端**自持 token，据此完成：设备注册（`/auth/node/register`）、
    WS 信令（`/ws/signal?token=xxx`）、配置同步（`/auth/config/*`）。
+   （在线状态由 WS 长连接 presence 体现，**不再发 HTTP 心跳**。）
 
 **token 落地**：后端自持（内存），不落前端 localStorage 之外的明文、不落盘。
 
@@ -169,24 +170,23 @@ CREATE TABLE IF NOT EXISTS deepc_nodes (
   node_id    TEXT PRIMARY KEY,        -- 插件后端 hostname SHA-256 派生（同主机 = 同 ID）
   github_id  INTEGER NOT NULL,        -- 归属账号（登录态绑定）
   name       TEXT NOT NULL,           -- 本端名称（hostname，用户可改）
-  last_seen  INTEGER,                 -- 心跳时间戳（毫秒）
+  last_seen  INTEGER,                 -- 最后在线时间戳（注册/WS 建连时写，仅作「最后活跃」展示）
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_github ON deepc_nodes(github_id);
 ```
 
-- **在线判定**：`last_seen` 距今 < 心跳阈值（如 90s）视为 online；不落库布尔值，
-  查询时计算，避免心跳频繁写。
-- **生命周期**：注册（upsert）→ 心跳续期 → 删除（吊销）。
+- **在线判定**：`online` = DO 内存态（`nodeId → socket` 存活）——权威源，0 额度；
+  `last_seen` 仅作「最后活跃时间」展示，不驱动 online（不再发 HTTP 心跳）。
+- **生命周期**：注册（upsert）→ 删除（吊销）。
 
 ### 4.2 端点（全部需登录态）
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
 | `/auth/node/register` | POST | upsert 设备（nodeId + name）+ **配额校验**（新增受限，更新/续期不受限，见 §4.4） |
-| `/auth/node/list` | GET | 列出同账号设备（含 online 计算） |
-| `/auth/node/heartbeat` | POST | 心跳续期（nodeId 归属校验；A2 后降级为「WS 断连写离线」兜底，见 §12.5） |
+| `/auth/node/list` | GET | 列出同账号设备（online = DO presence 查询，见 §12.5） |
 | `/auth/node/remove` | POST | 删除设备（吊销，下线，释放配额） |
 | `/ws/signal` | WS | 插件端/主站信令长连接（Upgrade；DO 信号房，见 §11） |
 
@@ -539,10 +539,10 @@ graph TD
 | **L1 持久兜底**（次） | D1 `last_seen`（**仅 WS 断连时写一次**） | 极少 | 分钟级 | 设备离线后仍可查「最后在线时间」 |
 | **L2 静态元数据** | D1 `deepc_nodes` 注册行 | 0 | 永久 | nodeId/name/created |
 
-- **主站 list**：读 D1 静态元数据 → 对每个 nodeId 调 DO `presence(nodeId)` → 合并返回
-  「元数据 + online」；DO 无该账号活跃实例时回退 L1 `last_seen` 判定。
-- **HTTP 心跳端点 `/auth/node/heartbeat` 处置**：**降级保留**（A1 阶段兜底，A2 后仅作
-  「WS 断连时写离线时间戳」的轻量通道），不再 30s 常驻轮询。
+- **主站 list**：读 D1 静态元数据 → 调 DO `/presence` 拿在线 nodeId 集合 → 合并返回
+  「元数据 + online」。DO 无该账号活跃实例时返回空集（该账号所有设备均离线）。
+- **HTTP 心跳端点 `/auth/node/heartbeat` 处置**：**已删除**（2026-08-22）。在线判定
+  纯靠 WS presence，插件端与主站 console 均不再发 30s 心跳。
 
 ### 12.6 降级与兜底（可用性优先）
 
@@ -551,7 +551,7 @@ graph TD
 | WS 建连失败 | 指数退避重连（不回退轮询） | 短暂延迟 |
 | DO 实例被 evict | 插件端重连，DO 重建 socket 映射 | 短暂断连 |
 | WS 断连 | 指数退避重连（1s→2s→…→30s 封顶） | 信令延迟 |
-| 主站查在线失败 | 回退 D1 `last_seen`（90s 阈值） | 在线态粗粒度 |
+| 主站查在线失败 | DO 无实例返回空集（均视为离线） | 瞬时误判（重连即恢复） |
 
 ### 12.7 关键权衡点（已全部拍板落地）
 
