@@ -22,11 +22,14 @@ import type {
   ContentBlock,
   ContextSource,
   DownstreamFrame,
+  ApprovalRequestedFrame,
+  QuestionRequestedFrame,
   HelloFrame,
   HistoryEntry,
   HostRemoteEventFrame,
   ModelCatalogEntry,
   ModelSelection,
+  PendingInteraction,
   PluginInventoryEntry,
   SessionEventFrame,
   SessionModelsView,
@@ -66,9 +69,11 @@ export function useDeepcLink() {
   const [plugins, setPlugins] = useState<PluginInventoryEntry[]>([])
   const [pluginsLoaded, setPluginsLoaded] = useState(false)
   const [sessionModels, setSessionModels] = useState<SessionModelsView | null>(null)
+  const [pendingInteractions, setPendingInteractions] = useState<PendingInteraction[]>([])
 
   const sessionIdsRef = useRef<Map<string, string>>(new Map())
   const callNamesRef = useRef<Map<string, string>>(new Map())
+  const seqRef = useRef(0)
   const activeRef = useRef<string | null>(null)
   activeRef.current = activeSessionId
 
@@ -289,6 +294,7 @@ export function useDeepcLink() {
     const payload = frame.envelope.payload
     if (!payload || typeof payload !== "object") return
     const p = payload as { type?: string }
+    const nextSeq = () => ++seqRef.current
 
     // host 级 remote 事件（events.host 流）——settings/document-updated 触发全量刷新。
     if (p.type === "host/remote-event") {
@@ -296,6 +302,51 @@ export function useDeepcLink() {
       if (ev.event === "settings/document-updated") {
         void loadSettings()
       }
+      return
+    }
+
+    // 顶层提问/审批帧（MuxFrame 顶层，非 session/event 内）——composer 接管 + 侧栏 badge。
+    if (p.type === "question/requested") {
+      const f = payload as QuestionRequestedFrame
+      if (f.sessionId === activeRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          { kind: "question", seq: nextSeq(), time: Date.now(), questions: f.questions ?? [] },
+        ])
+      }
+      setPendingInteractions((prev) => {
+        const rest = prev.filter((x) => x.kind !== "question")
+        return [...rest, { kind: "question", id: f.questions?.[0]?.id ?? "q", questions: f.questions }]
+      })
+      return
+    }
+    if (p.type === "approval/requested") {
+      const f = payload as ApprovalRequestedFrame
+      if (f.sessionId === activeRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            kind: "approval",
+            seq: nextSeq(),
+            time: Date.now(),
+            approvalId: f.approvalId,
+            toolName: f.toolName,
+            callId: f.callId,
+            reason: f.reason,
+          },
+        ])
+      }
+      setPendingInteractions((prev) => {
+        const rest = prev.filter((x) => x.kind !== "approval")
+        return [...rest, { kind: "approval", id: f.approvalId, toolName: f.toolName, reason: f.reason }]
+      })
+      return
+    }
+    if (p.type === "approval/resolved" || p.type === "question/answered") {
+      const target = (payload as { approvalId?: string }).approvalId
+      setPendingInteractions((prev) =>
+        prev.filter((x) => (target ? x.id !== target : x.kind === "question" ? false : x.kind === "approval"))
+      )
       return
     }
 
@@ -529,6 +580,7 @@ export function useDeepcLink() {
     pluginsLoaded,
     modelCatalog,
     sessionModels,
+    pendingInteractions,
     connectToNode,
     disconnect,
     selectSession,

@@ -12,7 +12,7 @@
 | 维度 | 已完成 ✅ | 待做 |
 |------|----------|------|
 | **工程** | S1 node-datachannel 底座、esbuild 双端构建、D1 表 + 迁移（nodes/device_tokens/config）、node 端点（register/list/heartbeat/remove）、设备授权端点（device-grant/poll）、信令 WS+DO（方案 A）+ 移除轮询（A2）、节点配额（≤3）、审计事件字典表 + 30 天 Cron（G5） | — |
-| **功能** | 操作互联（chatUI + 数据面桥 + hello 握手）、主动登录（Device Grant）、插件端设备注册/心跳、前端授权确认页、配置同步（D1 + DO 推送 config-changed）、chatUI 完整化（composer 工具栏 / 设置页真实读写 / settings 实时同步） | session 迁移 |
+| **功能** | 多端互联（chatUI + 数据面桥 + hello 握手）、主动登录（Device Grant）、插件端设备注册/心跳、前端授权确认页、配置同步（D1 + DO 推送 config-changed）、chatUI 完整化（composer 工具栏 / 设置页真实读写 / settings 实时同步） | session 迁移 |
 | **设计** | deepSea 悬浮球 + 变形 Sheet + 登录头像/登出、SSH 风格设备面板、配置同步 UI、chatUI 对齐官方（composer / 设置 dialog / 消息流） | — |
 
 > 注：**自动发现（L1 回环探测）已暂缓**（2026-08-21 决策）——先聚焦 chatUI 完整性；
@@ -46,7 +46,7 @@
 
 | 里程碑 | 内容 | 验收标准 | 状态 |
 |--------|------|---------|------|
-| **M1** 底座 + 操作互联 | node-datachannel 端点、数据面桥、chatUI | 端到端 unary + 下行事件流 PASS | ✅ |
+| **M1** 底座 + 多端互联 | node-datachannel 端点、数据面桥、chatUI | 端到端 unary + 下行事件流 PASS | ✅ |
 | **M2** 多端设备管理 | D1 表 + node 端点 + 插件侧栏 + SSH 面板 | typecheck + 浏览器验证 PASS | ✅ |
 | **M3** 设备授权 + 主动登录 | device-grant 端点 + 插件端接入 + 前端确认页 + 注册/心跳 | 插件端换 token 并注册、list 可见 online | ✅ |
 | **M4** 多端直连贯通 + 自动发现 | 信箱信令全流程 + L1 回环探测 | 同账号 A/B 设备无码自动连接 | ⏳（直连贯通 ✅，自动发现暂缓） |

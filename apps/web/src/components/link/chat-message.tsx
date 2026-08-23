@@ -181,6 +181,141 @@ function ContextInjectionRow({ node }: { node: Extract<RenderNode, { kind: "cont
   )
 }
 
+/** 提问选项卡（复刻官方 ask_user_question 问题卡：题干 + 选项 + 自定义输入 + 分页 + 跳过/提交）。 */
+function QuestionBlock({ node }: { node: Extract<RenderNode, { kind: "question" }> }) {
+  const [idx, setIdx] = useState(0)
+  const [selected, setSelected] = useState<Record<string, string[]>>({})
+  const [custom, setCustom] = useState("")
+  const q = node.questions[idx]
+  if (!q) return null
+  const sel = selected[q.id] ?? []
+  const answered = sel.length > 0 || custom.trim().length > 0
+
+  return (
+    <div className="w-full rounded-xl border border-border/60 bg-background/60 p-3 shadow-sm">
+      {q.header && <div className="text-[11px] font-medium text-muted-foreground">{q.header}</div>}
+      <div className="mt-1 text-sm font-medium text-foreground">{q.question}</div>
+      {q.detail && <div className="mt-1 text-xs text-muted-foreground">{q.detail}</div>}
+      {q.options && q.options.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          {q.options.map((opt) => {
+            const active = sel.includes(opt.label)
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => {
+                  setSelected((prev) => {
+                    const cur = prev[q.id] ?? []
+                    if (q.multiSelect) {
+                      return { ...prev, [q.id]: active ? cur.filter((l) => l !== opt.label) : [...cur, opt.label] }
+                    }
+                    return { ...prev, [q.id]: [opt.label] }
+                  })
+                  if (!q.multiSelect) setIdx((i) => Math.min(i + 1, node.questions.length - 1))
+                }}
+                className="flex w-full items-center gap-2 rounded-lg border border-border/60 px-2.5 py-2 text-left transition-colors hover:bg-muted/50"
+              >
+                <span
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px]",
+                    active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
+                  )}
+                >
+                  {active && "✓"}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm text-foreground">{opt.label}</span>
+                  {opt.description && (
+                    <span className="block text-xs text-muted-foreground">{opt.description}</span>
+                  )}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <input
+        value={custom}
+        onChange={(e) => setCustom(e.target.value)}
+        placeholder="输入你的答案"
+        className="mt-2 h-9 w-full rounded-lg border border-border/60 bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-ring"
+      />
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <button
+            type="button"
+            disabled={idx === 0}
+            onClick={() => setIdx((i) => Math.max(0, i - 1))}
+            className="rounded px-1.5 py-0.5 transition-colors hover:bg-muted/60 disabled:opacity-40"
+          >
+            ‹
+          </button>
+          <span>{idx + 1} / {node.questions.length}</span>
+          <button
+            type="button"
+            disabled={idx >= node.questions.length - 1}
+            onClick={() => setIdx((i) => Math.min(node.questions.length - 1, i + 1))}
+            className="rounded px-1.5 py-0.5 transition-colors hover:bg-muted/60 disabled:opacity-40"
+          >
+            ›
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setIdx((i) => Math.min(node.questions.length - 1, i + 1))}
+            className="rounded-lg px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+          >
+            跳过本题
+          </button>
+          <button
+            type="button"
+            disabled={!answered}
+            className="rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground transition-opacity disabled:opacity-40"
+          >
+            提交
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 审批条（复刻官方 ApprovalPanel：amber 条 + reason + 允许/拒绝）。 */
+function ApprovalBlock({ node }: { node: Extract<RenderNode, { kind: "approval" }> }) {
+  const [resolved, setResolved] = useState(false)
+  if (resolved || node.resolved) return null
+  return (
+    <div className="flex w-full items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+      <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-400" />
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-semibold text-amber-300">等待授权</div>
+        <div className="mt-0.5 font-mono text-xs text-foreground/90">{node.toolName}</div>
+        {node.reason && (
+          <div className="mt-1 wrap-break-word text-xs text-muted-foreground">{node.reason}</div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setResolved(true)}
+          className="rounded-lg px-2.5 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10"
+        >
+          允许
+        </button>
+        <button
+          type="button"
+          onClick={() => setResolved(true)}
+          className="rounded-lg px-2.5 py-1 text-xs text-rose-300 transition-colors hover:bg-rose-500/10"
+        >
+          拒绝
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** 消息操作行：时间 + 复制图标（复刻官方 MessageIconActions，hover 显现）。 */
 function MessageActions({ time, text }: { time: number; text: string }) {
   const [copied, setCopied] = useState(false)
@@ -236,6 +371,10 @@ export function ChatMessageNode({ node }: { node: RenderNode }) {
       return <ContextInjectionRow node={node} />
     case "tool":
       return <ToolResultBlock node={node} />
+    case "question":
+      return <QuestionBlock node={node} />
+    case "approval":
+      return <ApprovalBlock node={node} />
     case "error":
       return (
         <div className="flex items-start gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2">

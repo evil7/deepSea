@@ -5,7 +5,7 @@
  * 信封结构严格对齐 dsh host/apiproxy 的四象限信封，保证可直连调用。
  *
  * 两类应用帧复用同一条 DataChannel（靠 kind 路由）：
- *   操作互联：unary / subscribe / downstream（chatUI → 本地 dsh API）
+ *   多端互联：unary / subscribe / downstream（chatUI → 本地 dsh API）
  *   工程同步：sync-*（工作区 + 聊天记录经自动分包传输）
  */
 

@@ -1,5 +1,5 @@
 /**
- * deepc-link 本地 API 处理器抽象（操作互联的本地端点）。
+ * deepc-link 本地 API 处理器抽象（多端互联的本地端点）。
  *
  * 定位：把「远端 chatUI 经 DataChannel 发来的 API 调用」落到本地 dsh host。
  * 抽象 `LocalApi` 接口，使实现可替换：

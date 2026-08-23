@@ -1,6 +1,6 @@
 # deepc-link
 
-deepc-link —— deepc 本地插件 + 远程 RTC 通信中间件（**操作互联 + 工程同步**）。
+deepc-link —— deepc 本地插件 + 远程 RTC 通信中间件（**多端互联 + 工程同步**）。
 
 ## 定位
 
@@ -9,7 +9,7 @@ deepc-link 是「深海套装」的本地执行器与互联底座，核心是 **
 
 | 功能 | 语义 | 一句话 |
 |------|------|--------|
-| **操作互联** | 远程控制 | deepc 主站自实现 chatUI，经加密 RTC 通道调本地 dsh host API |
+| **多端互联** | 远程控制 | deepc 主站自实现 chatUI，经加密 RTC 通道调本地 dsh host API |
 | **工程同步** | 数据迁移/备份 | 登录后把本地工作区 + 聊天记录经同一加密 RTC 通道实时传输 |
 
 **核心原则**：不复刻官方前端、不寄生快照、不直播 DOM；chatUI 只调 dsh 稳定 API，
@@ -48,7 +48,7 @@ packages/deepc-link/
 
 - **S0（当前）**：目录已从 `deepc` 改名 `deepc-link`，镜像/快照/复刻方案已清理。
 - S1：底座打通（`session.ts` 换 node-datachannel，headless ↔ 浏览器一条 DataChannel）。
-- S2：操作互联（自实现 chatUI + `WebRtcApiClient`）。
+- S2：多端互联（自实现 chatUI + `WebRtcApiClient`）。
 - S3：工程同步（工作区 + 聊天记录增量传输）。
 - S4：账号能力（登录触发 + 互联日志 + 自定义加密 key）。
 

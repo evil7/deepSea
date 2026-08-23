@@ -11,7 +11,7 @@
  */
 
 import { hostname, homedir } from 'node:os'
-import { readdir } from 'node:fs/promises'
+import { access, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { LocalApi } from './local-api'
 import type { RpcResult, ServerRequest, StreamKind } from './protocol'
@@ -58,6 +58,27 @@ async function listDir(base: string, depth = 1): Promise<DirEntry[] | null> {
   return out
 }
 
+/** Windows 真实可访问根盘符（枚举 A-Z 探测存在性）→ DirEntry[]。 */
+async function listWindowsRoots(): Promise<DirEntry[]> {
+  const drives: DirEntry[] = []
+  for (let c = 'C'.charCodeAt(0); c <= 'Z'.charCodeAt(0); c++) {
+    const letter = String.fromCharCode(c)
+    const p = `${letter}:\\`
+    try {
+      await access(p)
+      drives.push({ name: `${letter}:`, kind: 'dir', path: p })
+    } catch {
+      // 盘符不存在，跳过
+    }
+  }
+  // 兜底：若探测全失败（非典型环境），至少列 home。
+  if (drives.length === 0) {
+    const home = homedir()
+    drives.push({ name: '~', kind: 'dir', path: home })
+  }
+  return drives
+}
+
 /**
  * 构造本地 deepc 方法处理器：命中 deepc.* 则返回结果，否则返回 null 表示「转下游」。
  */
@@ -69,17 +90,27 @@ async function handleDeepc(method: string, payload: unknown): Promise<RpcResult 
   }
 
   if (method === 'deepc.fs.roots') {
-    // 常用根目录入口（home + 常见用户目录），供前端「工作区选择器」顶层。
+    // 顶层真实根：Windows 枚举真实可访问盘符，Unix 返回根路径 '/' + home。
     const home = homedir()
-    const roots = await listDir(home, 0)
-    return ok({ home, roots: roots ?? [] })
+    const isWin = process.platform === 'win32'
+    let roots: DirEntry[]
+    if (isWin) {
+      roots = await listWindowsRoots()
+    } else {
+      roots = [
+        { name: '/', kind: 'dir', path: '/' },
+        { name: '~', kind: 'dir', path: home },
+      ]
+    }
+    return ok({ home, isWindows: isWin, roots })
   }
 
   if (method === 'deepc.fs.listDirectories') {
     const p = (payload as { path?: unknown; depth?: unknown } | undefined) ?? {}
     const depth = typeof p.depth === 'number' ? p.depth : 1
     // 有 path 则深读该目录，否则读 home 下的一层。
-    const base = typeof p.path === 'string' && p.path.trim() ? resolve(p.path) : homedir()
+    const req = typeof p.path === 'string' && p.path.trim() ? p.path : homedir()
+    const base = resolve(req)
     const children = await listDir(base, depth)
     return ok({ path: base, children: children ?? [] })
   }

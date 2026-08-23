@@ -155,7 +155,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
               {
                 id: "link",
                 icon: Radio,
-                title: "操作互联",
+                title: "多端互联",
                 description:
                   "deepc 主站自实现 chatUI，经 deepc-link 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
                 tag: "link",

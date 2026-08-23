@@ -207,12 +207,15 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
   }
 
   /** 后台轮询 Device Grant → 换 token → 注册（login 触发，不等用户确认完）。 */
-  async function pollAndRegister(state: string): Promise<void> {
+  let pollGeneration = 0
+  async function pollAndRegister(gen: number, state: string): Promise<void> {
     const token = await pollDeviceGrant(resolveSignalBase(), state)
     if (!token) {
       lastError = 'login-timeout'
       return
     }
+    // logout 中断（generation 变了）或已过时：放弃写入 token，避免 token 与基址不匹配。
+    if (gen !== pollGeneration) return
     tokenStore.set(token)
     await ensureReady()
   }
@@ -233,11 +236,15 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
       // Device Grant：生成 state + 授权 URL（前端打开），后台轮询换 token。
       const state = generateConnectId()
       const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}`
+      // 绑定当前 generation：logout 会递增它，使本轮询在拿 token 后放弃写入。
+      const gen = ++pollGeneration
       // 后台立即开始轮询（不等用户）；前端打开 url 后授权，node 端自持 token。
-      void pollAndRegister(state)
+      void pollAndRegister(gen, state)
       return { ok: false, url, reason: 'auth-required' }
     },
     async logout() {
+      // 递增 pollGeneration 使正在后台轮询的 Device Grant 失效（拿 token 后不写回）。
+      pollGeneration++
       tokenStore.clear()
       loggedIn = false
       stopConnections()

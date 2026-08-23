@@ -11,6 +11,7 @@
 
 import type {
   AssistantBlock,
+  AskUserQuestionItem,
   ContentBlock,
   ContextSource,
   HistoryEntry,
@@ -61,6 +62,23 @@ export type RenderNode =
       time: number
       content: ContentBlock[]
       source: ContextSource
+    }
+  | {
+      kind: "question"
+      seq: number
+      time: number
+      questions: AskUserQuestionItem[]
+      answered?: boolean
+    }
+  | {
+      kind: "approval"
+      seq: number
+      time: number
+      approvalId: string
+      toolName: string
+      callId?: string
+      reason?: string
+      resolved?: boolean
     }
 
 /**
@@ -228,8 +246,57 @@ export function foldEvents(events: HistoryEntry[]): RenderNode[] {
         }
         break
       }
+      case "question/requested": {
+        // 提问：ask_user_question tool 触发，渲染选项卡（composer 接管）。
+        const data = event.data as { questions?: AskUserQuestionItem[] }
+        if (Array.isArray(data.questions) && data.questions.length > 0) {
+          nodes.push({
+            kind: "question",
+            seq: event.seq,
+            time: event.time,
+            questions: data.questions,
+          })
+        }
+        break
+      }
+      case "approval/requested": {
+        // 审批：approval/requested 触发，渲染 amber 审批条。
+        const data = event.data as {
+          approvalId?: string
+          toolName?: string
+          callId?: string
+          reason?: string
+        }
+        nodes.push({
+          kind: "approval",
+          seq: event.seq,
+          time: event.time,
+          approvalId: data.approvalId ?? "",
+          toolName: data.toolName ?? "",
+          callId: data.callId,
+          reason: data.reason,
+        })
+        break
+      }
+      case "approval/resolved":
+      case "question/answered": {
+        // 把对应挂起节点标记为已处理（answered/resolved）。
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          const n = nodes[i]
+          if (n.kind === "approval" && (event.data as { approvalId?: string })?.approvalId
+            && (event.data as { approvalId?: string }).approvalId === n.approvalId) {
+            n.resolved = true
+            break
+          }
+          if (n.kind === "question") {
+            n.answered = true
+            break
+          }
+        }
+        break
+      }
       default:
-        // assistant/chunk、step/*、approval/*、session/end-seed 等忽略
+        // assistant/chunk、step/*、session/end-seed 等忽略
         break
     }
   }
@@ -255,6 +322,10 @@ export function nodeSummary(node: RenderNode): string {
       return `运行失败：${node.message}`.slice(0, 120)
     case "context":
       return `上下文注入：${contextLabel(node.source)}`
+    case "question":
+      return node.questions?.length ? `提问：${node.questions[0].question}` : "提问"
+    case "approval":
+      return `待审批：${node.toolName}${node.resolved ? "（已处理）" : ""}`
   }
 }
 

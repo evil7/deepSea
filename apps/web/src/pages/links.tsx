@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// /links —— 操作互联设备列表页（deepc-link 多端直连入口）。
+// /links —— 多端互联设备列表页（deepc-link 多端直连入口）。
 //
 // 列出同账号已登录的 DSH 节点；点击「连接」导航到 /link/:nodeId 建立 RTC。
 // 设备列表 + 在线状态由常驻 WS `/ws/api-link` 节点注册表快照/变更帧刷新：
@@ -87,7 +87,7 @@ export function LinksPage() {
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-10 sm:px-6">
       <PageHeader
-        title="操作互联"
+        title="多端互联"
         description="连接同账号DSH节点，实现远程控制、多端管理"
         sticky={false}
         showTopButton={false}

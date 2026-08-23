@@ -70,7 +70,7 @@ export type { MailboxEnvelope, MailboxKind } from './node-signaling'
 // 对外暴露「多端直连信令基址」（与主站同源；dev 走 vite 代理，prod deepc.cn）。
 export { DEFAULT_SIGNAL_BASE as NODE_SIGNAL_BASE } from './device-auth'
 
-// 对外暴露「操作互联」数据面桥能力（S2：DataChannel 帧 → 本地 API）。
+// 对外暴露「多端互联」数据面桥能力（S2：DataChannel 帧 → 本地 API）。
 export { installApiBridge } from './api-bridge'
 export type { ApiBridge } from './api-bridge'
 export { HttpLocalApi, DEFAULT_HOST_BASE } from './local-api'

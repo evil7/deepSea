@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
 // FolderPicker —— 虚拟文件夹选择器（远程目录枚举 · Win/Unix 双模态）。
 //
-// 通过 deepc-link RPC（deepc.fs.listDirectories）枚举远端 host 的目录树——
-// 该方法是 node 插件端本地能力（node:fs），返回 { path, children:[{name,kind,path}] }，
-// 跨设备枚举真实本机目录。UI 渲染面包屑导航 + 目录列表，取代系统原生文件选择窗口。
-// Windows 模式：面包屑前方可切换盘符（C: D: E: …）。
+// 通过 deepc-link RPC（deepc.fs.*）枚举远端 host 的真实文件系统——
+//   · deepc.fs.roots：顶层真实根（Windows 真实可访问盘符 / Unix 根 + home）
+//   · deepc.fs.listDirectories：逐层枚举目录
+// UI 渲染面包屑导航 + 目录列表 + 「返回上层」，取代系统原生文件选择窗口。
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react"
-import { ChevronRight, Folder, HardDrive, Home, Loader2 } from "lucide-react"
+import { ArrowUp, ChevronRight, Folder, Home, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -19,15 +19,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { deepcClient } from "@/lib/deepc-link/client"
-import { cn } from "@/lib/utils"
 
 interface DirEntry {
   name: string
   isDir: boolean
   /** 绝对路径（deepc.fs.listDirectories 返回的 children.path；用于可靠进入子目录）。 */
+  path: string
+}
+
+interface RootEntry {
+  name: string
   path: string
 }
 
@@ -39,12 +42,6 @@ export interface FolderPickerProps {
   homePath?: string
 }
 
-const WINDOWS_DRIVES = [
-  "C:", "D:", "E:", "F:", "G:", "H:", "I:", "J:", "K:", "L:", "M:",
-  "N:", "O:", "P:", "Q:", "R:", "S:", "T:", "U:", "V:", "W:", "X:",
-  "Y:", "Z:",
-]
-
 /** 判断路径是否为 Windows 风格（以 盘符: 开头）。 */
 function isWinPath(p: string): boolean {
   return /^[A-Za-z]:/.test(p)
@@ -52,6 +49,23 @@ function isWinPath(p: string): boolean {
 
 function getSep(isWin: boolean): string {
   return isWin ? "\\" : "/"
+}
+
+/** 当前路径的父目录（返回上层用）。 */
+function parentPath(p: string, isWin: boolean): string | null {
+  if (!p) return null
+  const norm = p.replace(/[\\/]+$/, "")
+  const parts = norm.split(/[\\/]/).filter(Boolean)
+  if (parts.length === 0) return null
+  // Windows 根盘符（如 C:）无父级。
+  if (isWin && parts.length === 1) return null
+  // Unix 根 / 无父级。
+  if (!isWin && parts.length === 1) return "/"
+  const head = isWin ? `${parts[0]}:` : ""
+  const rest = parts.slice(1, -1)
+  const joined = rest.join(getSep(isWin))
+  if (isWin) return rest.length ? `${head}\\${joined}` : `${head}\\`
+  return "/" + (joined ? joined + "/" : "")
 }
 
 /**
@@ -75,6 +89,18 @@ function buildPath(segments: string[], index: number, isWin: boolean): string {
   return sliced.join(getSep(isWin))
 }
 
+/** 面包屑中带省略：中间段折叠为「…」。 */
+function collapseSegments(segments: string[]): { type: "crumb" | "ellipsis"; value: string; index?: number }[] {
+  if (segments.length <= 4) return segments.map((v, i) => ({ type: "crumb" as const, value: v, index: i }))
+  const head = segments.slice(0, 2)
+  const tail = segments.slice(-2)
+  return [
+    ...head.map((v, i) => ({ type: "crumb" as const, value: v, index: i })),
+    { type: "ellipsis" as const, value: "…" },
+    ...tail.map((v, i) => ({ type: "crumb" as const, value: v, index: head.length + i + 1 })),
+  ]
+}
+
 export function FolderPicker({
   open,
   onOpenChange,
@@ -84,10 +110,9 @@ export function FolderPicker({
   const [isWindows, setIsWindows] = useState(() => isWinPath(homePath))
   const [currentPath, setCurrentPath] = useState(homePath)
   const [entries, setEntries] = useState<DirEntry[]>([])
+  const [roots, setRoots] = useState<RootEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [manualPath, setManualPath] = useState("")
-  const [showDrives, setShowDrives] = useState(false)
 
   /** 调用远端 host 枚举目录（node 端 deepc.fs 本地能力）。 */
   const loadDir = useCallback(async (path: string) => {
@@ -118,24 +143,48 @@ export function FolderPicker({
     setLoading(false)
   }, [])
 
-  // 打开时加载初始目录。
+  // 打开时：拉真实根（盘符/根目录）+ 载入初始目录。
   useEffect(() => {
     if (!open) return
-    const initial = homePath || (isWindows ? "C:\\" : "/")
-    setCurrentPath(initial)
-    setManualPath(initial)
-    setIsWindows(isWinPath(initial))
-    void loadDir(initial)
-    setShowDrives(false)
-  }, [open, homePath, isWindows, loadDir])
+    setError(null)
+    setEntries([])
+    let cancelled = false
+    // 拉顶层真实根（Windows 真实盘符 / Unix 根），确定 OS 与可用入口。
+    void deepcClient
+      .call("deepc.fs.roots", {})
+      .then((res) => {
+        if (cancelled) return
+        const value = (res.ok && res.value) as
+          | { home?: string; isWindows?: boolean; roots?: RootEntry[] }
+          | undefined
+        const home = value?.home ?? homePath
+        const win = value?.isWindows ?? isWinPath(home)
+        setIsWindows(win)
+        setRoots(value?.roots ?? [])
+        // 初始路径：优先 homePath，否则 roots 首项 / 盘符，否则 home。
+        const initial =
+          homePath ||
+          (value?.roots?.length ? value.roots[0].path : value?.home || (win ? "C:\\" : "/"))
+        setCurrentPath(initial)
+        void loadDir(initial)
+      })
+      .catch(() => {
+        if (cancelled) return
+        const initial = homePath || (isWindows ? "C:\\" : "/")
+        setCurrentPath(initial)
+        void loadDir(initial)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, homePath, loadDir])
 
   /** 导航到指定路径。 */
   const navigate = useCallback(
     (path: string) => {
       setCurrentPath(path)
-      setManualPath(path)
       setIsWindows(isWinPath(path))
-      setShowDrives(false)
       void loadDir(path)
     },
     [loadDir]
@@ -149,11 +198,18 @@ export function FolderPicker({
     [navigate]
   )
 
+  /** 返回上层。 */
+  const goUp = useCallback(() => {
+    const parent = parentPath(currentPath, isWindows)
+    if (parent !== null) navigate(parent)
+  }, [currentPath, isWindows, navigate])
+
   const segments = splitSegments(currentPath, isWindows)
+  const crescents = collapseSegments(segments)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg gap-3">
+      <DialogContent className="max-w-2xl gap-3">
         <DialogHeader>
           <DialogTitle>选择工作区目录</DialogTitle>
           <DialogDescription>
@@ -161,95 +217,73 @@ export function FolderPicker({
           </DialogDescription>
         </DialogHeader>
 
-        {/* ── 面包屑导航 ───────────────────────────────────────── */}
+        {/* ── 面包屑导航（超长中间省略 + 返回上层）────────────────── */}
         <div className="flex items-center gap-0.5 overflow-x-auto text-xs">
-          {/* Windows：盘符按钮（点击展开盘符列表） */}
-          {isWindows && (
-            <button
-              type="button"
-              onClick={() => setShowDrives((v) => !v)}
-              className={cn(
-                "flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-muted",
-                showDrives && "bg-muted"
-              )}
-            >
-              <HardDrive className="size-3.5" />
-              {segments[0] || "C:"}
-            </button>
-          )}
-          {/* Unix：根目录按钮 */}
-          {!isWindows && (
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-muted"
-            >
-              <Home className="size-3.5" />
-              <span>/</span>
-            </button>
-          )}
-          {/* 路径段 */}
-          {segments.map((seg, i) => {
-            // 首段已由上方盘符/根按钮展示，跳过。
-            if (i === 0) return null
+          {/* 返回上层按钮 */}
+          <button
+            type="button"
+            onClick={goUp}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-muted"
+            title="返回上层"
+          >
+            <ArrowUp className="size-3.5" />
+          </button>
+          {/* 根/盘符入口（点击可在真实根间切换） */}
+          <button
+            type="button"
+            onClick={() => {
+              if (roots.length) navigate(roots[0].path)
+            }}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-muted"
+            title="根目录"
+          >
+            <Home className="size-3.5" />
+            <span>{isWindows ? segments[0] || "根" : "/"}</span>
+          </button>
+          {/* 路径段（中间折叠 …） */}
+          {crescents.map((c, idx) => {
+            if (c.type === "ellipsis") {
+              return (
+                <span key={`ell-${idx}`} className="shrink-0 px-0.5 text-muted-foreground">
+                  …
+                </span>
+              )
+            }
+            if (c.index === 0) return null
             return (
-              <span key={i} className="flex items-center gap-0.5">
+              <span key={c.index} className="flex items-center gap-0.5">
                 <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
                 <button
                   type="button"
-                  onClick={() => navigate(buildPath(segments, i, isWindows))}
+                  onClick={() => navigate(buildPath(segments, c.index!, isWindows))}
                   className="rounded px-1 py-0.5 transition-colors hover:bg-muted"
                 >
-                  {seg}
+                  {c.value}
                 </button>
               </span>
             )
           })}
         </div>
 
-        {/* ── Windows 盘符选择器 ───────────────────────────────── */}
-        {showDrives && isWindows && (
+        {/* ── 真实根入口（仅顶层/根时显示，可快速切换盘符根目录）────── */}
+        {segments.length <= 1 && roots.length > 0 && (
           <div className="flex flex-wrap gap-1 rounded-lg border border-border/60 p-2">
-            {WINDOWS_DRIVES.map((drive) => (
+            {roots.map((root) => (
               <Button
-                key={drive}
-                variant={segments[0] === drive ? "default" : "outline"}
+                key={root.path}
+                variant={currentPath === root.path || currentPath === root.path + (isWindows ? "\\" : "") ? "default" : "outline"}
                 size="sm"
                 className="h-7 text-xs"
-                onClick={() => {
-                  navigate(`${drive}\\`)
-                  setShowDrives(false)
-                }}
+                onClick={() => navigate(root.path)}
               >
-                {drive}
+                {root.name}
               </Button>
             ))}
           </div>
         )}
 
-        {/* ── 手动路径输入 ─────────────────────────────────────── */}
-        <div className="flex items-center gap-2">
-          <Input
-            value={manualPath}
-            onChange={(e) => setManualPath(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") navigate(manualPath)
-            }}
-            placeholder={isWindows ? "C:\\Users\\..." : "/home/..."}
-            className="h-8 text-xs"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0"
-            onClick={() => navigate(manualPath)}
-          >
-            前往
-          </Button>
-        </div>
-
         {/* ── 目录列表 ─────────────────────────────────────────── */}
-        <ScrollArea className="h-64 rounded-lg border border-border/60">
+        <ScrollArea className="h-80 rounded-lg border border-border/60">
           {loading ? (
             <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
               <Loader2 className="mr-2 size-4 animate-spin" />
@@ -259,7 +293,7 @@ export function FolderPicker({
             <div className="flex flex-col items-center justify-center gap-1.5 px-3 py-10 text-center">
               <p className="text-xs text-destructive">{error}</p>
               <p className="text-xs text-muted-foreground">
-                此 host 可能尚未支持目录枚举（deepc.fs.listDirectories），请手动输入路径
+                此 host 可能尚未支持目录枚举（deepc.fs.listDirectories）
               </p>
             </div>
           ) : entries.length === 0 ? (

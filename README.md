@@ -21,7 +21,7 @@
 ```
 deepSea/
 ├── apps/
-│   ├── web/          # 主站点（Vite + React + shadcn/ui + 操作互联 chatUI）
+│   ├── web/          # 主站点（Vite + React + shadcn/ui + 多端互联 chatUI）
 │   └── worker/       # Cloudflare Worker（auth 最小边界：OAuth + 设备授权 + 信令 DO + 配置 + 审计 + ASSETS）
 ├── packages/
 │   └── deepc-link/ # 深海套装互联插件（前后端分层 + RTC 数据面 + WS 信令）

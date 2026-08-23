@@ -1,5 +1,5 @@
 ---
-description: "Use when 开发 deepc-link 互联插件：操作互联、多端直连、WebRTC/WS 信令、设备注册与授权、配置同步、RTC 数据面桥、前后端分层。covers node 端插件 + Worker auth 边界 + 主站 chatUI 的架构红线。"
+description: "Use when 开发 deepc-link 互联插件：多端互联、多端直连、WebRTC/WS 信令、设备注册与授权、配置同步、RTC 数据面桥、前后端分层。covers node 端插件 + Worker auth 边界 + 主站 chatUI 的架构红线。"
 name: "deepc-link 互联架构规范"
 applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deepc-link/**", "apps/web/src/pages/links.tsx", "apps/web/src/components/link/**"]
 ---

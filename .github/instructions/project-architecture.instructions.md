@@ -54,7 +54,7 @@ apps/web/src/
 ├── components/     # 业务组件（按功能分子目录）
 │   ├── ui/         # shadcn 生成组件（CLI 管理，禁止手改）
 │   ├── layout/     # 跨页面布局组件（Topbar、PageHeader 共享页头）
-│   ├── link/      # 操作互联 chatUI（消息流 / composer / FolderPicker）
+│   ├── link/      # 多端互联 chatUI（消息流 / composer / FolderPicker）
 │   └── showcase/   # 展示/落地页动效（Ocean、插件码牌、usePageEnter/useSlideReveal 过渡 hook）
 ├── lib/
 │   ├── github/     # octokit 封装（client、search、discussions、issues）

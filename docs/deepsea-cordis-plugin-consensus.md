@@ -152,10 +152,10 @@ export function apply(ctx: Context): void {
 }
 ```
 
-## 5. 操作互联载体选型（对 deepc-bridge 的直接结论）
+## 5. 多端互联载体选型（对 deepc-bridge 的直接结论）
 
 > 2026-08-21 结论更新：monkey-patch 方案（patch `window.fetch`/`window.WebSocket` 复刻官方
-> 前端）已随「寄生快照」方案一并废弃。deepc-bridge 的「操作互联」采用**自实现 chatUI +
+> 前端）已随「寄生快照」方案一并废弃。deepc-bridge 的「多端互联」采用**自实现 chatUI +
 > `WebRtcApiClient` 正统子类**（§5.2），不再 patch 全局对象。下方 §5.1/§5.4 的历史分析
 > 仅作「为何 monkey-patch 有黑屏风险」的存档依据。
 
@@ -244,7 +244,7 @@ while (true) {
 - 黑屏根因（伪造 WS 的 close 触发 `readWebSocket` 流正常结束）已不再影响新方案——
   新方案无伪造 WebSocket，chatUI 经 `WebRtcApiClient` 自掌控流生命周期。
 - `AbstractApiClient` 的 `doFetch`/`openMux`/`openHost` 三处 transport aspect 是
-  「操作互联」的正统扩展点，不再以 patch 全局对象的方式实现。
+  「多端互联」的正统扩展点，不再以 patch 全局对象的方式实现。
 - 载体选型依据已收敛到 `docs/deepsea-deepc-bridge-plan.md` §5（自实现 chatUI + DataChannel）。
 
 ## 6. 参考（官方源码路径）

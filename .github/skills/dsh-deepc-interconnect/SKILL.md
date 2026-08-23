@@ -1,6 +1,6 @@
 ---
 name: dsh-deepc-interconnect
-description: 'deepc-link 操作互联 + 多端直连架构。Use when: 开发/调试 deepc-link 前后端分层、WebRTC 数据面桥、WS+DO 信令、设备注册与授权、配置同步、RTC 直连、nodeId/token 注入、chatUI 数据面。'
+description: 'deepc-link 多端互联 + 多端直连架构。Use when: 开发/调试 deepc-link 前后端分层、WebRTC 数据面桥、WS+DO 信令、设备注册与授权、配置同步、RTC 直连、nodeId/token 注入、chatUI 数据面。'
 argument-hint: '要处理的互联场景，例如 "多端直连信令" 或 "RTC 数据面桥" 或 "设备授权流"'
 user-invocable: true
 ---
@@ -10,7 +10,7 @@ user-invocable: true
 ## 目标
 
 为 deepSea 的「深海套装互联底座」提供领域知识：deepc-link 插件如何把本地 dsh host 的
-能力经加密 RTC 通道暴露给 deepc 主站，实现**操作互联**（远程控制）与**工程同步**（配置同步）。
+能力经加密 RTC 通道暴露给 deepc 主站，实现**多端互联**（远程控制）与**工程同步**（配置同步）。
 
 ## 何时使用
 

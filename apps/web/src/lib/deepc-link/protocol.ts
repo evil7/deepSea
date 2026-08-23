@@ -142,6 +142,8 @@ export interface SessionSummary {
   cwd?: string
   agentPreset?: string
   projections?: { asOfSeq: number; values: Record<string, unknown> }
+  /** 挂起的交互（提问/审批等待回答），用于侧栏「等待回答」badge。 */
+  pendingInteraction?: PendingKind | null
 }
 
 /** SessionEvent：严格信封 + 宽 data（会话事件流的基本单元）。 */
@@ -316,10 +318,50 @@ export interface ApprovalRequestedFrame {
   reason?: string
 }
 
+/** 提问选项（ask_user_question tool 渲染的选项）。 */
+export interface AskUserQuestionOption {
+  label: string
+  description?: string
+}
+
+/** 单个提问项（对齐 dsh `AskUserQuestionItem`）。 */
+export interface AskUserQuestionItem {
+  id: string
+  question: string
+  /** 辅助文本（渲染但不作选项）。 */
+  detail?: string
+  /** 短标题/分组标签。 */
+  header?: string
+  options?: AskUserQuestionOption[]
+  multiSelect?: boolean
+  /** plan-review 意图：{ kind:'plan-review'; approve:string } */
+  intent?: { kind: "plan-review"; approve: string } | { kind: string; [k: string]: unknown }
+}
+
+/** 提问回答（用户提交的答案）。 */
+export interface AskUserQuestionAnswer {
+  answers: Array<{ id: string; selected: string[]; custom?: string }>
+}
+
 export interface QuestionRequestedFrame {
   type: "question/requested"
   sessionId: string
-  questions: unknown[]
+  questions: AskUserQuestionItem[]
+}
+
+/** 会话挂起的交互类型（pending / PendingWait）。 */
+export type PendingKind = "question" | "approval" | string
+
+/** 会话挂起的交互（渲染侧栏「等待回答」badge / composer 接管）。 */
+export interface PendingInteraction {
+  kind: PendingKind
+  /** question：问题 id；approval：approvalId。 */
+  id: string
+  /** 待答问题列表（question 时为完整 questions）。 */
+  questions?: AskUserQuestionItem[]
+  /** approval 时待审批的工具名 / 理由。 */
+  toolName?: string
+  reason?: string
 }
 
 export type MuxFrame =

@@ -1,26 +1,27 @@
 // ---------------------------------------------------------------------------
-// ConnectStatus —— chatUI sidebar 底部「时长 + 状态」按钮。
+// ConnectStatus —— chatUI sidebar 底部「极简连接状态点」。
 //
-// 三态交互（对齐 /links 设备删除的 confirm→执行 模式）：
-//   1. 常态：显示连接时长 + 连接状态（未连接/已连接/连接中/重连中/连接失败）。
-//   2. hover：切换为「断开」按钮（红色强调）。
-//   3. 点击：切换为「确认断开？」二次确认态；再次点击执行断开；3s 未操作回退。
-// 仅 connected/reconnecting 时允许断开；其余状态渲染为纯状态展示（disabled）。
+// 需求：连接信息只需最简靠右显示（设置按钮为主）。故渲染为：
+//   · 一个小圆点（颜色表达状态：绿=已连接/金=重连/红=错误/灰=未连接）
+//   · connected 时在圆点右侧附「连接时长」微型文本（hover 时隐藏）
+// 交互（对齐 /links 设备删除 confirm→执行）：
+//   1. hover：圆点变为「断开连接」提示（rose 强调），title 提示。
+//   2. 点击：二次确认态（"确认断开？"）；再点执行断开；3s 未操作回退。
+// 仅 connected / reconnecting 允许断开；其余 render 为纯状态点（disabled）。
 // ---------------------------------------------------------------------------
 
 import { useState } from "react"
-import { Check, Unplug } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { ClientState } from "@/lib/deepc-link/client"
 
-const STATE_META: Record<ClientState, { label: string; tone: string }> = {
-  idle: { label: "未连接", tone: "text-slate-300" },
-  connecting: { label: "连接中…", tone: "text-sky-300" },
-  connected: { label: "已连接", tone: "text-emerald-300" },
-  reconnecting: { label: "重连中…", tone: "text-amber-300" },
-  error: { label: "连接失败", tone: "text-rose-300" },
-  disconnected: { label: "已断开", tone: "text-slate-300" },
+const STATE_DOT: Record<ClientState, { label: string; color: string; pulse: boolean }> = {
+  idle: { label: "未连接", color: "bg-slate-400", pulse: false },
+  connecting: { label: "连接中…", color: "bg-sky-400", pulse: true },
+  connected: { label: "已连接", color: "bg-emerald-400", pulse: false },
+  reconnecting: { label: "重连中…", color: "bg-amber-400", pulse: true },
+  error: { label: "连接失败", color: "bg-rose-500", pulse: false },
+  disconnected: { label: "已断开", color: "bg-slate-400", pulse: false },
 }
 
 /** 秒 → 可读时长（`Xh Ym` / `Xm Ys` / `Xs`）。 */
@@ -45,21 +46,16 @@ export function ConnectStatus({
   onDisconnect: () => void
 }) {
   const [confirm, setConfirm] = useState(false)
-  // 仅 connected/reconnecting 允许「断开」；其余状态渲染为纯状态展示。
   const disconnectable = state === "connected" || state === "reconnecting"
-  const meta = STATE_META[state]
-
-  // 常态文案：时长 + 状态（连接中/失败等无时长）。
-  const label =
-    state === "connected"
-      ? `${formatDuration(elapsed)} · ${meta.label}`
-      : meta.label
+  const meta = STATE_DOT[state]
+  // 常态文案：connected 显示时长；否则显示状态文字（未连接/连接中/重连中/连接失败/已断开）。
+  const normalLabel = state === "connected" ? formatDuration(elapsed) : meta.label
 
   return (
     <button
       type="button"
       disabled={!disconnectable}
-      title={disconnectable ? "断开连接" : meta.label}
+      title={confirm ? "确认断开？" : disconnectable ? "断开连接" : meta.label}
       onClick={() => {
         if (confirm) {
           setConfirm(false)
@@ -70,35 +66,33 @@ export function ConnectStatus({
         }
       }}
       className={cn(
-        "group flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-        !disconnectable && "cursor-default"
+        "group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] leading-none transition-colors",
+        disconnectable ? "hover:bg-muted/60" : "cursor-default"
       )}
     >
       {confirm ? (
-        // 确认断开态（绿色 emerald 强调，复用设备删除的确认语义）
-        <span className="flex w-full items-center gap-2 text-emerald-300">
-          <Check className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">确认断开？</span>
-        </span>
-      ) : disconnectable ? (
-        <>
-          {/* 常态：时长 + 状态（hover 时隐藏） */}
-          <span className="flex w-full items-center gap-2 text-muted-foreground group-hover:hidden">
-            <Unplug className="size-3.5 shrink-0" />
-            <span className={cn("min-w-0 flex-1 truncate", meta.tone)}>{label}</span>
-          </span>
-          {/* hover：断开按钮（常时隐藏，hover 显示） */}
-          <span className="hidden w-full items-center gap-2 text-rose-400 group-hover:flex hover:text-rose-300">
-            <Unplug className="size-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">断开</span>
-          </span>
-        </>
+        <span className="text-[11px] leading-none text-emerald-400">确认断开？</span>
       ) : (
-        // 不可断开态：纯状态展示（无 hover 切换）
-        <span className="flex w-full items-center gap-2 opacity-70">
-          <Unplug className="size-3.5 shrink-0" />
-          <span className={cn("min-w-0 flex-1 truncate", meta.tone)}>{label}</span>
-        </span>
+        <>
+          {/* 状态圆点 */}
+          <span
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              meta.color,
+              meta.pulse && "animate-pulse",
+              disconnectable && "group-hover:bg-rose-400 group-hover:animate-none"
+            )}
+          />
+          {/* 状态文字（未连接/时长/重连等）；hover 时切为「断开」 */}
+          {disconnectable ? (
+            <>
+              <span className="text-muted-foreground group-hover:hidden">{normalLabel}</span>
+              <span className="hidden text-rose-400 group-hover:inline">断开</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{normalLabel}</span>
+          )}
+        </>
       )}
     </button>
   )

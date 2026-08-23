@@ -441,10 +441,22 @@ export function bootstrapHostUi(): HostUi {
     }
   }
 
-  /** 拉取后端状态并刷新 UI。 */
+  /** 拉取后端状态并刷新 UI（带 diff：关键字段无变化的轮询调用不再重渲染）。 */
   async function refreshStatus(): Promise<void> {
     const s = await deepcCall<BackendStatus>('status')
-    if (s) applyStatus(s)
+    if (!s) return
+    // diff guard：只有登录状态/会话数/错误/开关/冲突变化才应用，避免每次轮询重建 DOM。
+    const prev = status
+    const changed =
+      prev.loggedIn !== s.loggedIn ||
+      prev.sessions !== s.sessions ||
+      prev.error !== s.error ||
+      prev.allowInterconnect !== s.allowInterconnect ||
+      prev.devMode !== s.devMode ||
+      (prev.configConflicts?.length ?? 0) !== (s.configConflicts?.length ?? 0)
+    if (changed) {
+      applyStatus(s)
+    }
   }
 
   // ── 已连接状态：计时 + 断开按钮（多端直连会话建立/断开时切换）────────
@@ -673,6 +685,11 @@ export function bootstrapHostUi(): HostUi {
 
   // 初始拉取一次后端状态。
   void refreshStatus()
+  // 实时跟随连接状态：每 3s 轮询一次（diff guard 里已做无变化短路，开销极小）。
+  // 修复「插件端未连接只有刷新后才变动」——会话建立/断开时状态栏自动更新。
+  setInterval(() => {
+    void refreshStatus()
+  }, 3000)
 
   return {
     get state() {

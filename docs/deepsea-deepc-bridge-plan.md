@@ -1,4 +1,4 @@
-# deepc-bridge 规划 —— 操作互联 + 工程同步
+# deepc-bridge 规划 —— 多端互联 + 工程同步
 
 > 状态：**实现中（S1 底座已打通）** · 本文档是 deepc 的**唯一正确方案文档**
 > 编写：2026-08-21 · 取代旧「声纳互联」（寄生快照，`deepsea-suite-sonar-interconnect.md`）
@@ -44,10 +44,10 @@
 
 | 功能 | 语义 | 一句话 |
 |------|------|--------|
-| **操作互联** | 远程控制 | deepc 主站**自实现 chatUI**，经加密 RTC 通道调本地 dsh host API |
+| **多端互联** | 远程控制 | deepc 主站**自实现 chatUI**，经加密 RTC 通道调本地 dsh host API |
 | **工程同步** | 数据迁移/备份 | 登录后，把本地**工作区 + 聊天记录**经同一加密 RTC 通道实时传输 |
 
-**核心原则**：操作互联靠「自实现 chatUI + 只调稳定 API」隔离官方前端变动风险；
+**核心原则**：多端互联靠「自实现 chatUI + 只调稳定 API」隔离官方前端变动风险；
 工程同步靠「同一中间件 + 自动分包」复用全部安全底座。两者**共用同一套
 `deepc-sonar-bridge` 底座**（信令 / 加密 / 配对 / 探活 / 帧协议 / 可靠分包）。
 
@@ -200,7 +200,7 @@ deepc-sonar-bridge 中间件
 ├── 安全层 security      —— nodeId 派生密钥 + AES-GCM 信令加密 + 应用层数据加密
 ├── 分包层 framing       —— 大文件/长记录自动分块 + SHA-256 校验 + ACK/NACK + 乱序还原
 ├── 会话层 session       —— 信令交换（WS+DO）/探活(deepc:ping·pong)/连接生命周期
-└── 应用帧 application   —— 操作互联帧（API 调用）+ 工程同步帧（数据迁移）
+└── 应用帧 application   —— 多端互联帧（API 调用）+ 工程同步帧（数据迁移）
 ```
 
 ### 4.2 安全模型
@@ -232,7 +232,7 @@ deepc-sonar-bridge 中间件
 
 ---
 
-## 5. 功能一：操作互联（远程控制 · 自实现 chatUI）
+## 5. 功能一：多端互联（远程控制 · 自实现 chatUI）
 
 ### 5.1 拓扑：chatUI → RTC → 本地 API
 
@@ -279,7 +279,7 @@ class WebRtcApiClient extends AbstractApiClient {
 - 协议不变量全交基类，只写「DataChannel 传输」一个 aspect，无全局副作用、无 WS 语义复刻。
 - 相比旧 monkey-patch（patch `window.fetch` / `window.WebSocket`），**无黑屏风险**、无复刻负担。
 
-### 5.3 操作互联帧协议（叠加在 DataChannel 之上）
+### 5.3 多端互联帧协议（叠加在 DataChannel 之上）
 
 ```
 unary         chatUI → host    { kind:'unary', rpcId, method, payload }
@@ -369,7 +369,7 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 | `src/session.ts` | **零改动复用**：node 端经 `polyfill.ts` 注入 node-datachannel headless 端点（对齐浏览器 API） |
 | `src/polyfill.ts` | 新增：把 `node-datachannel/polyfill` 的 `RTCPeerConnection` 等注入 globalThis |
 | `src/local-api.ts` | 新增：`LocalApi` 抽象 + `HttpLocalApi`（fetch unary + WS 下行，访问本地 dsh host） |
-| `src/api-bridge.ts` | 新增：node 端数据面桥，DC 帧 → `LocalApi` → 回传（操作互联数据面入口） |
+| `src/api-bridge.ts` | 新增：node 端数据面桥，DC 帧 → `LocalApi` → 回传（多端互联数据面入口） |
 | `src/client/index.ts` | browser 端：不再是「启动互联悬浮球」，改为 chatUI 引导 + 工程同步入口 |
 
 ### 7.3 删除（镜像/快照/复刻专属，本轮清理）
@@ -390,7 +390,7 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 - 目录：`packages/deepc` → **`packages/deepc-bridge`**
 - 包名：`@deepsea/deepc` → **`@deepsea/deepc-bridge`**
 - 描述：从「声纳互联 bridge（寄生式透明桥接）」→「deepc 本地插件 + 远程 RTC 通信中间件
-  （操作互联 + 工程同步）」
+  （多端互联 + 工程同步）」
 
 ---
 
@@ -399,7 +399,7 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 1. **底座先行** ✅ 目录改名 `deepc-bridge` + 包名 + 清理废弃文件 + 保留底座编译通过。
 2. **中间件打通** ✅（node 端）`session.ts` 经 `polyfill.ts` 注入 node-datachannel，node 端
    headless 端点 + 信令互通已验证（node↔node 端到端 PASS）；浏览器端互通随 chatUI 在 S2 落地。
-3. **操作互联** ✅ node 端数据面桥（`api-bridge.ts` + `HttpLocalApi`）→ 主站自实现 chatUI
+3. **多端互联** ✅ node 端数据面桥（`api-bridge.ts` + `HttpLocalApi`）→ 主站自实现 chatUI
    （会话/消息流/composer/设置页/实时同步）已端到端贯通，并完整化对齐官方（见 §5.1 注）。
 4. **工程同步 → 配置同步** ✅ 已收敛为「配置同步（D1 权威 + DO 推送 config-changed，已实现）
    + session 迁移（后续，RTC 直传 + D1 索引，见 `deepsea-deepc-bridge-config-sync.md`）」。

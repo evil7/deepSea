@@ -189,8 +189,8 @@ host（dsh 前端，可不登录）  ── 生成 8 位临时口令(60s) ──
 - **身份来源**：临时口令本身（不依赖登录态），用于「分享给他人」场景。
 - **适用**：跨账号、临时授权他人远程访问本机 dsh。
 - **安全**：8 位 + 60s + 错误限流（60min/5 次）+ 频次限流（≤5 req/s）四重防护。
-- **静态壳承载**：操作互联的 chatUI 由 deepc 主站自实现（不再寄生官方快照），
-  工程同步与操作互联共用同一 `deepc-sonar-bridge` RTC 通道，详见
+- **静态壳承载**：多端互联的 chatUI 由 deepc 主站自实现（不再寄生官方快照），
+  工程同步与多端互联共用同一 `deepc-sonar-bridge` RTC 通道，详见
   `deepsea-deepc-bridge-plan.md`。
 
 ### 5.3 两方案对比与协作
@@ -256,7 +256,7 @@ KV 迁移后只剩 `state:*` 与 `signal:*`，优化项：
 5. **已落地**：`use-auth.ts` 的 `/auth/me` 并发去重（in-flight 单例）已实现。
 6. **已落地**：D1 建表 + 双写迁移（P1）+ preferences/互联日志端点已完成；P2 读切换待推进。
 7. **已废弃（原 Plan C）**：子域名 `sonar-landing-page.deepc.cn` 承载快照静态壳的方案已随
-   寄生快照一并废弃，操作互联改为自实现 chatUI，见 `deepsea-deepc-bridge-plan.md`。
+   寄生快照一并废弃，多端互联改为自实现 chatUI，见 `deepsea-deepc-bridge-plan.md`。
 
 ## 10. 待确认问题
 
@@ -264,5 +264,5 @@ KV 迁移后只剩 `state:*` 与 `signal:*`，优化项：
 - [ ] 多端直连的「设备注册」模型：是否引入设备 ID + 重命名/下线？（决定 sessions 表粒度）
 - [ ] 自定义加密 key 的生成策略：用户手动设置 vs 首次登录自动派生？是否支持轮换/找回？
 - [ ] 限流封禁是否需要在 KV 之外提供「人工解封」入口？
-- [ ] 子域名方案（原 Plan C）已废弃；新的工程同步 + 操作互联触发与粒度待定（见
+- [ ] 子域名方案（原 Plan C）已废弃；新的工程同步 + 多端互联触发与粒度待定（见
       `deepsea-deepc-bridge-plan.md` §9 疑点清单）。

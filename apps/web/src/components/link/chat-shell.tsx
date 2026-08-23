@@ -13,7 +13,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   Folder,
+  ListOrdered,
   Loader2,
   MessageSquarePlus,
   PanelLeft,
@@ -28,7 +30,6 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { ChatMessageList } from "@/components/link/chat-message"
 import { FolderPicker } from "@/components/link/folder-picker"
 import { ConnectStatus } from "@/components/link/connect-status"
@@ -103,6 +104,35 @@ const SLASH_COMMANDS: { id: string; name: string; desc: string }[] = [
   { id: "model", name: "model", desc: "选择本会话使用的模型" },
 ]
 
+/** 会话视图排列偏好（对齐官方 EngineStore 的 groupBy/orderBy，本地持久化）。 */
+interface ViewSort {
+  /** 按工作区分组 or 扁平。 */
+  groupBy: "workspace" | "flat"
+  /** 排序：手动 or 更新时间。 */
+  orderBy: "manual" | "updated"
+}
+const VIEW_SORT_KEY = "deepsea:sidebar:viewSort"
+const DEFAULT_VIEW_SORT: ViewSort = { groupBy: "workspace", orderBy: "manual" }
+function readViewSort(): ViewSort {
+  try {
+    const raw = localStorage.getItem(VIEW_SORT_KEY)
+    if (raw) {
+      const v = JSON.parse(raw) as Partial<ViewSort>
+      return { groupBy: v.groupBy ?? "workspace", orderBy: v.orderBy ?? "manual" }
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_VIEW_SORT
+}
+function writeViewSort(v: ViewSort): void {
+  try {
+    localStorage.setItem(VIEW_SORT_KEY, JSON.stringify(v))
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const {
     state,
@@ -127,11 +157,13 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     updateSetting,
     openSettingsDocument,
     selectSessionModel,
+    pendingInteractions,
   } = useDeepcLink()
 
   const [draft, setDraft] = useState("")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [searchActive, setSearchActive] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("general")
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
@@ -139,10 +171,47 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set())
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const [viewSortOpen, setViewSortOpen] = useState(false)
+  const [viewSort, setViewSort] = useState<ViewSort>(() => readViewSort())
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const editorRef = useRef<HTMLDivElement | null>(null)
 
-  /** 关闭 composer 工具栏全部下拉。 */
+  /**
+   * 把命令插入 composer（复刻官方：不自动发送，命令词用 <mark> 高亮）。
+   * 追加 `/command `；若末尾已有内容，前面补一个空格。
+   */
+  const insertCommand = useCallback((commandId: string) => {
+    const editor = editorRef.current
+    if (!editor) return
+    setCommandMenuOpen(false)
+    setPermissionMenuOpen(false)
+    setModelMenuOpen(false)
+    const text = editor.textContent ?? ""
+    // 追加命令词，前后确保有空格边界。
+    const prevGap = text.length > 0 && !text.endsWith(" ") ? " " : ""
+    const mark = document.createElement("mark")
+    mark.textContent = `/${commandId}`
+    const space = document.createElement("span")
+    space.textContent = " "
+    // 若编辑器为空或纯空白，直接插入 mark；否则追加间隙文本。
+    editor.appendChild(document.createTextNode(prevGap))
+    editor.appendChild(mark)
+    editor.appendChild(space)
+    // 同步纯文本到 draft（供 handleSend / 发送按钮启用判定）。
+    setDraft(editor.textContent ?? "")
+    // 光标移到末尾并聚焦。
+    const sel = window.getSelection()
+    if (sel) {
+      const range = document.createRange()
+      range.selectNodeContents(editor)
+      range.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+    editor.focus()
+  }, [])
+
   const closeToolbarMenus = useCallback(() => {
     setCommandMenuOpen(false)
     setPermissionMenuOpen(false)
@@ -238,6 +307,19 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
       .filter((ws) => ws.sessionIds.length > 0)
   }, [workspaces, sessions, keyword])
 
+  // 分组渲染时隐藏 blank 会话（官方行为：Clients hide blank Sessions from lists），
+  // 仅保留当前选中的「临时新建」行；并按 viewSort.orderBy 排序。
+  const visibleSessions = useCallback((wsSessionIds: string[]) => {
+    const list = wsSessionIds
+      .map((id) => sessions.find((s) => s.sessionId === id))
+      .filter((s): s is SessionSummary => Boolean(s))
+      .filter((s) => !s.blank || s.sessionId === activeSessionId)
+    if (viewSort.orderBy === "updated") {
+      return list.toSorted((a, b) => b.updatedAt - a.updatedAt)
+    }
+    return list
+  }, [sessions, activeSessionId, viewSort.orderBy])
+
   const handleSend = async () => {
     const text = draft.trim()
     if (!text) return
@@ -259,9 +341,16 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
           <aside className="flex w-70 shrink-0 flex-col border-r border-border/60 bg-sidebar">
             {/* 品牌行 + 收起 */}
             <div className="flex h-15 shrink-0 items-center justify-between px-3">
-              <div className="flex items-center gap-2 px-1">
-                <Waves className="size-5 text-primary" />
-                <span className="text-sm font-semibold text-sidebar-foreground">deepSea</span>
+              <div className="flex min-w-0 items-center gap-2 px-1">
+                <img
+                  src="/deepseek.svg"
+                  alt=""
+                  aria-hidden
+                  className="size-5 shrink-0 opacity-90 invert"
+                />
+                <span className="truncate text-sm font-semibold text-sidebar-foreground">
+                  {hostInfo?.hostname ?? "deepSea"}
+                </span>
               </div>
               <Button
                 variant="ghost"
@@ -286,7 +375,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               </Button>
             </div>
 
-            {/* 工作区 + 搜索 */}
+            {/* 工作区：标签 + 添加/刷新/排列 三按钮 */}
             <div className="mt-2 flex shrink-0 items-center gap-1 px-3">
               <span className="text-sm text-muted-foreground">工作区</span>
               <div className="ml-auto flex items-center gap-1">
@@ -308,20 +397,69 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 >
                   <RefreshCw className="size-4" />
                 </Button>
+                <div className="relative">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn("size-7 text-muted-foreground", viewSortOpen && "bg-muted/60")}
+                    onClick={() => setViewSortOpen((v) => !v)}
+                    title="排列"
+                  >
+                    <ListOrdered className="size-4" />
+                  </Button>
+                  {viewSortOpen && (
+                    <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border border-border/60 bg-background p-1 shadow-xl">
+                      <ViewSortMenu
+                        value={viewSort}
+                        onChange={(v) => {
+                          setViewSort(v)
+                          writeViewSort(v)
+                          setViewSortOpen(false)
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                {/* 显隐性切换：搜索按钮 → 整行过滤框 */}
+                {!searchActive && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground"
+                    onClick={() => setSearchActive(true)}
+                    title="搜索会话"
+                  >
+                    <Search className="size-4" />
+                  </Button>
+                )}
               </div>
             </div>
-            {/* 搜索输入框（常驻） */}
-            <div className="shrink-0 px-3 pb-1">
-              <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5">
-                <Search className="size-3.5 text-muted-foreground" />
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜索会话…"
-                  className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
-                />
+            {/* 搜索：点击图标后整行变过滤框 */}
+            {searchActive ? (
+              <div className="shrink-0 px-3 pb-1">
+                <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5">
+                  <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索会话…"
+                    className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchActive(false)
+                      setSearchQuery("")
+                    }}
+                    className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                    title="关闭搜索"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : null}
 
             {/* 会话树 */}
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
@@ -329,11 +467,29 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 <p className="px-2 py-6 text-center text-xs text-muted-foreground">暂无会话</p>
               ) : filteredWorkspaces.length === 0 ? (
                 <p className="px-2 py-6 text-center text-xs text-muted-foreground">无匹配会话</p>
+              ) : viewSort.groupBy === "flat" ? (
+                (() => {
+                  // 平铺模式：跨工作区汇总所有会话，不区分分组。
+                  const allIds = filteredWorkspaces.flatMap((ws) => ws.sessionIds)
+                  const flatSessions = visibleSessions(allIds)
+                  if (flatSessions.length === 0) {
+                    return (
+                      <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                        无匹配会话
+                      </p>
+                    )
+                  }
+                  return (
+                    <FlatSessionTree
+                      sessions={flatSessions}
+                      activeSessionId={activeSessionId}
+                      onSelect={selectSession}
+                    />
+                  )
+                })()
               ) : (
                 filteredWorkspaces.map((ws) => {
-                  const wsSessions = ws.sessionIds
-                    .map((id) => sessions.find((s) => s.sessionId === id))
-                    .filter((s): s is SessionSummary => Boolean(s))
+                  const wsSessions = visibleSessions(ws.sessionIds)
                   return (
                     <div key={ws.workspaceId} className="mb-1">
                       <button
@@ -367,7 +523,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               )}
             </div>
 
-            {/* 底部：设置 + 连接状态（并排） */}
+            {/* 底部：设置（为主）+ 极简连接状态（靠右） */}
             <div className="shrink-0 border-t border-border/60 p-2">
               <div className="flex items-center gap-1">
                 <Button
@@ -379,7 +535,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                   <Settings className="size-4" />
                   设置
                 </Button>
-                <div className="min-w-0 flex-1">
+                <div className="ml-auto shrink-0">
                   <ConnectStatus state={state} elapsed={elapsed} onDisconnect={onDisconnect} />
                 </div>
               </div>
@@ -404,7 +560,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 </Button>
               )}
               <span className="truncate text-sm font-medium">
-                {activeSession ? sessionLabel(activeSession) : "操作互联"}
+                {activeSession ? sessionLabel(activeSession) : "多端互联"}
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -448,16 +604,29 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
             )}
           </div>
 
-          {/* 输入框（composer） */}
+          {/* 输入框（composer · border-t 容器） */}
           <div className="shrink-0 border-t border-border/60">
+            {pendingInteractions.length > 0 && (
+              <div className="mx-auto max-w-3xl px-4 pt-2.5">
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                  <CircleAlert className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    {pendingInteractions[0].kind === "question"
+                      ? "等待回答：请在下方回答问题"
+                      : `等待授权：${pendingInteractions[0].toolName ?? ""}`}
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="mx-auto max-w-3xl px-4 pt-2.5 pb-1.5">
-              <Textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
-                disabled={!activeSessionId}
-                rows={2}
-                className="min-h-0 resize-none border-0 bg-transparent px-0 focus-visible:ring-0"
+              <div
+                ref={editorRef}
+                contentEditable={!!activeSessionId}
+                suppressContentEditableWarning
+                data-placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
+                data-empty={!draft}
+                className="min-h-0 resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-foreground outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/60 empty:before:content-[attr(data-placeholder)] [&_mark]:rounded [&_mark]:bg-primary/15 [&_mark]:px-0.5 [&_mark]:text-foreground"
+                onInput={(e) => setDraft((e.target as HTMLDivElement).textContent ?? "")}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault()
@@ -465,8 +634,9 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                   }
                 }}
               />
-              {/* 工具栏 */}
-              <div ref={toolbarRef} className="flex items-center justify-between gap-2 pt-1">
+            </div>
+            <div className="mx-auto max-w-3xl px-4">
+              <div ref={toolbarRef} className="flex items-center justify-between gap-2 pb-1.5">
                 <div className="flex items-center gap-1">
                   {/* 命令按钮（+） */}
                   <div className="relative">
@@ -494,10 +664,9 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                             type="button"
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
                             onClick={() => {
-                              setCommandMenuOpen(false)
                               if (c.id === "model") setModelMenuOpen(true)
                               else if (c.id === "permission") setPermissionMenuOpen(true)
-                              else if (activeSessionId) void sendPrompt(`/${c.id}`)
+                              else if (activeSessionId) insertCommand(c.id)
                             }}
                           >
                             <span className="text-xs font-medium text-foreground">{c.name}</span>
@@ -630,14 +799,16 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                   </Button>
                 </div>
               </div>
-              {/* 底部统计 */}
-              <div className="flex justify-center pt-1.5 text-xs text-muted-foreground/70">
+            </div>
+            {/* 底部统计 */}
+            <div className="mx-auto max-w-3xl px-4 pb-1.5">
+              <div className="flex justify-center text-xs text-muted-foreground/70">
                 {sessionStats.turns} 轮 · {sessionStats.steps} 步
               </div>
             </div>
+            </div>
           </div>
         </div>
-      </div>
       </div>
 
       {/* 虚拟文件夹选择窗口 */}
@@ -847,6 +1018,98 @@ function useMemoModelOptions(
   }, [sessionModels])
 }
 
+/** 排列菜单的选项行。 */
+function SortOption({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+        active ? "bg-muted/70 text-foreground" : "text-muted-foreground hover:bg-muted/40"
+      )}
+    >
+      <span className="min-w-0 flex-1">{label}</span>
+      {active && <span className="shrink-0 text-emerald-400">✓</span>}
+    </button>
+  )
+}
+
+/** 会话视图排列菜单（groupBy / orderBy）。 */
+function ViewSortMenu({
+  value,
+  onChange,
+}: {
+  value: ViewSort
+  onChange: (v: ViewSort) => void
+}) {
+  return (
+    <div className="space-y-0.5">
+      <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        分组
+      </p>
+      <SortOption
+        active={value.groupBy === "workspace"}
+        label="按工作区"
+        onClick={() => onChange({ ...value, groupBy: "workspace" })}
+      />
+      <SortOption
+        active={value.groupBy === "flat"}
+        label="扁平"
+        onClick={() => onChange({ ...value, groupBy: "flat" })}
+      />
+      <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        排序
+      </p>
+      <SortOption
+        active={value.orderBy === "manual"}
+        label="手动"
+        onClick={() => onChange({ ...value, orderBy: "manual" })}
+      />
+      <SortOption
+        active={value.orderBy === "updated"}
+        label="最近更新"
+        onClick={() => onChange({ ...value, orderBy: "updated" })}
+      />
+    </div>
+  )
+}
+
+/** 平铺会话树：所有会话跨工作区平铺显示（viewSort.groupBy==='flat'）。 */
+function FlatSessionTree({
+  sessions,
+  activeSessionId,
+  onSelect,
+}: {
+  sessions: SessionSummary[]
+  activeSessionId: string | null | undefined
+  onSelect: (id: string) => void
+}) {
+  if (sessions.length === 0) {
+    return <p className="px-2 py-6 text-center text-xs text-muted-foreground">无匹配会话</p>
+  }
+  return (
+    <div className="mb-1">
+      {sessions.map((s) => (
+        <SessionRow
+          key={s.sessionId}
+          session={s}
+          active={activeSessionId === s.sessionId}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  )
+}
+
 /** 设置导航项。 */
 function SettingsNavItem({
   label,
@@ -967,13 +1230,21 @@ function SessionRow({
   )
 }
 
-/** 会话标题：空白会话显示「新会话」，否则取 cwd 目录名。 */
+/** 会话真实标题：session/title 事件投影（last-wins，基于首条用户消息）。 */
+function sessionTitleOf(s: SessionSummary): string | null {
+  const t = s.projections?.values?.title
+  return typeof t === "string" && t.trim() ? t : null
+}
+
+/** 会话标题：优先投影 title；空白会话「新会话」；否则 cwd 目录名。 */
 function sessionTitle(s: SessionSummary): string {
+  const t = sessionTitleOf(s)
+  if (t) return t
   if (s.blank) return "新会话"
   return s.cwd ? s.cwd.split(/[\\/]/).pop() || "会话" : "会话"
 }
 
-/** 会话行 label（header 展示用）：目录名 + 相对时间。 */
+/** 会话行 label（header 展示用）：标题 + 相对时间。 */
 function sessionLabel(s: SessionSummary): string {
   return `${sessionTitle(s)} · ${relativeTime(s.updatedAt)}`
 }
