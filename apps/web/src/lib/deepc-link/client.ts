@@ -106,6 +106,7 @@ export class DeepcClient {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
   private _state: ClientState = "idle"
+  private _connectedAt: number | null = null
   private wsSignal: WsSignalClient | null = null
 
   // 意外断连自动恢复：记住「连谁 + 我是谁」，dc close 后固定间隔重连。
@@ -131,8 +132,20 @@ export class DeepcClient {
     return this._state
   }
 
+  /** 最近一次成功建立连接的时间戳（ms）；断开/重连/失败时为 null。 */
+  get connectedAt(): number | null {
+    return this._connectedAt
+  }
+
   private setState(state: ClientState): void {
     this._state = state
+    // 记录连接建立时刻：进入 connected 时打戳，其余状态一律清除，
+    // 供 chatUI sidebar 展示「时长 + 状态」（重连中/失败时不显示时长）。
+    if (state === "connected") {
+      this._connectedAt = Date.now()
+    } else {
+      this._connectedAt = null
+    }
     this.emit("state", state)
   }
 

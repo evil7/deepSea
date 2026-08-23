@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import {
-  Beer,
   ChevronDown,
   Package,
-  Plug,
   Radio,
   RefreshCw,
   ShieldCheck,
@@ -14,6 +12,7 @@ import { ComingSoonSlide } from "@/components/home/coming-soon"
 import { CommunitySlide } from "@/components/home/community-slide"
 import { Features } from "@/components/home/features"
 import { InstallCommand } from "@/components/home/install-command"
+import { SiteFooter } from "@/components/layout/site-footer"
 import { PluginPreview } from "@/components/plugins/plugin-preview"
 import {
   FullscreenSlides,
@@ -97,32 +96,20 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
             <br />
             发现 · 安装 · 管理 · 互联，一站式聚合
           </p>
+          {/* deepc 安装命令：终端风格（仅桌面显示，手机端不显示） */}
+          {!isMobile && <InstallCommand />}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button
               asChild
               size="lg"
-              variant="outline"
-              className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              className="border-primary/40 bg-primary/15 text-white hover:bg-primary/30 hover:text-white"
             >
-              <Link to="/plugins">
-                <Plug className="size-4" />
-                大海捞珍
-              </Link>
-            </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            >
-              <Link to="/community">
-                <Beer className="size-4" />
-                把酒言欢
+              <Link to="/links">
+                <Radio className="size-4" />
+                深海互联
               </Link>
             </Button>
           </div>
-          {/* deepc 安装命令：终端风格（仅桌面显示，手机端不显示） */}
-          {!isMobile && <InstallCommand />}
         </div>
       </div>
     ),
@@ -172,6 +159,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
                 description:
                   "deepc 主站自实现 chatUI，经 deepc-link 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
                 tag: "link",
+                href: "/links",
               },
               {
                 id: "sync",
@@ -227,15 +215,8 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
           />
         </div>
 
-        {/* 手机端不显示 footer（后续单独做移动端 dock） */}
-        <footer className="hidden shrink-0 border-t border-white/10 bg-slate-950/60 py-3 backdrop-blur-sm sm:block">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 text-sm text-white/70 sm:px-6">
-            <a href="https://github.com/evil7/deepSea" target="_blank" rel="noopener noreferrer">
-              <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/evil7/deepSea?style=social&label=Star" className="ml-2 inline-block h-4 w-auto" />
-            </a>
-            <span>© 2026 deepSea</span>
-          </div>
-        </footer>
+        {/* 全站统一 footer（与子页面共用，视觉/样式一致） */}
+        <SiteFooter />
       </main>
     </>
   )

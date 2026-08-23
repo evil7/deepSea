@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/hooks/use-auth"
-import { loginUrl, reauthUrl } from "@/lib/auth"
+import { useAuthHrefs } from "@/hooks/use-auth-hrefs"
 import { HOME_SLIDE_IDS } from "@/components/showcase/sea-state"
 
 const menuItems = [
@@ -46,6 +46,7 @@ function ProfileStat({ value, label }: { value: number; label: string }) {
 
 export function Topbar() {
   const { user, loading, logout } = useAuth()
+  const { loginHref, reauthHref } = useAuthHrefs()
 
   return (
     <header className="sticky top-0 z-50 h-16 border-b border-border/60 bg-background/80 backdrop-blur-md">
@@ -155,7 +156,7 @@ export function Topbar() {
                 {/* 底部栏：重新授权 + 登出账号（等宽按钮组） */}
                 <div className="flex items-center gap-2 px-3 py-2.5">
                   <Button asChild variant="outline" size="sm" className="flex-1">
-                    <a href={reauthUrl()}>
+                    <a href={reauthHref}>
                       <RefreshCw className="size-4" />
                       重新授权
                     </a>
@@ -185,7 +186,7 @@ export function Topbar() {
                 className="size-9 sm:hidden"
                 aria-label="登录"
               >
-                <a href={loginUrl()}>
+                <a href={loginHref}>
                   <UserCircle className="size-5" />
                 </a>
               </Button>
@@ -196,7 +197,7 @@ export function Topbar() {
                 variant="outline"
                 className="hidden sm:inline-flex"
               >
-                <a href={loginUrl()}>
+                <a href={loginHref}>
                   <UserCircle className="size-4" />
                   登录
                 </a>

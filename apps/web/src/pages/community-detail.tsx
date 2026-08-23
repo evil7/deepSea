@@ -36,7 +36,7 @@ import {
   type ReactionGroup,
   type WriteFailure,
 } from "@/lib/github/discussions"
-import { loginUrl } from "@/lib/auth"
+import { useAuthHrefs } from "@/hooks/use-auth-hrefs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -429,6 +429,7 @@ export function CommunityDetailPage() {
   const source = pathname.split("/")[2] === "dsh" ? "dsh" : "dpc"
   const num = Number(number)
   const { user } = useAuth()
+  const { loginHref } = useAuthHrefs()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
   const info = useMemo(() => resolveCommunity(source), [source])
   const [detail, setDetail] = useState<DiscussionDetail | null>(null)
@@ -660,7 +661,7 @@ export function CommunityDetailPage() {
           </p>
           <Button asChild size="sm" className="mt-2">
             {/* 真实导航：/auth/login 由 Worker 处理，无前端路由 */}
-            <a href={loginUrl(`/community/${info.source}/${num}`)}>
+            <a href={loginHref}>
               <User className="size-4" />
               登录
             </a>
@@ -813,9 +814,7 @@ export function CommunityDetailPage() {
                 <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
                   <span>登录后即可参与回复</span>
                   <Button asChild size="sm" variant="outline">
-                    <a
-                      href={loginUrl(`/community/${info.source}/${num}`)}
-                    >
+                    <a href={loginHref}>
                       <User className="size-4" />
                       登录
                     </a>

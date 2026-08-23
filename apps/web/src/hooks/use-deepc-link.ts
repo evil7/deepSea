@@ -47,6 +47,8 @@ interface StreamingStep {
 
 export function useDeepcLink() {
   const [state, setState] = useState<ClientState>(deepcClient.state)
+  const [connectedAt, setConnectedAt] = useState<number | null>(deepcClient.connectedAt)
+  const [elapsed, setElapsed] = useState(0)
   const [hostInfo, setHostInfo] = useState<HelloFrame["host"] | null>(null)
   const [model, setModel] = useState<ModelSelection | null>(null)
   const [theme, setTheme] = useState<unknown>(null)
@@ -70,7 +72,10 @@ export function useDeepcLink() {
 
   // 连接状态 / 基础信息事件订阅。
   useEffect(() => {
-    const offState = deepcClient.on("state", (s) => setState(s))
+    const offState = deepcClient.on("state", (s) => {
+      setState(s)
+      setConnectedAt(deepcClient.connectedAt)
+    })
     const offHello = deepcClient.on("hello", (hello) => {
       setHostInfo(hello.host)
       setModel(hello.model ?? null)
@@ -430,6 +435,19 @@ export function useDeepcLink() {
     }
   }
 
+  // 连接后每秒刷新连接时长（供 sidebar「时长」展示）。离开 connected 即归零。
+  useEffect(() => {
+    if (state !== "connected" || connectedAt == null) {
+      setElapsed(0)
+      return
+    }
+    setElapsed(Math.floor((Date.now() - connectedAt) / 1000))
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - connectedAt) / 1000))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [state, connectedAt])
+
   const connectToNode = useCallback(
     async (targetNodeId: string, selfNodeId: string) => {
       setError(null)
@@ -476,6 +494,8 @@ export function useDeepcLink() {
 
   return {
     state,
+    connectedAt,
+    elapsed,
     hostInfo,
     model,
     theme,

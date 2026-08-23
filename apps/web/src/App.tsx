@@ -16,7 +16,10 @@ import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
 import { LinksPage } from "@/pages/links"
+import { LinkDetailPage } from "@/pages/link-detail"
 import { DeviceLoginPage } from "@/pages/device-login"
+import { RequireAuth } from "@/components/auth/require-auth"
+import { SiteFooter } from "@/components/layout/site-footer"
 
 /** 旧路由 /community/:number → 跳转到 /community/dpc/:number（默认社区） */
 function CommunityNumberRedirect() {
@@ -41,6 +44,9 @@ export function App() {
   // /auth/* 为登录等纯功能路由（worker 处理），不改变海洋展示状态（视为首页）
   const isAuthRoute = location.pathname.startsWith("/auth/")
   const isSubPage = !isAuthRoute && location.pathname !== "/"
+
+  // chatUI 沉浸式全屏页（/link/:nodeId）：隐藏全局 footer，避免挤压三栏布局
+  const isChatPage = location.pathname.startsWith("/link/")
 
   // 统一海洋状态：surface=海面（首页 hero/插件精选），deep=深海
   // 驱动源（动画路径统一）：
@@ -69,7 +75,7 @@ export function App() {
   }, [location.pathname])
 
   return (
-    <div id="top" className="min-h-dvh">
+    <div id="top" className="flex min-h-dvh flex-col">
       {/* 3D 海面背景：仅桌面首页渲染（移动端用静态渐变，见下方）；
           子路由页面使用 shadcn 默认背景，不叠加海洋 3D */}
       {!isSubPage && !isMobile && <Ocean conf={conf} state={seaState} blur={false} />}
@@ -91,6 +97,8 @@ export function App() {
 
       <Topbar />
 
+      {/* 内容区：flex-1 撑满（子页面主内容自适应高度，footer 贴底） */}
+      <div className="flex min-h-0 flex-1 flex-col">
       <Routes>
         <Route
           path="/"
@@ -103,8 +111,22 @@ export function App() {
         />
         <Route path="/plugins" element={<PluginsPage />} />
         <Route path="/plugin/:owner/:repo" element={<PluginDetailPage />} />
-        <Route path="/links" element={<LinksPage />} />
-        <Route path="/link/:nodeId" element={<LinksPage />} />
+        <Route
+          path="/links"
+          element={
+            <RequireAuth>
+              <LinksPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/link/:nodeId"
+          element={
+            <RequireAuth>
+              <LinkDetailPage />
+            </RequireAuth>
+          }
+        />
         <Route path="/device-login" element={<DeviceLoginPage />} />
         <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
         <Route path="/community/dsh" element={<CommunityPage />} />
@@ -131,6 +153,11 @@ export function App() {
           }
         />
       </Routes>
+      </div>
+
+      {/* 子页面共享 footer（首页 / 保留其专属三行布局 footer；/auth/* 为 Worker 路由不渲染；
+          /link/:nodeId 为沉浸式全屏 chatUI，隐藏 footer 避免挤压） */}
+      {isSubPage && !isChatPage && <SiteFooter />}
 
       {/* 全局提示（自行捕捞需登录等）
            · richColors：开启后 success/info/warning/error 各自醒目配色
