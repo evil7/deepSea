@@ -159,7 +159,6 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     selectSession,
     sendPrompt,
     createSession,
-    sendMessageFeedback,
     forkSession,
     renameWorkspace,
     deleteWorkspace,
@@ -191,6 +190,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const viewSortRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
 
   /**
@@ -245,6 +245,18 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     document.addEventListener("mousedown", onDown)
     return () => document.removeEventListener("mousedown", onDown)
   }, [commandMenuOpen, permissionMenuOpen, modelMenuOpen, closeToolbarMenus])
+
+  // 点击视图选项外部时收起下拉（sidebar 独立容器，不在 toolbarRef 内）。
+  useEffect(() => {
+    if (!viewSortOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (viewSortRef.current && !viewSortRef.current.contains(e.target as Node)) {
+        setViewSortOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [viewSortOpen])
 
   /** 切换工作区展开/收起。 */
   const toggleWorkspace = useCallback((workspaceId: string) => {
@@ -508,7 +520,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                       <Search className="size-4" />
                     </Button>
                     {/* 视图选项（排列） */}
-                    <div className="relative">
+                    <div className="relative" ref={viewSortRef}>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -741,9 +753,6 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 <div className="mx-auto max-w-3xl">
                   <ChatMessageList
                     nodes={messages}
-                    onFeedback={(messageId: string, rating: "positive" | "negative") =>
-                      void sendMessageFeedback(messageId, rating)
-                    }
                     onFork={(atSeq: number) => void forkSession(atSeq)}
                   />
                   {isStreaming && (

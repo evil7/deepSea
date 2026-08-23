@@ -14,8 +14,6 @@ import {
   Copy,
   GitBranch,
   Terminal,
-  ThumbsDown,
-  ThumbsUp,
   Wrench,
 } from "lucide-react"
 
@@ -417,23 +415,18 @@ function MessageActions({
   time,
   text,
   kind,
-  messageId,
   seq,
   usage,
-  onFeedback,
   onFork,
 }: {
   time: number
   text: string
   kind: "user" | "assistant"
-  messageId?: string
   seq: number
   usage?: unknown
-  onFeedback?: (messageId: string, rating: "positive" | "negative") => void
   onFork?: (atSeq: number) => void
 }) {
   const [copied, setCopied] = useState(false)
-  const [rating, setRating] = useState<"positive" | "negative" | null>(null)
   const iconCls =
     "flex size-7 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
 
@@ -442,12 +435,6 @@ function MessageActions({
       setCopied(true)
       setTimeout(() => setCopied(false), 1000)
     })
-  }
-
-  const toggleRating = (r: "positive" | "negative") => {
-    const next = rating === r ? null : r
-    setRating(next)
-    if (messageId && onFeedback) onFeedback(messageId, r)
   }
 
   // 用户消息：只保留复制按钮（hover 淡入，对齐官方用户气泡的极简操作）。
@@ -474,23 +461,6 @@ function MessageActions({
       </button>
       {/* 操作按钮：hover 消息行才浮现 */}
       <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-        {/* like / dislike：仅助手消息 */}
-        <button
-          type="button"
-          className={cn(iconCls, rating === "positive" && "bg-muted/60 text-foreground")}
-          title="回答好"
-          onClick={() => toggleRating("positive")}
-        >
-          <ThumbsUp className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          className={cn(iconCls, rating === "negative" && "bg-muted/60 text-foreground")}
-          title="回答差"
-          onClick={() => toggleRating("negative")}
-        >
-          <ThumbsDown className="size-3.5" />
-        </button>
         {/* fork / branch */}
         {onFork && (
           <button type="button" className={iconCls} title="在新对话中分叉" onClick={() => onFork(seq)}>
@@ -516,11 +486,9 @@ function assistantText(blocks: readonly AssistantBlock[]): string {
 
 export function ChatMessageNode({
   node,
-  onFeedback,
   onFork,
 }: {
   node: RenderNode
-  onFeedback?: (messageId: string, rating: "positive" | "negative") => void
   onFork?: (atSeq: number) => void
 }) {
   switch (node.kind) {
@@ -550,9 +518,7 @@ export function ChatMessageNode({
             text={assistantText(node.blocks)}
             kind="assistant"
             seq={node.seq}
-            messageId={node.messageId}
             usage={node.usage}
-            onFeedback={onFeedback}
             onFork={onFork}
           />
         </div>
@@ -589,11 +555,9 @@ export function ChatMessageNode({
 
 export function ChatMessageList({
   nodes,
-  onFeedback,
   onFork,
 }: {
   nodes: RenderNode[]
-  onFeedback?: (messageId: string, rating: "positive" | "negative") => void
   onFork?: (atSeq: number) => void
 }) {
   return (
@@ -602,7 +566,6 @@ export function ChatMessageList({
         <ChatMessageNode
           key={`${node.kind}-${node.seq}-${i}`}
           node={node}
-          onFeedback={onFeedback}
           onFork={onFork}
         />
       ))}

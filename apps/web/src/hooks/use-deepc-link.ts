@@ -283,31 +283,6 @@ export function useDeepcLink() {
     [loadWorkspace]
   )
 
-  /**
-   * 消息反馈（positive/negative）。
-   *
-   * 注意：dsh 官方 HTTP API 目前不暴露 messageFeedback 端点（404），
-   * 该功能在官方客户端中由内部 API 处理。此处保留接口签名，
-   * 实际调用会返回 {ok:false}，调用方需容错处理。
-   */
-  const sendMessageFeedback = useCallback(
-    async (messageId: string, rating: "positive" | "negative"): Promise<boolean> => {
-      if (!activeRef.current) return false
-      try {
-        const res = await deepcClient.call("messageFeedback.put", {
-          sessionId: activeRef.current,
-          messageId,
-          rating,
-        })
-        return res.ok
-      } catch {
-        // 官方 API 未暴露此端点，静默降级
-        return false
-      }
-    },
-    []
-  )
-
   /** 消息分支（对齐官方 session.fork RPC）：以该事件 seq 为前缀新建子会话。 */
   const forkSession = useCallback(
     async (atSeq: number): Promise<boolean> => {
@@ -691,7 +666,6 @@ export function useDeepcLink() {
     selectSession,
     sendPrompt,
     createSession,
-    sendMessageFeedback,
     forkSession,
     renameWorkspace,
     deleteWorkspace,

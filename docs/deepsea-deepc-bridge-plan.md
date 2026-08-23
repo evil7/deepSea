@@ -185,8 +185,8 @@ deepc-bridge 作为 Cordis 插件，天然分**前端（browser）**与**后端�
   Unix 根目录双模态，供「新建工作区」选路径。
 - ✅ **已落地（apiProxy 直连 + 降级兜底）**：`ApiProxyLocalApi(ctx.apiProxy)` 已实现
   （`local-api.ts`），直调官方域树（`sessions.*`/`subagents.*`/`settings.*`/`host.*`），
-  失败自动降级 `HttpLocalApi`。`HTTP_ONLY_METHODS`（`pluginInventory/list`、
-  `messageFeedback.put`）强制走 HTTP。2026-08-23 全方法实测通过。
+  失败自动降级 `HttpLocalApi`。`HTTP_ONLY_METHODS`（`pluginInventory/list`）强制走 HTTP。
+  2026-08-23 全方法实测通过。
 - ⚠️ **待做**：token 目前后端 `NodeTokenStore` 仅内存自持（`restore()` 仅进程内复用）；
   跨 dsh host 重启的 token 持久化仍待后续（见 §9 疑点 5）。
 
@@ -259,7 +259,7 @@ deepc 主站 chatUI                    DataChannel               本地 dsh host
     `DOMAIN_MAP`（`session→sessions`，`subagent→subagents`），`callUnary` 构造
     `{ rpcId, ...payload }` 信封对齐 `toFetchHandler` 信封格式。
   - `HttpLocalApi`（降级兜底，HTTP fetch `127.0.0.1:3080`，已端到端验证）。
-  - `HTTP_ONLY_METHODS`（`pluginInventory/list`、`messageFeedback.put`）仅走 HTTP。
+  - `HTTP_ONLY_METHODS`（`pluginInventory/list`）仅走 HTTP。
   - `deepc.*` 能力经 `wrapLocalApi` 本地拦截（`node:os`/`node:fs`），不进 LocalApi。
 
 > **chatUI 已完整化（2026-08-21）**：主站自实现 chatUI 已从「会话列表 + 对话 + 发送」

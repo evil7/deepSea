@@ -112,7 +112,6 @@ const DOMAIN_MAP: Record<string, string> = {
  */
 const HTTP_ONLY_METHODS = new Set([
   'pluginInventory/list',
-  'messageFeedback.put',
 ])
 
 /**
