@@ -61,6 +61,7 @@ export function useDeepcLink() {
 
   const [workspaces, setWorkspaces] = useState<WorkspaceView[]>([])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [archivedSessionIds, setArchivedSessionIds] = useState<Set<string>>(new Set())
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<RenderNode[]>([])
   const [streaming, setStreaming] = useState<StreamingStep | null>(null)
@@ -185,9 +186,12 @@ export function useDeepcLink() {
   /** 加载工作区 + 会话列表。 */
   const loadWorkspace = useCallback(async () => {
     const wsRes = await deepcClient.call("workspace.list", {})
+    let registered: WorkspaceView[] = []
     if (wsRes.ok && wsRes.value) {
-      const value = wsRes.value as { items?: WorkspaceView[] }
-      setWorkspaces(value.items ?? [])
+      const value = wsRes.value as { items?: WorkspaceView[]; archivedSessionIds?: string[] }
+      registered = value.items ?? []
+      // 归档集合（registry-global）：官方 sessionVisible 会隐藏这些会话。
+      setArchivedSessionIds(new Set(value.archivedSessionIds ?? []))
     }
     const sRes = await deepcClient.call("session.list", {})
     if (sRes.ok && sRes.value) {
@@ -198,6 +202,29 @@ export function useDeepcLink() {
       const map = new Map<string, string>()
       for (const s of items) map.set(s.sessionId, s.cwd ?? "")
       sessionIdsRef.current = map
+
+      // 未分组兜底：不在任何已注册 workspace sessionIds 里的会话，聚合成一个
+      // 「未分组」工作组（对齐官方 groupByWorkspace 的 Ungrouped 语义——单一组，
+      // 浏览器本地排序，不按 cwd 拆子组）。
+      // dsh 工作区是显式注册实体（workspace.create / 首次启动 bootstrap），
+      // workspace.list 可能返回空，而 session.list 仍有会话——此时不能显示「暂无会话」。
+      const accounted = new Set<string>()
+      for (const ws of registered) for (const id of ws.sessionIds) accounted.add(id)
+      const stray = items.filter((s) => !accounted.has(s.sessionId))
+      if (stray.length > 0) {
+        registered = [
+          ...registered,
+          {
+            workspaceId: "ungrouped",
+            path: "",
+            title: "未分组",
+            sessionIds: stray.map((s) => s.sessionId),
+            createdAt: "",
+            updatedAt: "",
+          },
+        ]
+      }
+      setWorkspaces(registered)
     }
   }, [])
 
@@ -650,6 +677,7 @@ export function useDeepcLink() {
     error,
     workspaces,
     sessions,
+    archivedSessionIds,
     activeSessionId,
     messages: renderNodes,
     // 有流式且非错误时才显示「正在生成…」；错误态由 renderNodes 里的 error 节点展示。

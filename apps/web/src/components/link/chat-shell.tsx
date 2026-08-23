@@ -146,6 +146,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     model,
     workspaces,
     sessions,
+    archivedSessionIds,
     activeSessionId,
     messages,
     isStreaming,
@@ -372,18 +373,21 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
       .filter((ws) => ws.sessionIds.length > 0)
   }, [workspaces, sessions, keyword])
 
-  // 分组渲染时隐藏 blank 会话（官方行为：Clients hide blank Sessions from lists），
-  // 仅保留当前选中的「临时新建」行；并按 viewSort.orderBy 排序。
+  // 分组渲染时隐藏 blank + 归档会话（官方 sessionVisible 语义）：
+  //   · 隐藏 blank，但保留当前选中的「临时新建」行（blank 才有 current 例外）
+  //   · 隐藏 archived（归档后即从 sidebar 消失，**无 current 例外**）
+  //   · parentSessionId 分叉子会话不隐藏
   const visibleSessions = useCallback((wsSessionIds: string[]) => {
     const list = wsSessionIds
       .map((id) => sessions.find((s) => s.sessionId === id))
       .filter((s): s is SessionSummary => Boolean(s))
       .filter((s) => !s.blank || s.sessionId === activeSessionId)
+      .filter((s) => !archivedSessionIds.has(s.sessionId))
     if (viewSort.orderBy === "updated") {
       return list.toSorted((a, b) => b.updatedAt - a.updatedAt)
     }
     return list
-  }, [sessions, activeSessionId, viewSort.orderBy])
+  }, [sessions, activeSessionId, archivedSessionIds, viewSort.orderBy])
 
   const handleSend = async () => {
     const text = draft.trim()
