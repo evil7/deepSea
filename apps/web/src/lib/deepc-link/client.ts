@@ -22,6 +22,8 @@ import {
 import { createWsLinkClient, type WsLinkClient } from "./ws-signaling"
 import type {
   BridgeFrame,
+  ChunkFrame,
+  ChunkMetaFrame,
   DownstreamFrame,
   HelloFrame,
   RpcResult,
@@ -102,12 +104,80 @@ function clearLastConnection(): void {
   }
 }
 
+// ── 大帧自动分包（send 侧）─────────────────────────────────────────────────
+// 规避 SCTP 单消息超限崩溃：session.history 等大 unary-result / 大 downstream 帧
+// 会超过 DataChannel 单消息上限。超限时拆成 chunk-meta + chunk×N，对端重组。
+const MAX_FRAME_BYTES = 16 * 1024
+// chunk 的 data 经 base64 膨胀 4/3，再套 JSON 包装；为保证 chunk 帧 JSON < 16KB
+// （对齐 peerjs chunkedMTU=16300，避开 Firefox→Chrome 16384 截断），取 12000。
+const CHUNK_BYTES = 12000
+
+function toBase64Bytes(buf: Uint8Array): string {
+  let binary = ""
+  const chunk = 0x8000
+  for (let i = 0; i < buf.length; i += chunk) {
+    binary += String.fromCharCode(...buf.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+function fromBase64Bytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+function concatBytesArr(parts: Uint8Array[]): Uint8Array {
+  let total = 0
+  for (const p of parts) total += p.length
+  const out = new Uint8Array(total)
+  let off = 0
+  for (const p of parts) {
+    out.set(p, off)
+    off += p.length
+  }
+  return out
+}
+
+async function sha256HexStr(bytes: Uint8Array): Promise<string> {
+  try {
+    const subtle = globalThis.crypto?.subtle
+    if (!subtle) return ""
+    const digest = await subtle.digest("SHA-256", bytes.slice())
+    const arr = new Uint8Array(digest)
+    let hex = ""
+    for (const b of arr) hex += b.toString(16).padStart(2, "0")
+    return hex
+  } catch {
+    return ""
+  }
+}
+
+function createTxId(): string {
+  const bytes = new Uint8Array(8)
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes)
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256)
+  }
+  let hex = ""
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0")
+  return hex
+}
+
 export class DeepcClient {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
   private _state: ClientState = "idle"
   private _connectedAt: number | null = null
   private wsSignal: WsLinkClient | null = null
+
+  /** 进行中的分块重组：txId → { total, chunks, sha256, slots, received }。 */
+  private chunkBuf = new Map<
+    string,
+    { total: number; chunks: number; sha256: string; slots: (Uint8Array | null)[]; received: number }
+  >()
 
   // 意外断连自动恢复：记住「连谁 + 我是谁」，dc close 后固定间隔重连。
   // 断联 3 次（每次 10s，共 30s）后清除意图，进入 error 态（由页面负责回首页）。
@@ -355,6 +425,7 @@ export class DeepcClient {
     }
     this.unaryPending.clear()
     this.subHandlers.clear()
+    this.chunkBuf.clear()
     this.wsSignal?.disconnect()
     this.wsSignal = null
     this.dc?.close()
@@ -395,8 +466,23 @@ export class DeepcClient {
   }
 
   private send(frame: BridgeFrame): void {
-    if (this.dc && this.dc.readyState === "open") {
-      this.dc.send(JSON.stringify(frame))
+    if (!this.dc || this.dc.readyState !== "open") return
+    const json = JSON.stringify(frame)
+    if (json.length <= MAX_FRAME_BYTES) {
+      this.dc.send(json)
+      return
+    }
+    // 大帧分包：chunk-meta + chunk×N（规避 SCTP 单消息超限崩溃）。
+    // meta.sha256 留空（subtle 异步无法同步先算），对端按 total（size）兜底校验。
+    const bytes = new TextEncoder().encode(json)
+    const txId = createTxId()
+    const chunks = Math.ceil(bytes.length / CHUNK_BYTES)
+    const meta: ChunkMetaFrame = { kind: "chunk-meta", txId, total: bytes.length, chunks, sha256: "" }
+    this.dc.send(JSON.stringify(meta))
+    for (let i = 0; i < chunks; i++) {
+      const slice = bytes.subarray(i * CHUNK_BYTES, Math.min((i + 1) * CHUNK_BYTES, bytes.length))
+      const chunk: ChunkFrame = { kind: "chunk", txId, index: i, data: toBase64Bytes(slice) }
+      this.dc.send(JSON.stringify(chunk))
     }
   }
 
@@ -407,6 +493,64 @@ export class DeepcClient {
     } catch {
       return
     }
+    // 分包层优先：chunk-meta / chunk 帧由这里重组。
+    if (frame.kind === "chunk-meta" || frame.kind === "chunk") {
+      this.handleChunkFrame(frame)
+      return
+    }
+    this.handoff(frame)
+  }
+
+  /** 处理分块帧，重组完整后分发。 */
+  private handleChunkFrame(frame: ChunkMetaFrame | ChunkFrame): void {
+    if (frame.kind === "chunk-meta") {
+      if (frame.chunks > 512) return // 防串批/恶意
+      this.chunkBuf.set(frame.txId, {
+        total: frame.total,
+        chunks: frame.chunks,
+        sha256: frame.sha256,
+        slots: new Array(frame.chunks).fill(null),
+        received: 0,
+      })
+      return
+    }
+    const re = this.chunkBuf.get(frame.txId)
+    if (!re) return
+    if (frame.index < 0 || frame.index >= re.chunks) return
+    if (re.slots[frame.index]) return
+    re.slots[frame.index] = fromBase64Bytes(frame.data)
+    re.received += 1
+    if (re.received !== re.chunks) return
+    this.chunkBuf.delete(frame.txId)
+    const parts: Uint8Array[] = []
+    for (let i = 0; i < re.chunks; i++) {
+      const p = re.slots[i]
+      if (p) parts.push(p)
+    }
+    const bytes = concatBytesArr(parts)
+    if (re.sha256) {
+      void sha256HexStr(bytes).then((h) => {
+        if (h === re.sha256) this.emitReassembled(bytes, re.total)
+      })
+    } else if (bytes.length === re.total) {
+      this.emitReassembled(bytes, re.total)
+    }
+  }
+
+  /** 重组出完整帧后回到正常路由。 */
+  private emitReassembled(bytes: Uint8Array, total: number): void {
+    if (bytes.length !== total) return
+    const json = new TextDecoder().decode(bytes)
+    let frame: BridgeFrame
+    try {
+      frame = JSON.parse(json) as BridgeFrame
+    } catch {
+      return
+    }
+    this.handoff(frame)
+  }
+
+  private handoff(frame: BridgeFrame): void {
     switch (frame.kind) {
       case "unary-result": {
         const pending = this.unaryPending.get(frame.rpcId)

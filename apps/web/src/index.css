@@ -131,3 +131,45 @@
     @apply font-sans;
     }
 }
+
+/* ── 全局滚动条美化（对齐官方 dsh：8px / 圆角4px / 轨道透明 / 两档变量）── */
+:root {
+  /* l1：默认全局滚动条（中性灰阶，hover 用 -hover） */
+  --dsh-scrollbar-thumb: var(--border);
+  --dsh-scrollbar-thumb-hover: var(--muted-foreground);
+  --dsh-scrollbar-width: 8px;
+}
+
+/* 局部容器（composer card / 面板等）可用 l2 加深 */
+.dcb-scroll-l2,
+[data-scroll-l2] {
+  --dsh-scrollbar-thumb: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+  --dsh-scrollbar-thumb-hover: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  body,
+  body * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--dsh-scrollbar-thumb) transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  width: var(--dsh-scrollbar-width);
+  height: var(--dsh-scrollbar-width);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dsh-scrollbar-thumb);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dsh-scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

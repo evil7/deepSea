@@ -24,7 +24,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
-    "pack": "pnpm build && pnpm pack",
+    "pack:tgz": "node scripts/pack.mjs",
     "prepublishOnly": "node scripts/build.mjs",
     "release": "pnpm publish"
   },

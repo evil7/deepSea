@@ -11,19 +11,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  Archive,
   ChevronDown,
   ChevronRight,
   CircleAlert,
   Folder,
+  GitBranch,
   ListOrdered,
   Loader2,
   MessageSquarePlus,
+  MoreHorizontal,
   PanelLeft,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
   SendHorizonal,
   Settings,
+  Trash2,
   Waves,
   X,
 } from "lucide-react"
@@ -34,6 +39,7 @@ import { ChatMessageList } from "@/components/link/chat-message"
 import { FolderPicker } from "@/components/link/folder-picker"
 import { ConnectStatus } from "@/components/link/connect-status"
 import { useDeepcLink } from "@/hooks/use-deepc-link"
+import { deepcClient } from "@/lib/deepc-link/client"
 import { cn } from "@/lib/utils"
 import type { SessionSummary } from "@/lib/deepc-link/protocol"
 
@@ -153,7 +159,14 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     selectSession,
     sendPrompt,
     createSession,
+    sendMessageFeedback,
+    forkSession,
+    renameWorkspace,
+    deleteWorkspace,
+    renameSession,
+    archiveSession,
     loadWorkspace,
+    refreshAll,
     updateSetting,
     openSettingsDocument,
     selectSessionModel,
@@ -173,7 +186,10 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const [viewSortOpen, setViewSortOpen] = useState(false)
   const [viewSort, setViewSort] = useState<ViewSort>(() => readViewSort())
+  const [atBottom, setAtBottom] = useState(true)
+  const [wsMenuId, setWsMenuId] = useState<string | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const atBottomRef = useRef(true)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
 
@@ -240,12 +256,49 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     })
   }, [])
 
-  // 消息流自动滚动到底部（依赖 messages：新消息/流式增量到来时滚到最新）。
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies
+  // 消息流滚动：仅在「当前位于底部」时才自动跟随新消息/流式增量（对齐官方 atBottomRef），
+  // 用户上滚过则不打扰（不回到底部）。阈值 25px（对齐官方 isAtBottom）。
+  const isAtBottom = useCallback((el: HTMLElement) => {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= 25
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    const el = viewportRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    setAtBottom(true)
+    atBottomRef.current = true
+  }, [])
+
+  // 会话树「分支」：以当前会话为源新建子会话（session.fork，不带 atSeq = 默认最后完成轮次）。
+  const forkSessionById = useCallback(
+    async (sessionId: string) => {
+      const res = await deepcClient.call("session.fork", { sessionId })
+      if (res.ok) await loadWorkspace()
+    },
+    [loadWorkspace]
+  )
+
   useEffect(() => {
     const el = viewportRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages])
+    if (!el) return
+    if (atBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [messages, isStreaming])
+
+  // 监听滚动位置，实时更新 atBottom（用于显示「回到底部」浮层按钮）。
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const onScroll = () => {
+      const bottom = isAtBottom(el)
+      atBottomRef.current = bottom
+      setAtBottom(bottom)
+    }
+    el.addEventListener("scroll", onScroll, { passive: true })
+    return () => el.removeEventListener("scroll", onScroll)
+  }, [isAtBottom])
 
   const activeSession = sessions.find((s) => s.sessionId === activeSessionId)
 
@@ -323,6 +376,9 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const handleSend = async () => {
     const text = draft.trim()
     if (!text) return
+    // 清空 contenteditable 的实际 DOM 文本（draft 是受控 state，但 DOM 非受控，
+    // 只 setDraft("") 不会清掉编辑器里的字，导致「已发送消息卡在输入框」）。
+    if (editorRef.current) editorRef.current.textContent = ""
     setDraft("")
     await sendPrompt(text)
   }
@@ -337,7 +393,45 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
       >
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* ── 左：侧栏（复刻官方 hHd-Xa）────────────────────────────── */}
-        {!sidebarCollapsed && (
+        {sidebarCollapsed ? (
+          <aside className="flex w-14 shrink-0 flex-col items-center border-r border-border/60 bg-sidebar py-3 gap-1.5">
+            <img
+              src="/deepseek.svg"
+              alt=""
+              aria-hidden
+              className="size-6 shrink-0 opacity-90 invert"
+            />
+            <div className="mt-4 flex flex-col items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground"
+                onClick={() => void createSession(activeSession?.cwd ?? workspaces[0]?.path)}
+                title="新建会话"
+              >
+                <MessageSquarePlus className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground"
+                onClick={() => setFolderPickerOpen(true)}
+                title="添加工作区"
+              >
+                <Plus className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground"
+                onClick={() => setSearchActive(true)}
+                title="搜索会话"
+              >
+                <Search className="size-4" />
+              </Button>
+            </div>
+          </aside>
+        ) : (
           <aside className="flex w-70 shrink-0 flex-col border-r border-border/60 bg-sidebar">
             {/* 品牌行 + 收起 */}
             <div className="flex h-15 shrink-0 items-center justify-between px-3">
@@ -367,7 +461,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
             <div className="shrink-0 px-3">
               <Button
                 variant="secondary"
-                className="w-full justify-start gap-2"
+                className="flex w-full items-center justify-center gap-2"
                 onClick={() => void createSession(activeSession?.cwd ?? workspaces[0]?.path)}
               >
                 <MessageSquarePlus className="size-4" />
@@ -375,69 +469,10 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               </Button>
             </div>
 
-            {/* 工作区：标签 + 添加/刷新/排列 三按钮 */}
+            {/* 工作区：标签 + 搜索/视图选项/添加工作区 三按钮（搜索激活时整行替换为搜索框） */}
             <div className="mt-2 flex shrink-0 items-center gap-1 px-3">
-              <span className="text-sm text-muted-foreground">工作区</span>
-              <div className="ml-auto flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-muted-foreground"
-                  onClick={() => setFolderPickerOpen(true)}
-                  title="添加工作区"
-                >
-                  <Plus className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-muted-foreground"
-                  onClick={() => void loadWorkspace()}
-                  title="刷新"
-                >
-                  <RefreshCw className="size-4" />
-                </Button>
-                <div className="relative">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn("size-7 text-muted-foreground", viewSortOpen && "bg-muted/60")}
-                    onClick={() => setViewSortOpen((v) => !v)}
-                    title="排列"
-                  >
-                    <ListOrdered className="size-4" />
-                  </Button>
-                  {viewSortOpen && (
-                    <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border border-border/60 bg-background p-1 shadow-xl">
-                      <ViewSortMenu
-                        value={viewSort}
-                        onChange={(v) => {
-                          setViewSort(v)
-                          writeViewSort(v)
-                          setViewSortOpen(false)
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-                {/* 显隐性切换：搜索按钮 → 整行过滤框 */}
-                {!searchActive && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 text-muted-foreground"
-                    onClick={() => setSearchActive(true)}
-                    title="搜索会话"
-                  >
-                    <Search className="size-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
-            {/* 搜索：点击图标后整行变过滤框 */}
-            {searchActive ? (
-              <div className="shrink-0 px-3 pb-1">
-                <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5">
+              {searchActive ? (
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5">
                   <Search className="size-3.5 shrink-0 text-muted-foreground" />
                   <input
                     autoFocus
@@ -458,8 +493,58 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                     <X className="size-3.5" />
                   </button>
                 </div>
-              </div>
-            ) : null}
+              ) : (
+                <>
+                  <span className="text-sm text-muted-foreground">工作区</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    {/* 搜索会话 */} 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-muted-foreground"
+                      onClick={() => setSearchActive(true)}
+                      title="搜索会话"
+                    >
+                      <Search className="size-4" />
+                    </Button>
+                    {/* 视图选项（排列） */}
+                    <div className="relative">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn("size-7 text-muted-foreground", viewSortOpen && "bg-muted/60")}
+                        onClick={() => setViewSortOpen((v) => !v)}
+                        title="视图选项"
+                      >
+                        <ListOrdered className="size-4" />
+                      </Button>
+                      {viewSortOpen && (
+                        <div className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border border-border/60 bg-background p-1 shadow-xl">
+                          <ViewSortMenu
+                            value={viewSort}
+                            onChange={(v) => {
+                              setViewSort(v)
+                              writeViewSort(v)
+                              setViewSortOpen(false)
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {/* 添加工作区 */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-muted-foreground"
+                      onClick={() => setFolderPickerOpen(true)}
+                      title="添加工作区"
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* 会话树 */}
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
@@ -484,6 +569,13 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                       sessions={flatSessions}
                       activeSessionId={activeSessionId}
                       onSelect={selectSession}
+                      onRename={(id) => {
+                        const s = sessions.find((x) => x.sessionId === id)
+                        const next = window.prompt("重命名会话", s ? sessionTitle(s) : undefined)
+                        if (next?.trim()) void renameSession(id, next.trim())
+                      }}
+                      onFork={(id) => void forkSessionById(id)}
+                      onArchive={(id) => void archiveSession(id)}
                     />
                   )
                 })()
@@ -492,22 +584,65 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                   const wsSessions = visibleSessions(ws.sessionIds)
                   return (
                     <div key={ws.workspaceId} className="mb-1">
-                      <button
-                        type="button"
-                        onClick={() => toggleWorkspace(ws.workspaceId)}
-                        className="flex h-8.5 w-full items-center gap-1.5 rounded-lg px-2 text-sidebar-foreground transition-colors hover:bg-muted/60"
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                            !collapsedWorkspaces.has(ws.workspaceId) && "rotate-90"
+                      <div className="group flex w-full items-center gap-1.5 rounded-lg text-sidebar-foreground transition-colors hover:bg-muted/60">
+                        <button
+                          type="button"
+                          onClick={() => toggleWorkspace(ws.workspaceId)}
+                          className="flex h-8.5 min-w-0 flex-1 items-center gap-1.5 px-2 text-left"
+                        >
+                          <ChevronRight
+                            className={cn(
+                              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                              !collapsedWorkspaces.has(ws.workspaceId) && "rotate-90"
+                            )}
+                          />
+                          <Folder className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate text-sm">
+                            {ws.title || ws.path}
+                          </span>
+                        </button>
+                        {/* 更多菜单按钮（hover 显现） */}
+                        <div className="relative mr-1">
+                          <button
+                            type="button"
+                            title="更多"
+                            onClick={() => setWsMenuId(wsMenuId === ws.workspaceId ? null : ws.workspaceId)}
+                            className={cn(
+                              "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-colors hover:bg-muted/60 hover:text-foreground group-hover:opacity-100",
+                              wsMenuId === ws.workspaceId && "opacity-100 bg-muted/60"
+                            )}
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </button>
+                          {wsMenuId === ws.workspaceId && (
+                            <div className="absolute right-0 top-full z-30 mt-1 w-40 overflow-hidden rounded-lg border border-border/60 bg-background p-1 shadow-xl">
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+                                onClick={() => {
+                                  const next = window.prompt("重命名工作区", ws.title || ws.path)
+                                  if (next?.trim()) void renameWorkspace(ws.workspaceId, next.trim())
+                                  setWsMenuId(null)
+                                }}
+                              >
+                                <Pencil className="size-3.5" /> 重命名
+                              </button>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-rose-400 transition-colors hover:bg-muted/60"
+                                onClick={() => {
+                                  if (window.confirm(`删除工作区「${ws.title || ws.path}」？`)) {
+                                    void deleteWorkspace(ws.workspaceId)
+                                  }
+                                  setWsMenuId(null)
+                                }}
+                              >
+                                <Trash2 className="size-3.5" /> 删除工作区
+                              </button>
+                            </div>
                           )}
-                        />
-                        <Folder className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate text-left text-sm">
-                          {ws.title || ws.path}
-                        </span>
-                      </button>
+                        </div>
+                      </div>
                       {!collapsedWorkspaces.has(ws.workspaceId) &&
                         wsSessions.map((s) => (
                           <SessionRow
@@ -515,6 +650,12 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                             session={s}
                             active={activeSessionId === s.sessionId}
                             onSelect={selectSession}
+                            onRename={(id) => {
+                              const next = window.prompt("重命名会话", sessionTitle(s))
+                              if (next?.trim()) void renameSession(id, next.trim())
+                            }}
+                            onFork={(id) => void forkSessionById(id)}
+                            onArchive={(id) => void archiveSession(id)}
                           />
                         ))}
                     </div>
@@ -564,43 +705,66 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {currentModelEntry && (
-                <span className="hidden text-xs text-muted-foreground lg:inline">
-                  {currentModelEntry.name}
-                </span>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground"
+                onClick={() => void refreshAll()}
+                title="刷新"
+              >
+                <RefreshCw className="size-4" />
+              </Button>
             </div>
           </div>
 
-          {/* 消息流（滚动体） */}
-          <div ref={viewportRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 size-4 animate-spin" />
-                加载会话…
-              </div>
-            ) : messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10">
-                  <Waves className="size-6 text-primary" />
+          {/* 消息流（滚动体 + 回到底部浮层按钮） */}
+          <div className="relative min-h-0 flex-1">
+            <div ref={viewportRef} className="h-full overflow-y-auto px-4 py-4">
+              {loading ? (
+                <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  加载会话…
                 </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">开始一段对话</p>
-                  <p className="text-xs text-muted-foreground">
-                    选择左侧会话继续，或发送第一条消息开始
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="mx-auto max-w-3xl">
-                <ChatMessageList nodes={messages} />
-                {isStreaming && (
-                  <div className="flex items-center gap-2 py-2 pl-9 text-xs text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" />
-                    正在生成…
+              ) : messages.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10">
+                    <Waves className="size-6 text-primary" />
                   </div>
-                )}
-              </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">开始一段对话</p>
+                    <p className="text-xs text-muted-foreground">
+                      选择左侧会话继续，或发送第一条消息开始
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mx-auto max-w-3xl">
+                  <ChatMessageList
+                    nodes={messages}
+                    onFeedback={(messageId: string, rating: "positive" | "negative") =>
+                      void sendMessageFeedback(messageId, rating)
+                    }
+                    onFork={(atSeq: number) => void forkSession(atSeq)}
+                  />
+                  {isStreaming && (
+                    <div className="flex items-center gap-2 py-2 pl-9 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      正在生成…
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* 回到底部浮层按钮（上下滚动超过 25px 时显示，对齐官方 toBottomSlot） */}
+            {!atBottom && !loading && (
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                title="回到底部"
+                className="absolute bottom-4 right-4 z-20 flex size-8 items-center justify-center rounded-full border border-border/60 bg-background/90 text-muted-foreground shadow-md backdrop-blur transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <ChevronDown className="size-4" />
+              </button>
             )}
           </div>
 
@@ -1088,10 +1252,16 @@ function FlatSessionTree({
   sessions,
   activeSessionId,
   onSelect,
+  onRename,
+  onFork,
+  onArchive,
 }: {
   sessions: SessionSummary[]
   activeSessionId: string | null | undefined
   onSelect: (id: string) => void
+  onRename?: (id: string) => void
+  onFork?: (id: string) => void
+  onArchive?: (id: string) => void
 }) {
   if (sessions.length === 0) {
     return <p className="px-2 py-6 text-center text-xs text-muted-foreground">无匹配会话</p>
@@ -1104,6 +1274,9 @@ function FlatSessionTree({
           session={s}
           active={activeSessionId === s.sessionId}
           onSelect={onSelect}
+          onRename={onRename}
+          onFork={onFork}
+          onArchive={onArchive}
         />
       ))}
     </div>
@@ -1210,23 +1383,88 @@ function SessionRow({
   session,
   active,
   onSelect,
+  onRename,
+  onFork,
+  onArchive,
 }: {
   session: SessionSummary
   active: boolean
   onSelect: (id: string) => void
+  onRename?: (id: string) => void
+  onFork?: (id: string) => void
+  onArchive?: (id: string) => void
 }) {
+  const [open, setOpen] = useState(false)
   return (
-    <button
-      type="button"
-      onClick={() => void onSelect(session.sessionId)}
-      className={cn(
-        "flex h-8 w-full items-center gap-1.5 rounded-lg px-2 pl-7 text-left text-sm transition-colors",
-        active ? "bg-white/8 text-foreground" : "text-foreground/80 hover:bg-muted/60"
+    <div className="group relative flex h-8 w-full items-center gap-1.5 rounded-lg pr-1 pl-7 text-left text-sm transition-colors hover:bg-muted/60">
+      <button
+        type="button"
+        onClick={() => void onSelect(session.sessionId)}
+        className="flex h-8 min-w-0 flex-1 items-center gap-1.5 text-left"
+      >
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            active ? "text-foreground" : "text-foreground/80"
+          )}
+        >
+          {sessionTitle(session)}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {relativeTime(session.updatedAt)}
+        </span>
+      </button>
+      {/* 更多菜单（hover 显现） */}
+      {!session.blank && (
+        <div className="relative">
+          <button
+            type="button"
+            title="更多"
+            onClick={() => setOpen((v) => !v)}
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-colors hover:bg-muted/60 hover:text-foreground focus:opacity-100 group-hover:opacity-100",
+              open && "opacity-100 bg-muted/60"
+            )}
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+          {open && (
+            <div className="absolute right-0 top-full z-30 mt-1 w-40 overflow-hidden rounded-lg border border-border/60 bg-background p-1 shadow-xl">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+                onClick={() => {
+                  setOpen(false)
+                  onRename?.(session.sessionId)
+                }}
+              >
+                <Pencil className="size-3.5" /> 重命名
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+                onClick={() => {
+                  setOpen(false)
+                  onFork?.(session.sessionId)
+                }}
+              >
+                <GitBranch className="size-3.5" /> 分叉会话
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+                onClick={() => {
+                  setOpen(false)
+                  onArchive?.(session.sessionId)
+                }}
+              >
+                <Archive className="size-3.5" /> 归档会话
+              </button>
+            </div>
+          )}
+        </div>
       )}
-    >
-      <span className="min-w-0 flex-1 truncate">{sessionTitle(session)}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(session.updatedAt)}</span>
-    </button>
+    </div>
   )
 }
 

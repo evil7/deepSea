@@ -108,6 +108,24 @@ export interface HelloAckFrame {
   protocolVersion: number
 }
 
+// ── 大帧自动分包（对齐 packages/deepc-link）───────────────────────────────
+// 超限帧（如 session.history 的 unary-result / 大 downstream）拆成多个帧传输。
+
+export interface ChunkMetaFrame {
+  kind: "chunk-meta"
+  txId: string
+  total: number
+  chunks: number
+  sha256: string
+}
+
+export interface ChunkFrame {
+  kind: "chunk"
+  txId: string
+  index: number
+  data: string
+}
+
 // ── 帧联合类型 ────────────────────────────────────────────────────────────
 
 export type BridgeFrame =
@@ -120,6 +138,8 @@ export type BridgeFrame =
   | HelloFrame
   | ThemeStateFrame
   | HelloAckFrame
+  | ChunkMetaFrame
+  | ChunkFrame
 
 // ── 会话 / 工作区数据（对齐 dsh-host-apiproxy schema）─────────────────────
 

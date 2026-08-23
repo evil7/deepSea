@@ -7,7 +7,17 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react"
-import { Check, ChevronRight, CircleAlert, Copy, Terminal, Wrench } from "lucide-react"
+import {
+  Check,
+  ChevronRight,
+  CircleAlert,
+  Copy,
+  GitBranch,
+  Terminal,
+  ThumbsDown,
+  ThumbsUp,
+  Wrench,
+} from "lucide-react"
 
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import {
@@ -28,6 +38,84 @@ function formatClock(time: number): string {
   const mm = String(d.getMinutes()).padStart(2, "0")
   if (d.toDateString() === now.toDateString()) return `${hh}:${mm}`
   return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`
+}
+
+/** 把不足 1k 的数字格式化成可读（如 63.4K / 496），对齐官方 token 缩写。 */
+function formatTokens(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return ""
+  if (n >= 1000) {
+    const k = n / 1000
+    return `${k >= 100 ? k.toFixed(0) : k.toFixed(1)}K`
+  }
+  return String(Math.round(n))
+}
+
+/**
+ * 从 usage 对象提取速度/用量元数据（容错解析，缺字段一律降级）。
+ * 对齐官方元数据行：`13:55 · 输出 496 tok · 111 tok/s`。
+ *
+ * usage 结构兼容 dsh/OpenAI 风格：
+ *   · { completion_tokens, prompt_tokens, total_tokens }
+ *   · { completionTokens, promptTokens, totalTokens }
+ *   · { input_tokens, output_tokens, total_tokens }（Response Usage）
+ * 若函数能从 usage 算出 tok/s（输出 token / 生成秒），附加显示；否则只显示时间。
+ */
+function formatMessageMeta(time: number, usage: unknown): string {
+  const parts: string[] = [formatClock(time)]
+  if (!usage || typeof usage !== "object") return parts.join(" · ")
+
+  const u = usage as Record<string, unknown>
+  // 记录外部毫秒时间戳（time 已是 event.time ms），用于估算生成时长。
+  const timeMs: number | undefined = typeof time === "number" && Number.isFinite(time) ? time : undefined
+  const nowMs = Date.now()
+  const genSec =
+    timeMs && nowMs > timeMs ? Math.max(1, (nowMs - timeMs) / 1000) : undefined
+
+  // 输出 token（多命名兼容）。
+  const completion =
+    typeof u.completion_tokens === "number"
+      ? u.completion_tokens
+      : typeof u.output_tokens === "number"
+        ? u.output_tokens
+        : typeof u.completionTokens === "number"
+          ? u.completionTokens
+          : undefined
+  // 输入 token。
+  const prompt =
+    typeof u.prompt_tokens === "number"
+      ? u.prompt_tokens
+      : typeof u.input_tokens === "number"
+        ? u.input_tokens
+        : typeof u.promptTokens === "number"
+          ? u.promptTokens
+          : undefined
+
+  // 输出 token 用量。
+  if (completion != null && Number.isFinite(completion)) {
+    parts.push(`输出 ${formatTokens(completion)} tok`)
+  } else if (prompt != null && Number.isFinite(prompt)) {
+    parts.push(`输入 ${formatTokens(prompt)} tok`)
+  }
+  // 总用量。
+  const total =
+    typeof u.total_tokens === "number"
+      ? u.total_tokens
+      : typeof u.totalTokens === "number"
+        ? u.totalTokens
+        : undefined
+  if (total != null && Number.isFinite(total) && completion == null) {
+    parts.push(`共 ${formatTokens(total)} tok`)
+  }
+
+  // 生成速度 n tok/s（输出 token / 生成秒）。
+  if (completion != null && genSec && genSec >= 1) {
+    const tps = completion / genSec
+    if (Number.isFinite(tps) && tps > 0) {
+      parts.push(`${Math.round(tps)} tok/s`)
+    }
+  }
+
+  return parts.join(" · ")
 }
 
 /** 助手消息内容块渲染（text / reasoning / tool-call / image / other）。 */
@@ -316,25 +404,104 @@ function ApprovalBlock({ node }: { node: Extract<RenderNode, { kind: "approval" 
   )
 }
 
-/** 消息操作行：时间 + 复制图标（复刻官方 MessageIconActions，hover 显现）。 */
-function MessageActions({ time, text }: { time: number; text: string }) {
+/**
+ * 消息操作行：copy / like / dislike / fork / 时钟（对齐官方 MessageIconActions）。
+ * 默认图标常驻弱色，时钟弱色；hover 相互淡入。copy 成功 1s 变 check。
+ *
+ * 【交互对齐官方】：
+ *   · 用户消息：只保留「复制」按钮（无时间/点赞等）。
+ *   · 助手消息：复制 + 点赞 + 点踩 + 分支 + 元数据统计，hover 消息行才浮现
+ *     （平时 opacity-0，group-hover 淡入），与官方「hover 显示操作」一致。
+ */
+function MessageActions({
+  time,
+  text,
+  kind,
+  messageId,
+  seq,
+  usage,
+  onFeedback,
+  onFork,
+}: {
+  time: number
+  text: string
+  kind: "user" | "assistant"
+  messageId?: string
+  seq: number
+  usage?: unknown
+  onFeedback?: (messageId: string, rating: "positive" | "negative") => void
+  onFork?: (atSeq: number) => void
+}) {
   const [copied, setCopied] = useState(false)
+  const [rating, setRating] = useState<"positive" | "negative" | null>(null)
+  const iconCls =
+    "flex size-7 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+
+  const writeText = () => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1000)
+    })
+  }
+
+  const toggleRating = (r: "positive" | "negative") => {
+    const next = rating === r ? null : r
+    setRating(next)
+    if (messageId && onFeedback) onFeedback(messageId, r)
+  }
+
+  // 用户消息：只保留复制按钮（hover 淡入，对齐官方用户气泡的极简操作）。
+  if (kind === "user") {
+    return (
+      <div className="flex items-center gap-0.5 text-[11px] leading-none text-muted-foreground">
+        <button
+          type="button"
+          className={cn(iconCls, "opacity-0 transition-opacity group-hover:opacity-100")}
+          title="复制"
+          onClick={writeText}
+        >
+          {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-      <span className="text-[11px] leading-none text-muted-foreground">{formatClock(time)}</span>
-      <button
-        type="button"
-        onClick={() => {
-          void navigator.clipboard.writeText(text).then(() => {
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          })
-        }}
-        className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-        title="复制"
-      >
+    <div className="flex items-center gap-0.5 text-[11px] leading-none text-muted-foreground">
+      {/* copy（常驻弱色，hover 高亮） */}
+      <button type="button" className={iconCls} title="复制" onClick={writeText}>
         {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
       </button>
+      {/* 操作按钮：hover 消息行才浮现 */}
+      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {/* like / dislike：仅助手消息 */}
+        <button
+          type="button"
+          className={cn(iconCls, rating === "positive" && "bg-muted/60 text-foreground")}
+          title="回答好"
+          onClick={() => toggleRating("positive")}
+        >
+          <ThumbsUp className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          className={cn(iconCls, rating === "negative" && "bg-muted/60 text-foreground")}
+          title="回答差"
+          onClick={() => toggleRating("negative")}
+        >
+          <ThumbsDown className="size-3.5" />
+        </button>
+        {/* fork / branch */}
+        {onFork && (
+          <button type="button" className={iconCls} title="在新对话中分叉" onClick={() => onFork(seq)}>
+            <GitBranch className="size-3.5" />
+          </button>
+        )}
+      </div>
+      {/* 元数据统计：hover 消息行显示（时间 · token 用量 · tok/s 速度） */}
+      <span className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {formatMessageMeta(time, usage)}
+      </span>
     </div>
   )
 }
@@ -347,7 +514,15 @@ function assistantText(blocks: readonly AssistantBlock[]): string {
     .join("\n\n")
 }
 
-export function ChatMessageNode({ node }: { node: RenderNode }) {
+export function ChatMessageNode({
+  node,
+  onFeedback,
+  onFork,
+}: {
+  node: RenderNode
+  onFeedback?: (messageId: string, rating: "positive" | "negative") => void
+  onFork?: (atSeq: number) => void
+}) {
   switch (node.kind) {
     case "user":
       return (
@@ -357,14 +532,29 @@ export function ChatMessageNode({ node }: { node: RenderNode }) {
               {node.content.map(blockText).join("")}
             </BubbleContent>
           </Bubble>
-          <MessageActions time={node.time} text={node.content.map(blockText).join("")} />
+          <MessageActions
+            time={node.time}
+            text={node.content.map(blockText).join("")}
+            kind="user"
+            seq={node.seq}
+            onFork={onFork}
+          />
         </div>
       )
     case "assistant":
       return (
         <div className="group flex flex-col items-start gap-2">
           <AssistantBlocks blocks={node.blocks} />
-          <MessageActions time={node.time} text={assistantText(node.blocks)} />
+          <MessageActions
+            time={node.time}
+            text={assistantText(node.blocks)}
+            kind="assistant"
+            seq={node.seq}
+            messageId={node.messageId}
+            usage={node.usage}
+            onFeedback={onFeedback}
+            onFork={onFork}
+          />
         </div>
       )
     case "context":
@@ -397,11 +587,24 @@ export function ChatMessageNode({ node }: { node: RenderNode }) {
   }
 }
 
-export function ChatMessageList({ nodes }: { nodes: RenderNode[] }) {
+export function ChatMessageList({
+  nodes,
+  onFeedback,
+  onFork,
+}: {
+  nodes: RenderNode[]
+  onFeedback?: (messageId: string, rating: "positive" | "negative") => void
+  onFork?: (atSeq: number) => void
+}) {
   return (
     <div className="flex flex-col gap-4">
       {nodes.map((node, i) => (
-        <ChatMessageNode key={`${node.kind}-${node.seq}-${i}`} node={node} />
+        <ChatMessageNode
+          key={`${node.kind}-${node.seq}-${i}`}
+          node={node}
+          onFeedback={onFeedback}
+          onFork={onFork}
+        />
       ))}
     </div>
   )

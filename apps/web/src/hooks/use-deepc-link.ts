@@ -284,6 +284,111 @@ export function useDeepcLink() {
   )
 
   /**
+   * 消息反馈（positive/negative）。
+   *
+   * 注意：dsh 官方 HTTP API 目前不暴露 messageFeedback 端点（404），
+   * 该功能在官方客户端中由内部 API 处理。此处保留接口签名，
+   * 实际调用会返回 {ok:false}，调用方需容错处理。
+   */
+  const sendMessageFeedback = useCallback(
+    async (messageId: string, rating: "positive" | "negative"): Promise<boolean> => {
+      if (!activeRef.current) return false
+      try {
+        const res = await deepcClient.call("messageFeedback.put", {
+          sessionId: activeRef.current,
+          messageId,
+          rating,
+        })
+        return res.ok
+      } catch {
+        // 官方 API 未暴露此端点，静默降级
+        return false
+      }
+    },
+    []
+  )
+
+  /** 消息分支（对齐官方 session.fork RPC）：以该事件 seq 为前缀新建子会话。 */
+  const forkSession = useCallback(
+    async (atSeq: number): Promise<boolean> => {
+      if (!activeRef.current) return false
+      const res = await deepcClient.call("session.fork", {
+        sessionId: activeRef.current,
+        atSeq,
+      })
+      if (res.ok) {
+        await loadWorkspace()
+      }
+      return res.ok
+    },
+    [loadWorkspace]
+  )
+
+  /**
+   * 全量刷新：重新拉取远端 dsh 的所有数据，等价于刚连接时 hello 触发的全量加载。
+   *   · 工作区 + 会话列表（workspace.list / session.list）
+   *   · 设置（settings.describe）与插件清单（pluginInventory/list）
+   *   · 当前选中会话的历史 + 模型（若已选中）
+   * 供 sidebar「刷新」按钮调用，确保数据与远端 dsh 实时一致。
+   */
+  const refreshAll = useCallback(async () => {
+    await loadWorkspace()
+    await loadSettings()
+    await loadPlugins()
+    const active = activeRef.current
+    if (active) {
+      // 重新拉当前会话历史 + 模型（refresh 等同重新进入该会话）。
+      setActiveSessionId(active)
+      const res = await deepcClient.call("session.history", { sessionId: active, maxMessages: 50 })
+      if (res.ok && res.value) {
+        const value = res.value as { events?: HistoryEntry[] }
+        setMessages(foldEvents(value.events ?? []))
+      }
+      await loadSessionModels(active)
+    }
+  }, [loadWorkspace, loadSettings, loadPlugins, loadSessionModels])
+
+  /** 工作区重命名（对齐官方 workspace.rename）。 */
+  const renameWorkspace = useCallback(
+    async (workspaceId: string, title: string): Promise<boolean> => {
+      const res = await deepcClient.call("workspace.rename", { workspaceId, title })
+      await loadWorkspace()
+      return res.ok
+    },
+    [loadWorkspace]
+  )
+
+  /** 工作区删除（对齐官方 workspace.delete）。 */
+  const deleteWorkspace = useCallback(
+    async (workspaceId: string): Promise<boolean> => {
+      const res = await deepcClient.call("workspace.delete", { workspaceId })
+      await loadWorkspace()
+      return res.ok
+    },
+    [loadWorkspace]
+  )
+
+  /** 会话重命名（对齐官方 session.rename，title 用 projection 写）。 */
+  const renameSession = useCallback(
+    async (sessionId: string, title: string): Promise<boolean> => {
+      const res = await deepcClient.call("session.rename", { sessionId, title })
+      await loadWorkspace()
+      return res.ok
+    },
+    [loadWorkspace]
+  )
+
+  /** 会话归档（对齐官方 workspace.archiveSession）。 */
+  const archiveSession = useCallback(
+    async (sessionId: string): Promise<boolean> => {
+      const res = await deepcClient.call("workspace.archiveSession", { sessionId })
+      await loadWorkspace()
+      return res.ok
+    },
+    [loadWorkspace]
+  )
+
+  /**
    * 下行事件：mux 流推来的 session/event 实时消费（对齐官方客户端分层）。
    *   · step/start        → 开启流式 assistant 节点（「生成中」）
    *   · assistant/chunk   → applyStreamChunk 累积（打字机）
@@ -586,9 +691,16 @@ export function useDeepcLink() {
     selectSession,
     sendPrompt,
     createSession,
+    sendMessageFeedback,
+    forkSession,
+    renameWorkspace,
+    deleteWorkspace,
+    renameSession,
+    archiveSession,
     loadWorkspace,
     loadSettings,
     loadPlugins,
+    refreshAll,
     updateSetting,
     openSettingsDocument,
     loadSessionModels,

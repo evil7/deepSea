@@ -33,7 +33,8 @@ export const inject = ['webServer']
 
 export function apply(ctx: Context): void {
   if (nodeHost) return
-  const host = createNodeHost()
+  // 传入 ctx.apiProxy 使 node-host 优先走官方 apiProxy 直连（零网络）。
+  const host = createNodeHost({ apiProxy: (ctx as any).apiProxy })
   nodeHost = host
   // 注册 /deepc 前缀路由承载前端控制（同源，复用 dsh 3080，免 CORS）。
   // ctx.effect 的 disposer = register 的返回函数，fiber 卸载自动撤销路由。

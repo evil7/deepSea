@@ -123,6 +123,8 @@ export type BridgeFrame =
   | HelloFrame
   | HelloAckFrame
   | ThemeStateFrame
+  | ChunkMetaFrame
+  | ChunkFrame
   | SyncHelloFrame
   | SyncHelloAckFrame
   | SyncFileMetaFrame
@@ -184,6 +186,33 @@ export interface HelloAckFrame {
 export interface ThemeStateFrame {
   kind: 'theme-state'
   theme: unknown
+}
+
+// ---------------------------------------------------------------------------
+// 大帧自动分包（通用）：把超限的桥梁帧（如 session.history 的 unary-result /
+// 大 downstream 帧）拆成多个 chunk 帧发送，对端重组后按原帧路由。
+// 触发条件：整帧 JSON 长度 > CHUNK_THRESHOLD_BYTES。
+// ---------------------------------------------------------------------------
+
+/** 分包元信息（发送端在某帧超限时先发）：确定重组边界与校验基准。 */
+export interface ChunkMetaFrame {
+  kind: 'chunk-meta'
+  /** 本次分包会话 id（隔离串批帧）。 */
+  txId: string
+  /** 重组后的完整帧 JSON 字节数。 */
+  total: number
+  /** 分块数。 */
+  chunks: number
+  /** 完整帧 JSON 的 SHA-256 hex（小写；subtle 不可用时空串，对端仅按 size 校验）。 */
+  sha256: string
+}
+
+/** 分包数据帧：data 为单个分块的 base64。 */
+export interface ChunkFrame {
+  kind: 'chunk'
+  txId: string
+  index: number
+  data: string
 }
 
 // ---------------------------------------------------------------------------

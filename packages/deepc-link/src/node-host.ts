@@ -8,8 +8,9 @@
  *   · WS 信令：ws-signaling，被动接收主站 offer（token 经 query）
  *   · 后端专用前缀路由 `/deepc`（ctx.webServer.register）：接收前端控制（status / login /
  *     logout / allow / sync / disconnect），前端经 fetch 调用
- *   · deepc.* 能力：installSession 用 wrapLocalApi(new HttpLocalApi('http://127.0.0.1:3080'))
+ *   · deepc.* 能力：installSession 用 wrapLocalApi(ApiProxyLocalApi/HttpLocalApi)
  *     拦截 deepc.os.hostname / deepc.fs.roots / deepc.fs.listDirectories
+ *     （优先 ctx.apiProxy 直连，降级走 HttpLocalApi HTTP 回环）
  *
  * 与 browser 端 host-ui.ts 的协作：host-ui 只渲染 Sheet，登录状态/开关/同步等动作都
  * 经本地 HTTP 转发到本模块执行。
@@ -25,7 +26,7 @@ import { createNodeRegistry, type NodeRegistry } from './node-registry'
 import { startMailboxHost } from './mailbox-host'
 import { startConfigSync } from './config-sync'
 import { wrapLocalApi } from './deepc-api'
-import { HttpLocalApi } from './local-api'
+import { ApiProxyLocalApi, HttpLocalApi } from './local-api'
 
 /** node-host 向后端控制路由暴露的路径段。 */
 export const NODE_CTRL_PATH = '/deepc'
@@ -44,6 +45,11 @@ export interface NodeHostOptions {
   siteBase?: string
   /** 本地 dsh host 基址（127.0.0.1:3080）。 */
   hostBase?: string
+  /**
+   * cordis ctx.apiProxy（官方 API 网关直连）。
+   * 有此参数时优先走 ApiProxyLocalApi（零网络）；无则降级 HttpLocalApi。
+   */
+  apiProxy?: unknown
 }
 
 export interface NodeHost {
@@ -137,6 +143,7 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
   const configuredSignalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
   const configuredSiteBase = opts.siteBase ?? DEFAULT_SITE_BASE
   const hostBase = opts.hostBase ?? 'http://127.0.0.1:3080'
+  const apiProxy = opts.apiProxy
 
   /** 开发模式：开启时所有基址解析切到本地 127.0.0.1:5174（vite 代理收敛本地 worker）。 */
   let devMode = false
@@ -190,8 +197,14 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
       hostBase,
       allowInterconnect,
       token,
-      // deepc.* 拦截在 node 端：wrapLocalApi 处理 deepc.os/fs，其余转 HttpLocalApi。
-      apiFactory: (base) => wrapLocalApi(new HttpLocalApi(base)),
+      // deepc.* 拦截在 node 端：wrapLocalApi 处理 deepc.os/fs。
+      // 优先用 ctx.apiProxy 直连（官方标准），降级走 HttpLocalApi HTTP 回环。
+      apiFactory: (base) => {
+        const inner = apiProxy
+          ? new ApiProxyLocalApi(apiProxy, base)
+          : new HttpLocalApi(base)
+        return wrapLocalApi(inner)
+      },
       onConfigChanged: () => void configSync?.sync(),
     })
     mailbox.onSessionChange((count) => {
