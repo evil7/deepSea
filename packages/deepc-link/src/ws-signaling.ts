@@ -1,10 +1,15 @@
 /**
- * deepc-link 插件端 WS 信令客户端 —— Worker `/ws/signal`（DO 信号房，方案 A）。
+ * deepc-link 插件端 WS 信令客户端 —— Worker `/ws/api-link`（DO 信号房，方案 A）。
  *
  * 替换轮询：设备常驻 WS 长连接，被动接收「主站要连我」的 offer 推送，回投 answer。
+ * 同时收到 config-changed 通知（配置同步拉增量用）。signal / config-changed 都是
+ * 端点内部消息；节点注册表快照/变更由主站侧订阅（插件端无需）。
+ *
  * 消息帧与 worker DO 信号房严格对齐（JSON）：
  *   客户端 → DO：{ type:"signal", target:nodeId, kind:"offer"|"answer", payload:string }
- *   DO → 客户端：{ type:"signal", from:nodeId,  kind:"offer"|"answer", payload:string }
+ *   DO → 客户端：
+ *     { type:"signal", from:nodeId,  kind:"offer"|"answer", payload:string }
+ *     { type:"config-changed" }
  *
  * 认证：浏览器 WebSocket 无法设 Authorization header，故经 query `token` 参数传
  * device_token（wss:// 加密；见 docs/deepsea-deepc-bridge-signaling.md §11.3）。
@@ -51,7 +56,7 @@ export function createWsSignalClient(opts: {
 
   function wsUrl(): string {
     const wsBase = signalBase.replace(/^http/, 'ws')
-    return `${wsBase}/ws/signal?nodeId=${encodeURIComponent(nodeId)}&token=${encodeURIComponent(opts.token)}`
+    return `${wsBase}/ws/api-link?nodeId=${encodeURIComponent(nodeId)}&token=${encodeURIComponent(opts.token)}`
   }
 
   /** 意外断线后指数退避重连（1s→2s→4s…封顶 30s）；主动 disconnect 则不重连。 */

@@ -2,7 +2,7 @@
 // /auth/node/* —— deepc-link 多端设备注册
 //
 // 设备注册：登录账号绑定 node（D1 deepc_nodes），支持心跳续期、改名、删除（吊销）。
-// 信令（offer/answer）已由 WS+DO 信号房承载（/ws/signal），不再经 HTTP 信箱轮询。
+// 信令（offer/answer）已由 WS+DO 信号房承载（/ws/api-link），不再经 HTTP 信箱轮询。
 //
 // 安全模型：
 //   · 所有端点需有效登录会话（cookie → D1 sessions → github_id）。
@@ -14,7 +14,6 @@ import {
   appendLog,
   countNodesByGithub,
   getNode,
-  listNodes,
   removeNode,
   resolveActorUserId,
   upsertNode,
@@ -48,22 +47,16 @@ const MAX_NAME_LEN = 128
 const MAX_NODES_PER_USER = 3
 
 /**
- * 查询 DO 信号房的在线 nodeId 集合（WS socket 存活 = online，0 HTTP 心跳）。
- * 在线判定权威源 = DO 内存态；last_seen 仅作「最后活跃」展示，不再驱动 online。
+ * 经 DO 信号房广播「节点注册表已变」→ 所有在线 socket 收到 nodes-changed 帧刷新。
+ * 注册 / 删除 / 改名后调用，让主站 /plugins、/links 等基于 WS 的设备列表即时更新。
  */
-async function queryOnlineNodeIds(
-  env: Env,
-  githubId: number
-): Promise<Set<string>> {
+async function broadcastNodesChanged(env: Env, githubId: number): Promise<void> {
   try {
     const id = env.SIGNAL_ROOM.idFromName(`room:${githubId}`)
     const stub = env.SIGNAL_ROOM.get(id)
-    const res = await stub.fetch(new Request("https://signal-room/presence"))
-    if (!res.ok) return new Set()
-    const arr = (await res.json()) as string[]
-    return new Set(arr)
+    await stub.fetch("http://signal-room/nodes-resync", { method: "POST" })
   } catch {
-    return new Set()
+    // DO 未初始化（无人在线）时忽略；下次设备上线会推全量快照，无需担心丢变更。
   }
 }
 
@@ -121,30 +114,10 @@ export async function handleNodeRegister(
       ip: getClientIp(request),
     })
   }
+  // 注册表已变 → 广播 nodes-changed（在线 socket 刷新设备列表）。
+  await broadcastNodesChanged(env, githubId)
   const used = await countNodesByGithub(env, githubId)
   return json({ ok: true, quota: { used, limit: MAX_NODES_PER_USER } })
-}
-
-/** GET /auth/node/list —— 列出同账号设备（含 online 计算）。 */
-export async function handleNodeList(
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const githubId = await resolveActorUserId(request, env)
-  if (githubId === null) return json({ authed: false })
-
-  const nodes = await listNodes(env, githubId)
-  const online = await queryOnlineNodeIds(env, githubId)
-  return json({
-    authed: true,
-    nodes: nodes.map((n) => ({
-      nodeId: n.node_id,
-      name: n.name,
-      lastSeen: n.last_seen,
-      online: online.has(n.node_id),
-      createdAt: n.created_at,
-    })),
-  })
 }
 
 interface NodeIdBody {
@@ -177,5 +150,7 @@ export async function handleNodeRemove(
     detail: body.nodeId,
     ip: getClientIp(request),
   })
+  // 注册表已变 → 广播 nodes-changed（在线 socket 刷新设备列表）。
+  await broadcastNodesChanged(env, githubId)
   return json({ ok: true })
 }

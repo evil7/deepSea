@@ -13,12 +13,14 @@ import {
   applyStreamChunk,
   classifyBlocks,
   foldEvents,
+  isUserMessage,
   type RenderNode,
 } from "@/lib/deepc-link/fold"
 import type {
   AssistantBlock,
   AssistantChunkData,
   ContentBlock,
+  ContextSource,
   DownstreamFrame,
   HelloFrame,
   HistoryEntry,
@@ -372,10 +374,25 @@ export function useDeepcLink() {
         setStreaming(null)
         const content = d.content ?? []
         if (content.length > 0) {
-          setMessages((prev) => [
-            ...prev,
-            { kind: "user", seq: event.seq, time: event.time, content, source: d.source },
-          ])
+          // 对齐官方：source.kind !== 'user'（plugin / goal / 其它注入）→ 上下文注入节点，
+          // 与 fold.ts 的 foldEvents 判定一致，避免系统 prompt 渲染成用户气泡。
+          if (!isUserMessage(d.source)) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                kind: "context",
+                seq: event.seq,
+                time: event.time,
+                content,
+                source: (d.source ?? {}) as ContextSource,
+              },
+            ])
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              { kind: "user", seq: event.seq, time: event.time, content, source: d.source },
+            ])
+          }
         }
         break
       }

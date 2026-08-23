@@ -37,8 +37,14 @@ user-invocable: true
 
 ### 2. 信令（唯一通道：WS + DO，禁止轮询）
 
-- `createWsSignalClient`（插件端）→ `/ws/signal?nodeId&token`，DO `SignalRoom`（分区键
+- `createWsSignalClient`（插件端）→ `/ws/api-link?nodeId&token`，DO `SignalRoom`（分区键
   `room:{githubId}`）按 nodeId 推送密文 offer/answer。
+- 同一端点也承载 link 在线同步数据：节点注册表 `nodes-snapshot`/`nodes-changed`（替代
+  `/auth/node/list`）、`config-changed`、`presence`。signal 只是其中一种内部命令帧。
+- **远端数据交换规范（红线）**：主站 ↔ Worker 的「广播/推送/订阅/同步」类数据交换，一律扩展
+  `/ws/api-link` 的 WS 帧（`type` 加新帧类型 + 双端 `ws-signaling.ts` 同步解析），**非必要不新开
+  REST 端点**。REST 仅保留给"请求-响应 + 持久化"的 `/auth/*`（OAuth / device-grant / config put /
+  node register）。判断「实时数据面（WS）」vs「身份持久化面（REST）」的边界：是否需广播给所有在线端。
 - **HTTP 信箱轮询已整体移除（A2）**——任何「退回轮询」都是红线违反（浪费 Worker 额度）。
 - 认证：浏览器 WS 无法设 Authorization → token 经 query 传（wss 加密）；主站同源 cookie。
 
@@ -68,6 +74,8 @@ user-invocable: true
 5. 禁止插件端在浏览器侧注册/心跳/连信令/派生 nodeId。
 6. 禁止密钥/device_token 落明文（Worker 只见 AES-GCM 密文）。
 7. 禁止手改 `apps/web/src/components/ui/**`。
+8. 禁止非必要在 Worker 新增 REST 端点——主站 ↔ Worker 的广播/推送/订阅/同步类数据交换一律走
+   `/ws/api-link` WS 帧；仅"请求-响应 + 持久化"的 `/auth/*` 保留 REST。
 
 ## 关键源码锚点
 
@@ -88,14 +96,18 @@ user-invocable: true
 ## 已知坑（务必规避）
 
 - node 端打包漏 `--define:__DEEPC_SITE_BASE__/__DEEPC_SIGNAL_BASE__` → 运行时
-  `ReferenceError`、`apply` 抛错、`/deepc` 路由不注册。
+  `ReferenceError`、`apply` 抛错、`/deepc` 路由不注册。**构建时注入默认基址 `https://deepc.cn`，
+  一个编译命令通用 dev/prod**；本地联调靠「开发模式」开关运行时切到 `http://127.0.0.1:5174`，
+  **无需 `--local` / `build:local` 单独产物**。
 - `respondMailboxOffer` 必须**先投 answer 再 `awaitSession()`**（顺序反了会死锁）。
 - `disconnect` 前发 `deepc:bye` 控制帧，否则对端误判「意外断开」自动重连，断开无效。
 - cordis 无 `ctx.on('dispose')`，清理用 `ctx.effect(() => ... return disposer)`。
 - node-datachannel 的 host 与 client 建连必须**并发**（串行会 datachannel 超时）。
+- 双端新增 WS 帧类型时，**两端 `ws-signaling.ts` 必须同步解析**（新增帧 `type` 双端对齐），
+  仅 PLUGIN 或仅主站解析会导致对方帧被忽略。
 
 ## 完成标准
 
 - [ ] 不违反任一条红线
-- [ ] 改动经 `typecheck` + `build --local` + 端到端验证
+- [ ] 改动经 `typecheck` + `build`（单一命令）+ 端到端验证
 - [ ] 结论沉淀到 `/memories/repo/` 对应记忆文件

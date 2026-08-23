@@ -20,7 +20,7 @@ import { DEFAULT_SIGNAL_BASE } from './device-auth'
 export interface MailboxHostOptions {
   /** 本设备 nodeId。 */
   nodeId: string
-  /** worker 服务基址（/ws/signal）。 */
+  /** worker 服务基址（/ws/api-link）。 */
   signalBase?: string
   /** 本地 dsh host 基址（127.0.0.1:3080）。 */
   hostBase?: string

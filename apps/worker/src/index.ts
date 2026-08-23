@@ -18,7 +18,6 @@ import { handleLogout } from "./auth/logout"
 import { handleMe } from "./auth/me"
 import { handleInterconnectLog } from "./auth/preferences"
 import {
-  handleNodeList,
   handleNodeRegister,
   handleNodeRemove,
 } from "./auth/node"
@@ -118,7 +117,7 @@ const handler: ExportedHandler<Env> = {
 
     // WebSocket 信令（DO 信号房）：Upgrade 请求路由到 room:{githubId}。
     // worker 层先拿 githubId 确定分区；DO 层再做完整认证 + nodeId 归属校验。
-    if (url.pathname === "/ws/signal") {
+    if (url.pathname === "/ws/api-link") {
       let githubId = await resolveActorUserId(request, env)
       if (githubId === null) {
         const token = url.searchParams.get("token")
@@ -144,8 +143,6 @@ const handler: ExportedHandler<Env> = {
         return handleInterconnectLog(request, env)
       case "/auth/node/register":
         return handleNodeRegister(request, env)
-      case "/auth/node/list":
-        return handleNodeList(request, env)
       case "/auth/node/remove":
         return handleNodeRemove(request, env)
       case "/auth/device-grant":

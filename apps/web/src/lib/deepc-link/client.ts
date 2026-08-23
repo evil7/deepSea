@@ -7,7 +7,7 @@
 //   · subscribe(stream, handler)：订阅下行事件流（events.mux / events.host）
 //   · on(event, handler)：连接状态 / hello / downstream 事件分发
 //
-// 帧协议与 packages/deepc-link 严格对齐；信令走 Worker /ws/signal（DO 推送）。
+// 帧协议与 packages/deepc-link 严格对齐；信令走 Worker /ws/api-link（DO 推送）。
 // ---------------------------------------------------------------------------
 
 import {
@@ -19,7 +19,7 @@ import {
   decodeNodeEnvelope,
   encodeNodeEnvelope,
 } from "./nodes"
-import { createWsSignalClient, type WsSignalClient } from "./ws-signaling"
+import { createWsLinkClient, type WsLinkClient } from "./ws-signaling"
 import type {
   BridgeFrame,
   DownstreamFrame,
@@ -107,7 +107,7 @@ export class DeepcClient {
   private dc: RTCDataChannel | null = null
   private _state: ClientState = "idle"
   private _connectedAt: number | null = null
-  private wsSignal: WsSignalClient | null = null
+  private wsSignal: WsLinkClient | null = null
 
   // 意外断连自动恢复：记住「连谁 + 我是谁」，dc close 后固定间隔重连。
   // 断联 3 次（每次 10s，共 30s）后清除意图，进入 error 态（由页面负责回首页）。
@@ -272,7 +272,7 @@ export class DeepcClient {
       const answerKey = await deriveNodeSignalKey(selfNodeId)
 
       // WS 信令（DO 推送）：建连 + 投递 offer + 等 answer 推送。
-      const wsClient = createWsSignalClient()
+      const wsClient = createWsLinkClient()
       this.wsSignal = wsClient
       const wsOk = await wsClient.connect(selfNodeId)
 

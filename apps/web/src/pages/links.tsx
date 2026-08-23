@@ -2,11 +2,13 @@
 // /links —— 操作互联设备列表页（deepc-link 多端直连入口）。
 //
 // 列出同账号已登录的 DSH 节点；点击「连接」导航到 /link/:nodeId 建立 RTC。
-// 在线状态由常驻 WS presence 广播刷新（无 HTTP 心跳）。
+// 设备列表 + 在线状态由常驻 WS `/ws/api-link` 节点注册表快照/变更帧刷新：
+//   · connect 时 DO 推 nodes-snapshot（全量）
+//   · 节点增/删/改名/上下线时 DO 推 nodes-changed（全量）
 // 登录后注册主站控制端节点（console）用于发起连接。
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { Badge } from "@/components/ui/badge"
@@ -16,13 +18,12 @@ import { PageHeader } from "@/components/layout/page-header"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
 import {
-  listNodes,
   registerConsoleNode,
   removeNode,
   isConsoleNode,
   type NodeView,
 } from "@/lib/deepc-link/nodes"
-import { createWsSignalClient } from "@/lib/deepc-link/ws-signaling"
+import { createWsLinkClient } from "@/lib/deepc-link/ws-signaling"
 import { Laptop, Link2, Loader2, RefreshCw, Trash2 } from "lucide-react"
 
 export function LinksPage() {
@@ -45,42 +46,43 @@ export function LinksPage() {
     }
   }, [user])
 
-  // 登录后常驻 WS（DO 信号房）订阅 presence 广播：node 上线/下线即推。
+  // 设备列表源 = WS 节点注册表快照/变更（无 HTTP /auth/node/list）。
+  const wsRef = useRef<ReturnType<typeof createWsLinkClient> | null>(null)
+
+  // 登录后常驻 WS（DO 信号房）：connect 时收 nodes-snapshot，此后任何节点增/删/改名/
+  // 上下线收 nodes-changed（全量）。统一处理：过滤掉主站自身控制端节点后覆写列表。
   useEffect(() => {
     if (!user || !consoleNodeId) return
-    const ws = createWsSignalClient()
-    let off: (() => void) | null = null
+    const ws = createWsLinkClient()
+    wsRef.current = ws
     let disposed = false
+    const applyNodes = (all: NodeView[]): void => {
+      setNodes(all.filter((n) => !isConsoleNode(n)))
+      setNodesLoaded(true)
+    }
+    const offSnapshot = ws.onNodesSnapshot(applyNodes)
+    const offChanged = ws.onNodesChanged(applyNodes)
     void ws.connect(consoleNodeId).then((ok) => {
-      if (!ok || disposed) return
-      off = ws.onPresence((online) => {
-        const onlineSet = new Set(online)
-        setNodes((prev) => prev.map((n) => ({ ...n, online: onlineSet.has(n.nodeId) })))
-      })
+      if (!ok && !disposed) {
+        // 连接失败：标记已加载（空列表），避免无限 loading。
+        setNodesLoaded(true)
+      }
     })
     return () => {
       disposed = true
-      off?.()
+      offSnapshot()
+      offChanged()
       ws.disconnect()
+      if (wsRef.current === ws) wsRef.current = null
     }
   }, [user, consoleNodeId])
 
-  // 登录态加载设备列表（过滤掉主站自身控制端节点）。
-  const refreshNodes = useCallback(async () => {
-    if (!user) {
-      setNodes([])
-      setNodesLoaded(true)
-      return
-    }
-    const list = await listNodes()
-    setNodes(list.filter((n) => !isConsoleNode(n)))
-    setNodesLoaded(true)
-  }, [user])
-
-  useEffect(() => {
-    void refreshNodes()
-    // oxlint-disable-next-line react/set-state-in-effect
-  }, [refreshNodes])
+  // 「刷新」按钮：主动向 DO 请求一次 nodes-snapshot（服务器回推全量）。
+  const refreshNodes = useCallback(() => {
+    setNodesLoaded(false)
+    wsRef.current?.refreshNodes()
+    // 兜底：若 WS 未就绪，稍后快照到达会置 nodesLoaded。此处若超时仍空列表则兜底。
+  }, [])
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-10 sm:px-6">

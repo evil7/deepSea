@@ -65,6 +65,12 @@ pnpm typegen                              # 生成 apps/worker/worker-configurat
   - 单起前端：`pnpm dev`（需 worker 已在 8787 运行，否则 /auth 代理 502）
   - 单起 worker：`pnpm dev:worker`
 - 本地 OAuth：`apps/web/.env`（`VITE_GITHUB_OAUTH_CLIENT_ID` + `VITE_DEEPSEA_BASE=http://127.0.0.1:5174`）+ `apps/worker/.dev.vars`
+- **deepc 插件本地联调（dev-prod 通用单一产物）**：
+  1. `pnpm dev:all` 启动本地全栈（worker 8787 + web 5174）
+  2. `pnpm plugin:pack` 构建唯一产物并打 tgz（默认基址 deepc.cn）
+  3. `dsh plugin --profile web add ./packages/deepc-link/deepc-link-0.0.1.tgz` 安装
+  4. 插件 Sheet 打开「开发模式」开关 → 自动连本地 `http://127.0.0.1:5174`
+  （无需单独 `build:local` 产物，见 `packages/deepc-link/README.md`）
 - 详见 `docs/deepsea-oauth-worker.md`
 
 ## 核心功能

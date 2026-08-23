@@ -185,18 +185,34 @@ export type AssistantBlock =
   | { kind: "tool-call"; callId: string; name: string; argsRaw: string }
   | { kind: "other"; block: unknown }
 
-/** 上下文注入 source 的 section（如 sandbox:policy / approval:policy）。 */
+/** 上下文注入 source 的 section（如 sandbox:policy / approval:policy / snapshot）。 */
 export interface ContextSection {
   name?: string
   text?: string
 }
 
-/** 上下文注入消息 source（source.kind === "plugin" 等非 user 生产者）。 */
+/** 上下文注入的 form（对齐 dsh-llm `ContextFormed`，与 kind 独立）。 */
+export type ContextForm =
+  | "instructions"
+  | "catalog"
+  | "snapshot"
+  | "notice"
+  | "relay"
+  | "recall"
+
+/**
+ * 上下文注入消息 source（对齐 dsh-llm `MessageSource` / `ContextFormed`）。
+ * 官方是 merge-extensible sum type，kind 可为 user/plugin/model/tool 及插件扩展
+ * （如 goal）。凡 kind !== 'user' 都视为注入上下文，渲染为 context 节点。
+ */
 export interface ContextSource {
   kind?: string
   plugin?: string
-  form?: string
+  form?: ContextForm
+  /** form === 'snapshot' 时的命名贡献，按序。 */
   sections?: ContextSection[]
+  /** form === 'notice' 时的一行摘要（≤120 字符）。 */
+  summary?: string
   paths?: string[]
   [key: string]: unknown
 }

@@ -9,6 +9,16 @@
  *   · 写：put(key, value) 直调 worker /auth/config/put（device_token 鉴权）
  *
  * 时效：LWW + worker 单调递增时间戳；本地合并 updatedAt 大者赢。
+ *
+ * 【自动同步 + 版本冲突（需求 2）】：
+ *   不再需要用户手动点「同步」——登录后 + config-changed 通知时自动 sync。
+ *   引入「基线版本 baseVersion」做冲突检测：
+ *     · 本地 put 时记录 baseVersion = 当前远端 updatedAt（改前的远端版本）。
+ *     · sync 拉远端起，若某 key 本地「脏」（改过未合并）且远端 updatedAt > baseVersion
+ *       （远端在我改之后又被别的设备改了）→ 判定为「完全冲突」。
+ *       不自动应用远端（避免覆盖我本地未同步的修改），而是通过 onConflict 回调提醒，
+ *       由用户在 UI 上选择「拉取远端 / 强制上传」。
+ *     · 无冲突时 LWW：远端 updatedAt 大者赢，正常合并。
  */
 
 import { DEFAULT_SIGNAL_BASE } from './device-auth'
@@ -32,6 +42,15 @@ interface RemoteConfigItem {
 /** node 端进程内缓存快照（node 无 localStorage，用内存变量）。 */
 let snapshot: ConfigSnapshot = { values: {}, updated: {}, maxUpdatedAt: 0 }
 
+/** 本地上次修改各 key 所基于的远端 updatedAt（改前基线）。 */
+const baseVersion: Record<string, number> = {}
+/** 本地「脏」key 集合（改过但尚未无冲突合并到远端）。 */
+const dirtyKeys = new Set<string>()
+/** 待决冲突 key 集合（远端在我改后又被改，等待用户处置）。 */
+const conflictKeys = new Set<string>()
+/** 冲突回调（host-ui 监听，用 toast 提示用户选择）。 */
+const conflictHandlers = new Set<(keys: string[]) => void>()
+
 /** 读本地缓存快照。 */
 function readSnapshot(): ConfigSnapshot {
   return snapshot
@@ -42,11 +61,19 @@ function writeSnapshot(snap: ConfigSnapshot): void {
   snapshot = snap
 }
 
-/** 合并远端增量到本地快照（updatedAt 大者赢），返回新增 key 数。 */
+/** 合并远端增量到本地快照（updatedAt 大者赢；冲突 key 不自动应用）。 */
 function applyRemote(items: RemoteConfigItem[]): number {
   const snap = readSnapshot()
   let count = 0
   for (const item of items) {
+    // 冲突判定：本地脏（改过未合并）且远端在我改后又变 → 不自动应用，标记冲突。
+    if (dirtyKeys.has(item.key)) {
+      const localBase = baseVersion[item.key] ?? 0
+      if (item.updatedAt > localBase) {
+        conflictKeys.add(item.key)
+        continue
+      }
+    }
     if (item.updatedAt <= (snap.updated[item.key] ?? 0)) continue
     snap.values[item.key] = item.value
     snap.updated[item.key] = item.updatedAt
@@ -54,7 +81,27 @@ function applyRemote(items: RemoteConfigItem[]): number {
     count++
   }
   writeSnapshot(snap)
+  if (conflictKeys.size > 0) notifyConflict()
   return count
+}
+
+/** 手动写入某 key 后回填本地（自己写入立即生效，无需等通知回环）。 */
+function applyOwnPut(key: string, value: string, updatedAt: number): void {
+  const snap = readSnapshot()
+  snap.values[key] = value
+  snap.updated[key] = updatedAt
+  if (updatedAt > snap.maxUpdatedAt) snap.maxUpdatedAt = updatedAt
+  writeSnapshot(snap)
+  // 本地已是最新，视为已合并，清除冲突/脏标记并刷新基线。
+  baseVersion[key] = updatedAt
+  dirtyKeys.delete(key)
+  conflictKeys.delete(key)
+}
+
+/** 触发冲突回调（供 host-ui toast 提示）。 */
+function notifyConflict(): void {
+  const keys = [...conflictKeys]
+  for (const h of conflictHandlers) h(keys)
 }
 
 /** 拉增量（since 下推），返回 items 或 null（未登录 / 失败）。 */
@@ -103,10 +150,18 @@ export async function putConfig(
 }
 
 export interface ConfigSync {
-  /** 拉增量合并（登录后首次 / config-changed 通知后调用，内部 debounce）。 */
+  /** 拉增量合并（登录后首次 / config-changed 通知后调用，内部 debounce；自动）。 */
   sync: () => void
-  /** 写单条配置并立即回填本地快照。 */
+  /** 写单条配置并立即回填本地快照（user 主动改配置）。 */
   put: (key: string, value: string) => Promise<boolean>
+  /** 当前待决冲突 key 集合。 */
+  conflicts: () => string[]
+  /** 是否仍有待决冲突。 */
+  hasConflicts: () => boolean
+  /** 处置冲突：pull=拉取远端（应用远端值，丢弃本地脏）；upload=强制上传本地值。 */
+  resolveConflict: (key: string, choice: 'pull' | 'upload') => Promise<void>
+  /** 订阅「出现冲突」回调（host-ui toast 用），返回取消函数。 */
+  onConflict: (handler: (keys: string[]) => void) => () => void
   /** 停止（清理 debounce 定时器）。 */
   stop: () => void
 }
@@ -153,15 +208,43 @@ export function startConfigSync(opts: { signalBase?: string; token: string }): C
   return {
     sync: scheduleSync,
     put: async (key, value) => {
-      const updatedAt = await putConfig(signalBase, key, value, opts.token)
-      if (updatedAt === null) return false
-      // 回填本地快照（自己的写入立即生效，无需等通知回环）。
       const snap = readSnapshot()
-      snap.values[key] = value
-      snap.updated[key] = updatedAt
-      if (updatedAt > snap.maxUpdatedAt) snap.maxUpdatedAt = updatedAt
-      writeSnapshot(snap)
+      // 记录改前基线（当前远端版本），并标记本地脏。
+      baseVersion[key] = snap.updated[key] ?? 0
+      dirtyKeys.add(key)
+      const updatedAt = await putConfig(signalBase, key, value, opts.token)
+      if (updatedAt === null) {
+        // 写失败：保留脏标记（下次 sync 可能冲突判定），返回失败。
+        return false
+      }
+      // 写入成功：回填本地 + 刷新基线 + 清除脏/冲突。
+      applyOwnPut(key, value, updatedAt)
       return true
+    },
+    conflicts: () => [...conflictKeys],
+    hasConflicts: () => conflictKeys.size > 0,
+    resolveConflict: async (key, choice) => {
+      conflictKeys.delete(key)
+      const snap = readSnapshot()
+      if (choice === 'upload') {
+        // 强制上传本地值：以当前本地值重写远端。
+        const localValue = snap.values[key]
+        if (localValue === undefined) return
+        const updatedAt = await putConfig(signalBase, key, localValue, opts.token)
+        if (updatedAt !== null) applyOwnPut(key, localValue, updatedAt)
+        return
+      }
+      // 拉取远端：清除脏标记并回填基线，下一次 sync 会以远端为准应用。
+      baseVersion[key] = snap.updated[key] ?? 0
+      dirtyKeys.delete(key)
+      // 主动拉一次增量，让远端值落地。
+      scheduleSync()
+    },
+    onConflict: (handler) => {
+      conflictHandlers.add(handler)
+      return () => {
+        conflictHandlers.delete(handler)
+      }
     },
     stop: () => {
       stopped = true

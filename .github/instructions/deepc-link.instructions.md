@@ -36,8 +36,13 @@ applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deep
 
 - token 与 nodeId 一律**由 node 后端注入自持**（`NodeTokenStore` 内存 / `deriveNodeId(hostname)`），
   **禁止浏览器端 localStorage 兜底**；插件端不再使用浏览器指纹 driveId（已删）。
-- 信令**唯一通道 = `/ws/signal`（DO 推送）**；HTTP 信箱轮询（`/auth/node/signal/get`）已移除，
-  **禁止任何形式退回轮询**。
+- 信令/在线同步**唯一通道 = `/ws/api-link`（DO 推送）**；HTTP 信箱轮询（`/auth/node/signal/get`）已移除，
+  **禁止任何形式退回轮询**。该端点全面承载 link 在线同步数据：presence（在线 nodeId 全集）、
+  nodes-snapshot/nodes-changed（节点注册表，替代 `/auth/node/list`）、config-changed；`signal` 只是其中一种内部命令帧。
+- **远端数据交换规范**：主站 ↔ Worker 的所有「广播/推送/订阅/同步」类数据交换，一律扩展
+  `/ws/api-link` 的 WS 帧（`type` 增加新帧类型 + 双端 `ws-signaling.ts` 同步解析），
+  **不得为此新开 REST 端点**。REST 仅保留给「请求-响应 + 持久化」的 `/auth/*`（OAuth / device-grant /
+  config put / node register）。这是区分「实时数据面（WS）」vs「身份持久化面（REST）」的边界。
 - 配置快照存 **node 进程内存**（node 无 localStorage），禁止写 localStorage。
 
 ## 三、红线（禁止事项）
@@ -51,12 +56,16 @@ applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deep
 6. **禁止密钥/device_token 落明文 JSON 或 localStorage**——Worker 只见密文（`deriveNodeSignalKey`
    派生的 AES-GCM 加密 SDP）。
 7. **禁止手改 `apps/web/src/components/ui/**`**——shadcn CLI 管理。
+8. **禁止非必要在 Worker 新增 REST 端点**——主站 ↔ Worker 的远端数据交换（在线态、节点注册表、
+   配置变更等）一律走 `/ws/api-link` WebSocket 帧；仅 OAuth 登录/设备授权/配置读写等**身份与持久化**
+   保留 REST（`/auth/*`）。新增「广播/订阅/推送类」数据必须先考虑在 WS 帧里扩，而非新开 REST 端点。
 
 ## 四、节点配额与在线判定
 
 - 每账号最多 3 个 dsh 节点（`MAX_NODES_PER_USER = 3`，worker 端强制）。
 - 在线判定权威源 = DO 内存态（WS socket 存活 = online）；D1 `last_seen` 仅作「最后活跃」展示。
-- 无任何 HTTP 心跳；WS 建连/断开即广播 presence（0 额度）。
+- 无任何 HTTP 心跳；WS 建连/断开即广播 presence + nodes-changed（0 额度）。
+- 节点注册/删除写 D1 后由 worker 调 DO `/nodes-resync` 广播 full 节点视图。
 
 ## 五、关键实现锚点（改动前先读源码）
 
@@ -69,8 +78,8 @@ applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deep
 | 数据面桥（DC 帧 → LocalApi） | `src/api-bridge.ts` |
 | 本地 API（HttpLocalApi，访问 127.0.0.1:3080） | `src/local-api.ts` |
 | 设备注册（token/nodeId 注入） | `src/node-registry.ts` |
-| WS 信令客户端（`/ws/signal`） | `src/ws-signaling.ts` |
-| 配置同步（D1 + DO 推送，node 内存快照） | `src/config-sync.ts` |
+| WS 信令客户端（`/ws/api-link`） | `src/ws-signaling.ts` |
+| 配置同步（D1 + DO 推送，node 内存快照，版本冲突检测） | `src/config-sync.ts` |
 | 浏览器端悬浮球（纯展示，`/deepc/*` 转发） | `src/host-ui.ts` |
 | Worker 信令 DO | `apps/worker/src/durable/signal-room.ts` |
 | Worker auth 端点（node/device/config） | `apps/worker/src/auth/*.ts` |
@@ -79,12 +88,13 @@ applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deep
 
 ## 六、构建与验证
 
-- node 端打包 `scripts/build.mjs`：**必须注入 `--define:__DEEPC_SITE_BASE__/__DEEPC_SIGNAL_BASE__`**
-  （漏注入会导致运行时 `ReferenceError`，`apply` 抛错、`/deepc` 路由不注册）。
-- **基址统一**：dev 与生产共用单一基址——dev=`http://127.0.0.1:5174`（由 vite 代理
-  `/auth/*` `/ws/*` `/api/*` 到 worker 8787），生产=`https://deepc.cn`。`--local` 切 dev、
-  默认切 prod、环境变量 `DEEPC_BASE` 可覆盖；两个 define 值恒相等。
-- 验证命令：`pnpm --filter deepc-link typecheck` + `node scripts/build.mjs --local`。
+- **单一编译命令（dev/prod 通用）**：node 端打包 `scripts/build.mjs` 注入
+  `--define:__DEEPC_SITE_BASE__/__DEEPC_SIGNAL_BASE__`，**默认基址 `https://deepc.cn`**。
+  一个命令产出同一份通用插件（漏注入会导致运行时 `ReferenceError`，`apply` 抛错、`/deepc` 路由不注册）。
+- **dev/prod 切换 = 运行时「开发模式」开关**（非编译时）：插件 Sheet 打开「开发模式」→ node 端
+  `setDevMode(true)` 把基址解析切到 `http://127.0.0.1:5174`（vite 代理 `/auth/*` `/ws/*` `/api/*`
+  到 worker 8787）。故**无需 `--local` / `DEEPC_BASE` 区分**，无需单独 `build:local` 产物。
+- 验证命令：`pnpm --filter deepc-link typecheck` + `node scripts/build.mjs`（或 `pnpm plugin:build`）。
 - 加载验证：从 `~/.dsh/profiles/web` 目录 `node -e "import('deepc-link')"` 看
   `name/inject/apply` 是否正常导出。
-- 发布：`pnpm plugin:release`（自动 prod build + npm publish；发布后插件基址回到 `https://deepc.cn`）。
+- 发布：`pnpm plugin:release`（自动 build + npm publish；默认基址回到 `https://deepc.cn`）。

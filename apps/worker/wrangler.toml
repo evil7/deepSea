@@ -35,13 +35,12 @@ run_worker_first = [
   "/auth/logout",
   "/auth/interconnect-log",
   "/auth/node/register",
-  "/auth/node/list",
   "/auth/node/remove",
   "/auth/device-grant",
   "/auth/device-grant/poll",
   "/auth/config/list",
   "/auth/config/put",
-  "/ws/signal",
+  "/ws/api-link",
 ]
 
 # ── Durable Objects：信令房（WS 推送，方案 A）────────────────────────────

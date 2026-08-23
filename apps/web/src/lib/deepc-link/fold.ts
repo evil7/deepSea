@@ -76,6 +76,22 @@ export function contextLabel(source: unknown): string {
   return "上下文"
 }
 
+/**
+ * 判定一个 `user/message` 事件的 source 应归类为「用户气泡」还是「上下文注入」。
+ *
+ * 官方权威判据（dsh-llm `MessageSourceMap`，merge-extensible sum type）：
+ *   · source.kind === 'user'  → 普通用户输入（queued 人类 prompt）
+ *   · source.kind === 'plugin'（& ContextFormed）→ agent.inject() 注入上下文
+ *   · source.kind === 'goal' 等插件扩展 kind  → 目标续写 / 其它注入
+ *   · 官方注释：'user/message' 三类都投影 verbatim，"source tells them apart"
+ * 故唯一分类依据 = source.kind。凡 kind !== 'user' 的注入一律渲染为 context 节点。
+ */
+export function isUserMessage(source: unknown): boolean {
+  const s = source as ContextSource | null | undefined
+  if (!s) return true // 无 source 保守视为用户消息，不丢消息
+  return s.kind === "user"
+}
+
 /** 把 ContentBlock[] 分类为 AssistantBlock[]（text/reasoning/tool-call/other）。 */
 export function classifyBlocks(content: readonly unknown[]): AssistantBlock[] {
   const blocks: AssistantBlock[] = []
@@ -131,9 +147,9 @@ export function foldEvents(events: HistoryEntry[]): RenderNode[] {
         const data = event.data as { content?: ContentBlock[]; source?: unknown }
         const content = data.content ?? []
         if (content.length === 0) break
-        // source.kind === "plugin" 等非 user 生产者 → 上下文注入（独立 flowItem）。
-        const sourceKind = (data.source as ContextSource | null | undefined)?.kind
-        if (sourceKind && sourceKind !== "user") {
+        // source.kind !== 'user'（plugin / goal / 其它注入）→ 上下文注入（独立节点）。
+        // 对齐官方：「user/message 三类靠 source 区分」，kind === 'user' 才是用户气泡。
+        if (!isUserMessage(data.source)) {
           nodes.push({
             kind: "context",
             seq: event.seq,

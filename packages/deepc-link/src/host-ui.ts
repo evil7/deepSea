@@ -42,6 +42,8 @@ interface BackendStatus {
   deviceName: string
   sessions: number
   allowInterconnect: boolean
+  devMode?: boolean
+  configConflicts?: string[]
   error?: string
   profile?: { login: string; avatar_url: string; name: string | null }
 }
@@ -128,6 +130,10 @@ const CSS = `
 .dcb-status { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: rgba(15,23,42,.6); }
 .dcb-status .dcb-status-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dcb-disconnect { flex-shrink: 0; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.12); color: #fbbf24; cursor: pointer; font-size: 11px; font-weight: 500; }
+.dcb-toast { position: fixed; top: 16px; right: 16px; z-index: 2147483001; width: 324px; background: rgba(10,15,28,.98); border: 1px solid rgba(251,191,36,.35); border-radius: 12px; padding: 14px; box-shadow: 0 18px 48px rgba(2,8,24,.65); display: flex; flex-direction: column; gap: 10px; color: #e2e8f0; font-family: system-ui, sans-serif; opacity: 0; transform: translateY(-12px); transition: opacity .2s ease, transform .2s ease; }
+.dcb-toast.show { opacity: 1; transform: translateY(0); }
+.dcb-toast-title { font-size: 13px; font-weight: 700; color: #fbbf24; }
+.dcb-toast .dcb-note { margin: 0; }
 .dcb-disconnect:hover { background: rgba(251,191,36,.22); }
 .dcb-manage-link { color: #7dd3fc; text-decoration: underline; cursor: pointer; margin-left: 2px; }
 .dcb-manage-link:hover { color: #38bdf8; }
@@ -351,12 +357,11 @@ export function bootstrapHostUi(): HostUi {
       </div>
       <div class="dcb-row">
         <div class="dcb-row-text">
-          <div class="dcb-row-label">同步</div>
-          <div class="dcb-row-desc">跨设备共享配置</div>
+          <div class="dcb-row-label">开发模式</div>
+          <div class="dcb-row-desc">以本地 127.0.0.1:5174 调试后端</div>
         </div>
-        <button class="dcb-btn dcb-btn-ghost dcb-sync-mini" id="dcb-sync-now">同步</button>
+        <label class="dcb-switch"><input type="checkbox" id="dcb-dev-mode"><span class="dcb-track"></span></label>
       </div>
-      <div id="dcb-backup-panel"></div>
       <div class="dcb-status"><span class="dcb-dot" id="dcb-dot"></span><span class="dcb-status-label" id="dcb-status-text">未连接</span><button class="dcb-disconnect" id="dcb-disconnect" style="display:none">断开</button></div>
     </div>
   `
@@ -380,8 +385,7 @@ export function bootstrapHostUi(): HostUi {
   const dot = sheet.querySelector<HTMLElement>('#dcb-dot')!
   const statusText = sheet.querySelector<HTMLElement>('#dcb-status-text')!
   const disconnectBtn = sheet.querySelector<HTMLElement>('#dcb-disconnect')!
-  const syncNowBtn = sheet.querySelector<HTMLElement>('#dcb-sync-now')!
-  const backupPanel = sheet.querySelector<HTMLElement>('#dcb-backup-panel')!
+  const devModeToggle = sheet.querySelector<HTMLInputElement>('#dcb-dev-mode')!
   const allowToggle = sheet.querySelector<HTMLInputElement>('#dcb-allow')!
   const autoToggle = sheet.querySelector<HTMLInputElement>('#dcb-auto')!
 
@@ -410,6 +414,11 @@ export function bootstrapHostUi(): HostUi {
     status = next
     rerenderAuth(next)
     allowToggle.checked = next.allowInterconnect
+    devModeToggle.checked = next.devMode === true
+    // 配置同步出现完全冲突 → 弹 toast 提示用户选择「拉取远端 / 强制上传」。
+    if (next.configConflicts && next.configConflicts.length > 0) {
+      showConflictToast(next.configConflicts)
+    }
     // 状态栏：连接态 > 已登录就绪 > 未登录。
     if (next.sessions > 0) {
       renderConnection(next.sessions)
@@ -619,14 +628,48 @@ export function bootstrapHostUi(): HostUi {
     void deepcCall('disconnect').then(() => refreshStatus())
   })
 
-  // ── 配置同步（经 /deepc/sync，刷新状态按 sessions 更新）─────────────
-  syncNowBtn.addEventListener('click', () => {
-    backupPanel.innerHTML = `<p class="dcb-note">触发同步…</p>`
-    void deepcCall('sync').then(() => {
-      backupPanel.innerHTML = `<p class="dcb-note" style="color:#34d399">同步完成</p>`
+  // ── 开发模式开关（需求 3）：开启以后端 127.0.0.1:5174 为调试后端。────────
+  devModeToggle.addEventListener('change', () => {
+    void deepcCall('dev-mode', { enabled: devModeToggle.checked }).then(() => {
       return refreshStatus()
     })
   })
+
+  // ── 配置冲突 toast（需求 2）：自动同步遇完全冲突时提示「拉取远端/强制上传」。──
+  let conflictToastShown = false
+  function showConflictToast(keys: string[]): void {
+    if (conflictToastShown) return
+    conflictToastShown = true
+    const toast = document.createElement('div')
+    toast.className = 'dcb-toast'
+    toast.innerHTML = `
+      <div class="dcb-toast-title">配置同步冲突</div>
+      <p class="dcb-note">部分配置在多台设备上同时修改，请选择处置方式（${keys.length} 项）。</p>
+      <div class="dcb-backup-row">
+        <button class="dcb-btn dcb-btn-ghost" data-choice="pull">拉取远端</button>
+        <button class="dcb-btn dcb-btn-amber" data-choice="upload">强制上传</button>
+      </div>
+    `
+    document.body.appendChild(toast)
+    // 下一帧加 .show 触发滑入动画。
+    requestAnimationFrame(() => toast.classList.add('show'))
+    const resolve = (choice: 'pull' | 'upload'): void => {
+      toast.remove()
+      conflictToastShown = false
+      void Promise.all(keys.map((key) => deepcCall('conflict-resolve', { key, choice }))).then(
+        () => refreshStatus()
+      )
+    }
+    toast.querySelector<HTMLElement>('[data-choice="pull"]')?.addEventListener('click', () => resolve('pull'))
+    toast.querySelector<HTMLElement>('[data-choice="upload"]')?.addEventListener('click', () => resolve('upload'))
+    // 5s 未处置自动消失（冲突仍留在后端，下次触发再提示）。
+    setTimeout(() => {
+      if (toast.isConnected) {
+        toast.remove()
+        conflictToastShown = false
+      }
+    }, 5000)
+  }
 
   // 初始拉取一次后端状态。
   void refreshStatus()

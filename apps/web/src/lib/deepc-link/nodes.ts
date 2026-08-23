@@ -5,6 +5,9 @@
 //   · Console（浏览器控制端）：以 GitHub 账号派生确定性 UUID（同账号 = 同 ID）。
 //   · DSH node（本地插件端）：插件后端以主机 hostname 派生（同主机 = 同 ID）。
 // 重复注册时 worker 仅 upsert（更新 name/last_seen），不创建新条目。
+//
+// 「列出设备列表」由 WS `/ws/api-link` 节点注册表快照/变更帧承载（见 ws-signaling.ts），
+// 不再走 HTTP `/auth/node/list`（该端点已移除）。本模块保留节点注册/删除等写操作。
 // ---------------------------------------------------------------------------
 
 import { getOrCreateDrive } from "./device-fingerprint"
@@ -29,13 +32,6 @@ async function authFetch<T>(url: string, init?: RequestInit): Promise<T | null> 
   } catch {
     return null
   }
-}
-
-/** 列出当前登录账号的所有设备（含在线状态）。 */
-export async function listNodes(): Promise<NodeView[]> {
-  const data = await authFetch<{ authed?: boolean; nodes?: NodeView[] }>("/auth/node/list")
-  if (!data?.authed || !Array.isArray(data.nodes)) return []
-  return data.nodes
 }
 
 /** 注册/更新设备（插件端调用；主站一般只读列表）。 */

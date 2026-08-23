@@ -9,9 +9,9 @@
 
 /**
  * 构建时由 esbuild `--define` 注入的环境基址（见 scripts/build.mjs）：
- *   统一单一基址（dev 与生产同源，靠 vite 代理收敛 worker）：
- *   · 本地 dev：http://127.0.0.1:5174（vite 代理 /auth/* /ws/* /api/* 到 worker 8787）
- *   · 生产：https://deepc.cn
+ *   **单一产物，默认生产基址 `https://deepc.cn`**。本地 dev 联调无需单独编译——
+ *   运行时在 node-host.ts 打开「开发模式」开关后，基址解析切到
+ *   `http://127.0.0.1:5174`（vite 代理 /auth/* /ws/* /api/* 到 worker 8787）。
  *   故两个常量值恒相等（仅语义命名区分「主站」与「信令」）。
  */
 declare const __DEEPC_SITE_BASE__: string

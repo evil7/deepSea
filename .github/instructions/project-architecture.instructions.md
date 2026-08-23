@@ -37,8 +37,10 @@ deepSea 是 DeepSeek Harness（dsh）插件生态聚合站：
      issues / releases），前端 access token 由 `/auth/me` 返回（内存保存）。
      **禁止给 Worker 加 `/api/*` 代理路由**。
    - **deepc-link 互联数据**（`/auth/node/*` 设备注册、`/auth/device-grant*` 设备授权、
-     `/ws/signal` 信令 DO、`/auth/config/*` 账号配置、审计日志）属于 auth 边界，允许；
+     `/ws/api-link` 信令+在线同步 DO、`/auth/config/*` 账号配置、审计日志）属于 auth 边界，允许；
      但**数据面（会话消息 / 工作区内容 / 配置详情）一律走 P2P DataChannel，绝不进 Worker**。
+   - **远端数据交换用 WS**：主站 ↔ Worker 的广播/推送/订阅/同步类数据一律扩展 `/ws/api-link`
+     WS 帧；**非必要不新开 REST 端点**（REST 仅保留给"请求-响应 + 持久化"的 `/auth/*`）。
    - 详细红线与前后端分层见 `deepc-link.instructions.md`。
 4. **路径别名 `@/*` 指向 `apps/web/src/*`**（见 `apps/web/tsconfig.app.json` 与 `vite.config.ts`）。
 5. animejs 只允许用于展示/落地页的动效，业务 UI 保持克制，避免影响可读性与性能。

@@ -5,7 +5,7 @@
  *   · nodeId 由 hostname 派生（node-host 传入，同主机 = 同 ID）
  *   · POST /auth/node/register 注册设备（Authorization: Bearer device_token）
  *
- * 在线状态不再发 HTTP 心跳：由 mailbox-host 的 WS 长连接（/ws/signal DO 信号房）
+ * 在线状态不再发 HTTP 心跳：由 mailbox-host 的 WS 长连接（/ws/api-link DO 信号房）
  * 存活体现，DO 内存态是唯一权威源（0 worker 额度）。
  *
  * 设备归属由 device_token 关联的 github_id 判定（worker 端校验）。

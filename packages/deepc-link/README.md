@@ -52,22 +52,36 @@ packages/deepc-link/
 - S3：工程同步（工作区 + 聊天记录增量传输）。
 - S4：账号能力（登录触发 + 互联日志 + 自定义加密 key）。
 
+## 构建（单一命令，dev/prod 通用）
+
+一个编译命令产出**同一份通用插件**，运行时用「开发模式」开关在 dev/prod 之间切换后端：
+
+```bash
+pnpm plugin:build                       # = pnpm --filter deepc-link build（默认基址 https://deepc.cn）
+pnpm plugin:pack                        # 构建 + 打 tgz 到 packages/deepc-link/
+```
+
+- **默认（prod）**：后端 = `https://deepc.cn`（生产 Worker）。
+- **本地 dev 联调**：在插件悬浮球 Sheet 打开 **「开发模式」** 开关 → 插件把后端切到
+  `http://127.0.0.1:5174`（vite 代理 `/auth/*` `/ws/*` `/api/*` 到本地 worker 8787），
+  无需单独编译 `--local` 产物。
+
 ## 安装
 
 ```bash
-# 发布到 npm 后（生产基址 https://deepc.cn）
+# 生产（基址 https://deepc.cn）
 dsh plugin --profile web add deepc-link
 
-# 本地联调（dev 基址 http://127.0.0.1:5174，走 vite 代理）
-pnpm plugin:local                       # 构建 + 打 tgz 到 packages/deepc-link/
+# 本地联调：构建 + 打 tgz + 安装
+pnpm plugin:pack
 dsh plugin --profile web add ./packages/deepc-link/deepc-link-0.0.1.tgz
+# 安装后在插件 Sheet 打开「开发模式」即连本地后端
 ```
 
 ## 发布
 
 ```bash
-pnpm plugin:release                     # 自动 prod build（deepc.cn）+ npm publish
+pnpm plugin:release                     # 自动 build（deepc.cn 默认基址）+ npm publish
 ```
 
-> `prepublishOnly` 会在 publish 前自动执行生产构建；`release` = `pnpm publish`。
-> 发布后 dsh 端安装 `deepc-link`，插件基址自动回到 `https://deepc.cn`。
+> `prepublishOnly` 会在 publish 前自动执行构建（默认基址 `https://deepc.cn`）；`release` = `pnpm publish`。

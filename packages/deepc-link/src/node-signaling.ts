@@ -1,7 +1,7 @@
 /**
  * deepc-link 信箱信封编解码 —— 多端直连信令的跨端契约（WS+DO 推送）。
  *
- * 信令走 /ws/signal（DO 信号房推送），本模块只做信封编解码（不接触明文 SDP）：
+ * 信令走 /ws/api-link（DO 信号房推送），本模块只做信封编解码（不接触明文 SDP）：
  *   · 寻址：nodeId
  *   · 信封：payload 为 JSON 信封 { from, v, sdp }，from = 发送方 nodeId（供 answer 回投）
  *

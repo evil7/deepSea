@@ -30,6 +30,13 @@ import { HttpLocalApi } from './local-api'
 /** node-host 向后端控制路由暴露的路径段。 */
 export const NODE_CTRL_PATH = '/deepc'
 
+/**
+ * 开发模式调试后端基址（打开「开发模式」开关时使用）。
+ * 本地 vite 主站（5174）把 /auth/* /ws/* /api/* 代理到本地 worker（8787），
+ * 便于在本地 dsh 上连接开发态 worker 联调，而不影响生产 deepc.cn。
+ */
+const DEV_MODE_BASE = 'http://127.0.0.1:5174'
+
 export interface NodeHostOptions {
   /** worker/信令基址（本地 dev 127.0.0.1:5174 经 vite 代理；生产 deepc.cn）。 */
   signalBase?: string
@@ -50,6 +57,8 @@ export interface NodeHost {
   status: () => NodeHostStatus
   /** 设置「允许互联」。 */
   setAllowInterconnect: (enabled: boolean) => void
+  /** 切换「开发模式」：开启则改用本地 127.0.0.1:5174 为调试后端（重建连接层）。 */
+  setDevMode: (enabled: boolean) => Promise<void>
   /** 立即同步配置。 */
   syncNow: () => Promise<void>
   /** 主动断开所有已建多端直连会话。 */
@@ -69,6 +78,10 @@ export interface NodeHostStatus {
   sessions: number
   /** 互联设置：是否允许新 offer。 */
   allowInterconnect: boolean
+  /** 开发模式：是否以本地 127.0.0.1:5174 为调试后端。 */
+  devMode: boolean
+  /** 配置同步当前待决冲突 key 集合（host-ui toast 提示用）。 */
+  configConflicts?: string[]
   /** 最近一次错误（登录/同步失败的简短原因）。 */
   error?: string
   /** 登录用户的展示档案（供前端渲染头像/昵称）。 */
@@ -121,9 +134,14 @@ function readJson(req: IncomingMessage): Promise<unknown> {
  * 设备注册/心跳 + WS 信令 + deepc.* 能力。
  */
 export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
-  const signalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
-  const siteBase = opts.siteBase ?? DEFAULT_SITE_BASE
+  const configuredSignalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
+  const configuredSiteBase = opts.siteBase ?? DEFAULT_SITE_BASE
   const hostBase = opts.hostBase ?? 'http://127.0.0.1:3080'
+
+  /** 开发模式：开启时所有基址解析切到本地 127.0.0.1:5174（vite 代理收敛本地 worker）。 */
+  let devMode = false
+  const resolveSignalBase = (): string => (devMode ? DEV_MODE_BASE : configuredSignalBase)
+  const resolveSiteBase = (): string => (devMode ? DEV_MODE_BASE : configuredSiteBase)
 
   const tokenStore = new NodeTokenStore()
   let registry: NodeRegistry | null = null
@@ -137,17 +155,29 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
 
   const deviceName = hostname() ?? 'dsh-node'
 
-  /** 登录成功后：注册 + 心跳 + 信令 + deepc.* 能力。 */
-  async function ensureReady(): Promise<void> {
-    if (loggedIn) return
+  /** 停止当前连接层（registry/mailbox/configSync），devMode 切换 / 登出时调用。 */
+  function stopConnections(): void {
+    registry?.stop()
+    registry = null
+    mailbox?.stop()
+    mailbox = null
+    configSync?.stop()
+    configSync = null
+    sessionCount = 0
+    profile = undefined
+  }
+
+  /** 建立连接层（用当前 resolve 的基址）：注册 + 心跳 + 信令 + 配置同步。 */
+  async function setupConnections(): Promise<boolean> {
     const token = tokenStore.get()
-    if (!token) return
+    if (!token) return false
+    const signalBase = resolveSignalBase()
     // node-registry 需支持 node 端 token + hostname 派生 nodeId（见 node-registry 改造）。
     registry = createNodeRegistry({ signalBase, name: deviceName, token, nodeId: deriveNodeId(deviceName) })
     const outcome = await registry.start()
     if (outcome !== 'ok') {
       lastError = outcome === 'quota-exceeded' ? 'quota-exceeded' : 'register-failed'
-      return
+      return false
     }
     loggedIn = true
     // 拉取用户档案（供前端渲染头像/昵称）。
@@ -167,11 +197,18 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
     mailbox.onSessionChange((count) => {
       sessionCount = count
     })
+    return true
+  }
+
+  /** 登录成功后：注册 + 心跳 + 信令 + deepc.* 能力。 */
+  async function ensureReady(): Promise<void> {
+    if (loggedIn) return
+    await setupConnections()
   }
 
   /** 后台轮询 Device Grant → 换 token → 注册（login 触发，不等用户确认完）。 */
   async function pollAndRegister(state: string): Promise<void> {
-    const token = await pollDeviceGrant(signalBase, state)
+    const token = await pollDeviceGrant(resolveSignalBase(), state)
     if (!token) {
       lastError = 'login-timeout'
       return
@@ -195,7 +232,7 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
       }
       // Device Grant：生成 state + 授权 URL（前端打开），后台轮询换 token。
       const state = generateConnectId()
-      const url = `${siteBase}/device-login?state=${encodeURIComponent(state)}`
+      const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}`
       // 后台立即开始轮询（不等用户）；前端打开 url 后授权，node 端自持 token。
       void pollAndRegister(state)
       return { ok: false, url, reason: 'auth-required' }
@@ -203,14 +240,7 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
     async logout() {
       tokenStore.clear()
       loggedIn = false
-      profile = undefined
-      registry?.stop()
-      registry = null
-      mailbox?.stop()
-      mailbox = null
-      configSync?.stop()
-      configSync = null
-      sessionCount = 0
+      stopConnections()
     },
     status() {
       return {
@@ -218,6 +248,8 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
         deviceName,
         sessions: sessionCount,
         allowInterconnect,
+        devMode,
+        configConflicts: configSync?.conflicts() ?? [],
         error: lastError,
         profile,
       }
@@ -225,6 +257,15 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
     setAllowInterconnect(enabled) {
       allowInterconnect = enabled
       mailbox?.setAllowInterconnect(enabled)
+    },
+    async setDevMode(enabled) {
+      if (devMode === enabled) return
+      devMode = enabled
+      // 已登录：切基址需重建连接层（注册/信令/配置同步全部重连到新基址）。
+      if (loggedIn) {
+        stopConnections()
+        await setupConnections()
+      }
     },
     async syncNow() {
       await configSync?.sync()
@@ -256,8 +297,28 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
           sendJson(res, 200, { ok: true })
           return
         }
+        if (req.method === 'POST' && pathname === '/deepc/dev-mode') {
+          const body = (await readJson(req)) as { enabled?: boolean } | null
+          await host.setDevMode(body?.enabled === true)
+          sendJson(res, 200, { ok: true })
+          return
+        }
         if (req.method === 'POST' && pathname === '/deepc/sync') {
           await host.syncNow()
+          sendJson(res, 200, { ok: true })
+          return
+        }
+        if (req.method === 'POST' && pathname === '/deepc/conflict-resolve') {
+          const body = (await readJson(req)) as {
+            key?: unknown
+            choice?: unknown
+          } | null
+          if (
+            typeof body?.key === 'string' &&
+            (body.choice === 'pull' || body.choice === 'upload')
+          ) {
+            await configSync?.resolveConflict(body.key, body.choice)
+          }
           sendJson(res, 200, { ok: true })
           return
         }
@@ -272,9 +333,7 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
       }
     },
     dispose() {
-      registry?.stop()
-      mailbox?.stop()
-      configSync?.stop()
+      stopConnections()
     },
   }
 

@@ -6,7 +6,7 @@
 //     `window.__ModuleLoader__.load({...})` 格式 → dist/deepc-link-client.js
 //     （dsh-client-modules 发现 dsh.client 声明后，serve 此文件并注入 __DSH_BOOT__）
 //
-// 运行：node scripts/build.mjs（或 pnpm build）
+// 运行：node scripts/build.mjs（或 pnpm build）→ 单一命令产出 dev/prod 通用插件
 // ---------------------------------------------------------------------------
 
 import { execFileSync } from 'node:child_process'
@@ -21,15 +21,16 @@ const CLIENT_GLOBAL = '__deepcLinkClient'
 const CLIENT_ID = 'deepc-link'
 
 /**
- * 环境基址（构建时注入）：dev 与生产统一为「单一基址」——
- *   · 本地（--local）：http://127.0.0.1:5174（vite 主站；/auth/* /ws/* /api/* 由 vite 代理转发到 worker 8787）
- *   · 生产：https://deepc.cn
- * 故 __DEEPC_SITE_BASE__ 与 __DEEPC_SIGNAL_BASE__ 恒相等，只保留一个开关 DEEPC_BASE。
- * `--local` 兜底；环境变量 DEEPC_BASE 优先。
+ * 环境基址（构建时注入）：**单一产物，运行时切换 dev/prod**。
+ *
+ * 默认基址 = 生产 `https://deepc.cn`（作为默认后端）。本地 dev 联调无需单独编译——
+ * 在插件 Sheet 打开「开发模式」开关后，node 后端把基址切到 `http://127.0.0.1:5174`
+ * （vite 代理 /auth/* /ws/* /api/* 到本地 worker 8787），见 node-host.ts 的 DEV_MODE_BASE。
+ * 因此无需 `--local` / `DEEPC_BASE` 之分：一个编译命令产出 dev/prod 通用插件。
+ *
+ * 故 __DEEPC_SITE_BASE__ 与 __DEEPC_SIGNAL_BASE__ 恒相等（默认生产基址）。
  */
-const isLocal = process.argv.includes('--local')
-const BASE =
-  process.env.DEEPC_BASE ?? (isLocal ? 'http://127.0.0.1:5174' : 'https://deepc.cn')
+const BASE = 'https://deepc.cn'
 
 const DEFINE = {
   __DEEPC_SITE_BASE__: BASE,

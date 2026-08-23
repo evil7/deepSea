@@ -1,7 +1,7 @@
 /**
  * deepc-link 会话编排 —— WebRTC 连接建立（多端直连底座）。
  *
- * 信令走 WS+DO（/ws/signal 信号房）：offer/answer 由 DO 推送，两端用
+ * 信令走 WS+DO（/ws/api-link 信号房）：offer/answer 由 DO 推送，两端用
  * deriveNodeSignalKey 派生的 AES-GCM 密钥加密 SDP，DO 只见密文。
  *
  * 信令采用非 trickle ICE：等 ICE gathering complete 后一次性传完整 SDP。
@@ -84,7 +84,7 @@ function waitRemoteDataChannel(
 // ---------------------------------------------------------------------------
 // 多端直连信令（WS+DO）—— nodeId 寻址 + 收件人 nodeId 派生密钥
 //
-// offer/answer 经 /ws/signal（DO 信号房）推送，两端用 deriveNodeSignalKey
+// offer/answer 经 /ws/api-link（DO 信号房）推送，两端用 deriveNodeSignalKey
 // 派生的 AES-GCM 密钥加密 SDP（DO 只见密文）。信箱式 HTTP 轮询已移除（A2）。
 // ---------------------------------------------------------------------------
 
