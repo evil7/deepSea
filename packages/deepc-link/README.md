@@ -1,8 +1,7 @@
 # deepc-link
 
-deepc-link —— deepc 本地插件 + 远程 RTC 通信中间件（**多端互联 + 工程同步**）。
-
-## 定位
+> [![npm](https://img.shields.io/npm/v/deepc-link)](https://www.npmjs.com/package/deepc-link)
+> DSH 多端互联插件——WebRTC 加密通道远程控制本地 DSH host。
 
 deepc-link 是「深海套装」的本地执行器与互联底座，核心是 **`deepc-link` 中间件**
 （安全加密 + 自动分包 + 远程 RTC 通信），在其上实现两个语义正交的功能：
@@ -57,15 +56,29 @@ packages/deepc-link/
 
 ## 阶段
 
-- **S0（当前）**：目录已从 `deepc` 改名 `deepc-link`，镜像/快照/复刻方案已清理。
-- S1：底座打通（`session.ts` 换 node-datachannel，headless ↔ 浏览器一条 DataChannel）。
+- ✅ **S0**：包名统一为 `deepc-link`，已发布到 [npm](https://www.npmjs.com/package/deepc-link)。
+- **S1（当前）**：底座打通（`session.ts` 换 node-datachannel，headless ↔ 浏览器一条 DataChannel）。
 - S2：多端互联（自实现 chatUI + `WebRtcApiClient`）。
 - S3：工程同步（工作区 + 聊天记录增量传输）。
 - S4：账号能力（登录触发 + 互联日志 + 自定义加密 key）。
 
-## 构建（单一命令，dev/prod 通用）
+## 安装
 
-一个编译命令产出**同一份通用插件**，运行时用「开发模式」开关在 dev/prod 之间切换后端：
+**从 npm 安装（推荐）**：
+
+```bash
+dsh plugin --profile web add deepc-link
+```
+
+**从本地 tgz 安装（联调）**：
+
+```bash
+pnpm plugin:pack                                              # 构建 + 打 tgz
+dsh plugin --profile web add ./packages/deepc-link/deepc-link-0.0.1.tgz
+# 安装后在插件 Sheet 打开「开发模式」即连本地后端
+```
+
+## 构建
 
 ```bash
 pnpm plugin:build                       # = pnpm --filter deepc-link build（默认基址 https://deepc.cn）
@@ -77,22 +90,12 @@ pnpm plugin:pack                        # 构建 + 打 tgz 到 packages/deepc-li
   `http://127.0.0.1:5174`（vite 代理 `/auth/*` `/ws/*` `/api/*` 到本地 worker 8787），
   无需单独编译 `--local` 产物。
 
-## 安装
-
-```bash
-# 生产（基址 https://deepc.cn）
-dsh plugin --profile web add deepc-link
-
-# 本地联调：构建 + 打 tgz + 安装
-pnpm plugin:pack
-dsh plugin --profile web add ./packages/deepc-link/deepc-link-0.0.1.tgz
-# 安装后在插件 Sheet 打开「开发模式」即连本地后端
-```
-
 ## 发布
 
+发布到 npm 需要设置 `NPM_TOKEN` 环境变量（granular access token，勾选 bypass 2FA）。
+
 ```bash
-pnpm plugin:release                     # 自动 build（deepc.cn 默认基址）+ npm publish
+pnpm plugin:release                     # 自动 build + npm publish（通过 .npmrc 注入 NPM_TOKEN）
 ```
 
-> `prepublishOnly` 会在 publish 前自动执行构建（默认基址 `https://deepc.cn`）；`release` = `pnpm publish`。
+> `prepublishOnly` 会在 publish 前自动执行构建；token 通过 `packages/deepc-link/.npmrc` 自动注入。
