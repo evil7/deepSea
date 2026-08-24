@@ -161,9 +161,8 @@ export function App() {
 
       {/* 全局提示（自行捕捞需登录等）
            · richColors：开启后 success/info/warning/error 各自醒目配色
-             （否则所有类型同色，仅图标不同，告警不醒目）
-           · theme="dark"：站点为深色海洋视觉，固定暗色避免浅色系统下白底突兀 */}
-      <Toaster position="bottom-right" richColors theme="dark" />
+           · theme 跟随站点主题（浅色/深色切换） */}
+      <Toaster position="bottom-right" richColors />
     </div>
   )
 }

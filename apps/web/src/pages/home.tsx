@@ -106,7 +106,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
             >
               <Link to="/links">
                 <Radio className="size-4" />
-                深海互联
+                多端互联
               </Link>
             </Button>
           </div>

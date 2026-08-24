@@ -62,7 +62,7 @@ export interface DownstreamFrame {
 
 export interface ControlFrame {
   kind: "control"
-  cmd: "deepc:ping" | "deepc:pong" | "deepc:bye"
+  cmd: "deepc:bye"
   seq: number
   ts: number
 }
@@ -95,11 +95,6 @@ export interface HelloFrame {
   host: HostInfo
   theme: unknown
   model?: ModelSelection
-}
-
-export interface ThemeStateFrame {
-  kind: "theme-state"
-  theme: unknown
 }
 
 /** 主站 → host 的 hello 握手确认。 */
@@ -136,7 +131,6 @@ export type BridgeFrame =
   | DownstreamFrame
   | ControlFrame
   | HelloFrame
-  | ThemeStateFrame
   | HelloAckFrame
   | ChunkMetaFrame
   | ChunkFrame
@@ -432,6 +426,49 @@ export interface SettingsDescribeView {
 
 /** settings.update 响应：被更新 namespace 的新 view（redacted）。 */
 export type SettingsUpdateView = SettingsNamespaceView
+
+// ── Agent 预设（对齐 host-apiproxy agentPreset.* RPC）───────────────────
+// agentPreset.list 返回的 roster：每个预设 + 部署事实（authorable/hasDocument）。
+
+export interface AgentPresetEntry {
+  /** 稳定标识，也是目录名；缺显示名时回退到它。 */
+  id: string
+  /** 随部署附带（system）还是本地创作（user）。user 预设与它声明的插件同级信任。 */
+  trust: "system" | "user"
+  /** 不指名预设的新会话是否用这个。 */
+  isDefault: boolean
+  /** 预设自声明的显示名。 */
+  name?: string
+  /** 一句话描述。 */
+  description?: string
+  /** 为何无法组成会话（可组合时缺省）。 */
+  broken?: string
+}
+
+export interface AgentPresetListResult {
+  presets: AgentPresetEntry[]
+  /** 部署是否配置了可写 root（可复制新预设）。 */
+  authorable: boolean
+  /** 主机能否把预设目录交给本地打开器。 */
+  hasDocument: boolean
+}
+
+/** agentPreset.read 响应：只读查看某个预设的 composition 原文。 */
+export interface AgentPresetReadResult {
+  agentPreset: string
+  trust: "system" | "user"
+  content: string
+  name?: string
+  description?: string
+}
+
+/** deepc.settings.readDocument 响应：settings 配置文件原文 + 元数据。 */
+export interface SettingsDocumentView {
+  content: string
+  path: string
+  hostname: string
+  mtime: number
+}
 
 // ── 插件清单（对齐 host-plugin-inventory `pluginInventory/list` Remote）──
 // 注意：这是 typert Remote，调用 payload 为 { args: {} }，method 名为斜杠

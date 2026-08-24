@@ -13,8 +13,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Archive,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
+  Copy,
+  Eye,
+  FileText,
   Folder,
   GitBranch,
   ListOrdered,
@@ -41,7 +45,13 @@ import { ConnectStatus } from "@/components/link/connect-status"
 import { useDeepcLink } from "@/hooks/use-deepc-link"
 import { deepcClient } from "@/lib/deepc-link/client"
 import { cn } from "@/lib/utils"
-import type { CommandItem, SessionSummary } from "@/lib/deepc-link/protocol"
+import type {
+  AgentPresetEntry,
+  AgentPresetReadResult,
+  CommandItem,
+  SessionSummary,
+  SettingsDocumentView,
+} from "@/lib/deepc-link/protocol"
 
 const TOPBAR_H = 64
 
@@ -154,6 +164,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     settings,
     plugins,
     pluginsLoaded,
+    agentPresets,
     modelCatalog,
     sessionModels,
     elapsed,
@@ -168,7 +179,12 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     loadWorkspace,
     refreshAll,
     updateSetting,
-    openSettingsDocument,
+    readSettingsDocument,
+    loadAgentPresets,
+    readAgentPreset,
+    copyAgentPreset,
+    removeAgentPreset,
+    setDefaultAgentPreset,
     selectSessionModel,
     loadCommands,
     pendingInteractions,
@@ -180,6 +196,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const [searchActive, setSearchActive] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("general")
+  const [settingsDoc, setSettingsDoc] = useState<SettingsDocumentView | null>(null)
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
   const [permissionMenuOpen, setPermissionMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -380,7 +397,6 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   )
 
   // 设置页当前值（真实动态值；未读到则回退默认）。
-  const preset = (settingValue("agent-presets")?.default as string) ?? "standard"
   const permission = (settingValue("permission")?.defaultPreset as string) ?? "workspace-write"
   const locale = (settingValue("locale")?.preference as string) ?? "zh"
   const theme = (settingValue("ui-theme")?.preference as string) ?? "system"
@@ -395,6 +411,12 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     },
     [updateSetting]
   )
+
+  // 读取远端 settings 配置文件原文，并切到只读整页展示。
+  const openSettingsDoc = useCallback(async () => {
+    const doc = await readSettingsDocument()
+    if (doc) setSettingsDoc(doc)
+  }, [readSettingsDocument])
 
   // 会话统计（turns/steps），来自 session.list 的 sessionStats projection。
   const sessionStats = useMemoStats(activeSession)
@@ -467,7 +489,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               src="/deepseek.svg"
               alt=""
               aria-hidden
-              className="size-6 shrink-0 opacity-90 invert"
+              className="size-6 shrink-0 opacity-90 dark:invert"
             />
             <div className="mt-4 flex flex-col items-center gap-1.5">
               <Button
@@ -508,7 +530,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                   src="/deepseek.svg"
                   alt=""
                   aria-hidden
-                  className="size-5 shrink-0 opacity-90 invert"
+                  className="size-5 shrink-0 opacity-90 dark:invert"
                 />
                 <span className="truncate text-sm font-semibold text-sidebar-foreground">
                   {hostInfo?.hostname ?? "deepSea"}
@@ -848,13 +870,14 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               </div>
             )}
             <div className="mx-auto max-w-3xl px-4 pt-2.5 pb-1.5">
-              <div
-                ref={editorRef}
-                contentEditable={!!activeSessionId}
-                suppressContentEditableWarning
-                data-placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
-                data-empty={!draft}
-                className="min-h-0 resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-foreground outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/60 empty:before:content-[attr(data-placeholder)] [&_mark]:rounded [&_mark]:bg-primary/15 [&_mark]:px-0.5 [&_mark]:text-foreground"
+              <div className="rounded-xl border border-border/80 bg-muted/40 px-3 py-2 transition-colors focus-within:border-ring">
+                <div
+                  ref={editorRef}
+                  contentEditable={!!activeSessionId}
+                  suppressContentEditableWarning
+                  data-placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
+                  data-empty={!draft}
+                  className="min-h-10 w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-foreground outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/60 empty:before:content-[attr(data-placeholder)] [&_mark]:rounded [&_mark]:bg-primary/15 [&_mark]:px-0.5 [&_mark]:text-foreground"
                 onInput={(e) => {
                   const text = (e.target as HTMLDivElement).textContent ?? ""
                   setDraft(text)
@@ -872,7 +895,8 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                     void handleSend()
                   }
                 }}
-              />
+                />
+              </div>
               {/* 输入框 / 命令联想下拉 */}
               {slashOpen && activeSessionId && (
                 <div
@@ -1014,6 +1038,10 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                   </div>
                 </div>
 
+                <div className="flex items-center text-xs text-muted-foreground/70">
+                  {sessionStats.turns} 轮 · {sessionStats.steps} 步
+                </div>
+
                 <div className="flex items-center gap-1">
                   {/* 模型选择 */}
                   <div className="relative">
@@ -1095,12 +1123,6 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 </div>
               </div>
             </div>
-            {/* 底部统计 */}
-            <div className="mx-auto max-w-3xl px-4 pb-1.5">
-              <div className="flex justify-center text-xs text-muted-foreground/70">
-                {sessionStats.turns} 轮 · {sessionStats.steps} 步
-              </div>
-            </div>
             </div>
           </div>
         </div>
@@ -1134,6 +1156,10 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
               ))}
             </nav>
             <div className="flex min-w-0 flex-1 flex-col">
+              {settingsDoc ? (
+                <SettingsDocumentView doc={settingsDoc} onBack={() => setSettingsDoc(null)} />
+              ) : (
+                <>
               <div className="flex items-center justify-between border-b border-border/60 px-5 py-3">
                 <span className="text-sm font-medium">
                   {SETTINGS_NAV.find((i) => i.id === settingsTab)?.label}
@@ -1144,7 +1170,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                       variant="outline"
                       size="sm"
                       className="text-xs"
-                      onClick={() => void openSettingsDocument()}
+                      onClick={() => void openSettingsDoc()}
                     >
                       打开配置文件
                     </Button>
@@ -1268,13 +1294,20 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 )}
 
                 {settingsTab === "presets" && (
-                  <SettingsRow
-                    title="Agent 预设"
-                    desc="对此后新建的会话生效。运行中的会话保持它开始时的预设。"
-                    value={preset}
+                  <AgentPresetsSection
+                    presets={agentPresets?.presets ?? []}
+                    authorable={agentPresets?.authorable ?? false}
+                    loading={agentPresets === null}
+                    onLoad={loadAgentPresets}
+                    onSelectDefault={setDefaultAgentPreset}
+                    onView={readAgentPreset}
+                    onCopy={copyAgentPreset}
+                    onRemove={removeAgentPreset}
                   />
                 )}
               </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1410,6 +1443,292 @@ function FlatSessionTree({
           onArchive={onArchive}
         />
       ))}
+    </div>
+  )
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0")
+}
+
+/** 时间格式化（YYYY-MM-DD HH:mm，供配置文件「更新于」提示）。 */
+function formatMtime(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** 配置文件只读整页展示：标题返回按钮 + 提示「来自哪个节点 / 更新于什么时间」。 */
+function SettingsDocumentView({ doc, onBack }: { doc: SettingsDocumentView; onBack: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+        <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={onBack}>
+          <ChevronLeft className="size-4" />
+          返回设置
+        </Button>
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          <FileText className="size-4 text-muted-foreground" />
+          配置文件
+        </span>
+        <span className="ml-auto truncate text-xs text-muted-foreground" title={doc.path}>
+          来自 {doc.hostname} · 更新于 {formatMtime(doc.mtime)}
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-foreground/90">
+          {doc.content}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+/** Agent 预设管理（复刻官方：卡片列表 + 设为默认 + 复制 + 只读查看 + 删除）。 */
+function AgentPresetsSection({
+  presets,
+  authorable,
+  loading,
+  onLoad,
+  onSelectDefault,
+  onView,
+  onCopy,
+  onRemove,
+}: {
+  presets: AgentPresetEntry[]
+  authorable: boolean
+  loading: boolean
+  onLoad: () => void
+  onSelectDefault: (id: string) => Promise<boolean>
+  onView: (id: string) => Promise<AgentPresetReadResult | null>
+  onCopy: (from: string, id: string, name?: string) => Promise<boolean>
+  onRemove: (id: string) => Promise<boolean>
+}) {
+  const [view, setView] = useState<AgentPresetReadResult | null>(null)
+  const [copyFrom, setCopyFrom] = useState<AgentPresetEntry | null>(null)
+  const [copyId, setCopyId] = useState("")
+  const [copyName, setCopyName] = useState("")
+  const [copySaving, setCopySaving] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  // 首次渲染（切到本 tab）即加载 roster。
+  useEffect(() => {
+    onLoad()
+  }, [onLoad])
+
+  const submitCopy = async () => {
+    if (!copyFrom || !copyId.trim()) return
+    setCopySaving(true)
+    setCopyError(null)
+    const ok = await onCopy(copyFrom.id, copyId.trim(), copyName.trim() || undefined)
+    setCopySaving(false)
+    if (ok) {
+      setCopyFrom(null)
+      setCopyId("")
+      setCopyName("")
+    } else {
+      setCopyError("复制失败（id 可能已占用或部署不可写）")
+    }
+  }
+
+  const confirmRemove = async () => {
+    if (!deleteId) return
+    setDeleting(true)
+    await onRemove(deleteId)
+    setDeleting(false)
+    setDeleteId(null)
+  }
+
+  const openView = async (id: string) => {
+    const r = await onView(id)
+    if (r) setView(r)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        加载预设…
+      </div>
+    )
+  }
+
+  if (presets.length === 0) {
+    return <div className="py-6 text-center text-sm text-muted-foreground">未配置任何预设</div>
+  }
+
+  return (
+    <div className="space-y-1">
+      <p className="pb-1 text-xs text-muted-foreground">
+        决定新会话的智能体组成。运行中的会话保持它开始时的预设。
+      </p>
+      {presets.map((p) => (
+        <div key={p.id} className="flex items-center gap-3 border-b border-border/40 py-2.5">
+          <button
+            type="button"
+            disabled={p.isDefault || !!p.broken}
+            onClick={() => void onSelectDefault(p.id)}
+            title={p.isDefault ? "当前默认" : "设为默认"}
+            className={cn(
+              "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+              p.isDefault
+                ? "border-primary bg-primary"
+                : "border-muted-foreground/40 hover:border-primary/60",
+              p.broken && "opacity-40"
+            )}
+          >
+            {p.isDefault && <span className="size-1.5 rounded-full bg-primary-foreground" />}
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-sm text-foreground">{p.name ?? p.id}</span>
+              {p.name && <span className="shrink-0 font-mono text-xs text-muted-foreground">{p.id}</span>}
+              <Badge
+                variant="outline"
+                className={cn(
+                  "shrink-0 border-transparent text-[10px]",
+                  p.trust === "system" ? "bg-slate-500/15 text-slate-400" : "bg-amber-500/15 text-amber-400"
+                )}
+              >
+                {p.trust === "system" ? "内置" : "自定义"}
+              </Badge>
+              {p.isDefault && (
+                <Badge variant="outline" className="shrink-0 border-transparent bg-emerald-500/15 text-[10px] text-emerald-400">
+                  默认
+                </Badge>
+              )}
+            </div>
+            {p.description && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{p.description}</p>
+            )}
+            {p.broken && <p className="mt-0.5 text-xs text-rose-400">不可用：{p.broken}</p>}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => void openView(p.id)}
+              title="查看 composition"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            >
+              <Eye className="size-3.5" />
+            </button>
+            {authorable && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCopyFrom(p)
+                  setCopyId("")
+                  setCopyName("")
+                  setCopyError(null)
+                }}
+                title="复制为自定义预设"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <Copy className="size-3.5" />
+              </button>
+            )}
+            {p.trust === "user" && (
+              <button
+                type="button"
+                onClick={() => setDeleteId(p.id)}
+                title="删除"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-rose-400"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {/* 只读查看 composition */}
+      {view && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setView(null)} />
+          <div className="relative flex h-130 w-160 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-background shadow-2xl">
+            <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+              <span className="text-sm font-medium">{view.name ?? view.agentPreset}</span>
+              <Badge variant="outline" className="border-transparent text-[10px]">
+                {view.trust === "system" ? "内置" : "自定义"}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ml-auto size-7 text-muted-foreground"
+                onClick={() => setView(null)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-foreground/90">
+                {view.content}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 复制对话框 */}
+      {copyFrom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setCopyFrom(null)} />
+          <div className="relative flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-2xl border border-border/60 bg-background p-4 shadow-2xl">
+            <p className="text-sm font-semibold">复制预设：{copyFrom.name ?? copyFrom.id}</p>
+            <label className="text-xs text-muted-foreground">
+              新预设 id（目录名，必填）
+              <input
+                value={copyId}
+                onChange={(e) => setCopyId(e.target.value)}
+                placeholder="my-preset"
+                className="mt-1 h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-ring"
+              />
+            </label>
+            <label className="text-xs text-muted-foreground">
+              显示名（可选，空则回退 id）
+              <input
+                value={copyName}
+                onChange={(e) => setCopyName(e.target.value)}
+                placeholder="My preset"
+                className="mt-1 h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-ring"
+              />
+            </label>
+            {copyError && <p className="text-xs text-rose-400">{copyError}</p>}
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setCopyFrom(null)}>
+                取消
+              </Button>
+              <Button size="sm" disabled={!copyId.trim() || copySaving} onClick={() => void submitCopy()}>
+                {copySaving ? "复制中…" : "复制"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认 */}
+      {deleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteId(null)} />
+          <div className="relative flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-2xl border border-border/60 bg-background p-4 shadow-2xl">
+            <p className="text-sm font-semibold">删除预设</p>
+            <p className="text-xs text-muted-foreground">
+              确定删除自定义预设「{deleteId}」吗？已按它组成的会话不受影响。
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setDeleteId(null)}>
+                取消
+              </Button>
+              <Button variant="destructive" size="sm" disabled={deleting} onClick={() => void confirmRemove()}>
+                {deleting ? "删除中…" : "删除"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

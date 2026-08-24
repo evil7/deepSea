@@ -6,7 +6,7 @@
  *   · subscribe  → api.subscribe(stream) → 下行帧回传 downstream
  *   · unsubscribe → 取消订阅
  *
- * 控制帧（deepc:ping/pong）与工程同步帧（sync-*）不在此处理，由各自模块接管。
+ * 控制帧（deepc:bye）不在此处理，由 mailbox-host 的断开流程接管。
  * 本模块是 node 端「多端互联」的数据面入口，跑在 dsh host Node 进程内。
  */
 

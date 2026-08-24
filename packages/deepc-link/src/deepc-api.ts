@@ -6,6 +6,7 @@
  *   · `deepc.*` —— deepc 自建能力（纯 node 本地能力）：
  *       - deepc.os.hostname —— 返回本机主机名（node os.hostname，浏览器拿不到）
  *       - deepc.fs.roots / deepc.fs.listDirectories —— 扫描系统目录，供「新建工作区」选路径
+ *       - deepc.settings.readDocument —— 读 settings 配置文件原文（供主站只读整页展示）
  *       - deepc.commands.list —— 查 dsh 已注册 slash 命令（对齐官方 / 命令联想）
  *   · `pluginInventory/list` —— typert Remote，Host 侧 cordis service 直连
  *
@@ -22,8 +23,8 @@
  */
 
 import { hostname, homedir } from 'node:os'
-import { access, readdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { access, readFile, readdir, stat } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import type { LocalApi } from './local-api'
 import type { RpcResult, ServerRequest, StreamKind } from './protocol'
 
@@ -64,6 +65,36 @@ export interface DirEntry {
   name: string
   kind: 'dir' | 'file'
   path: string
+}
+
+/**
+ * 读取 dsh settings 配置文件原文（`settings.yaml`）+ 元数据，供主站设置页
+ * 只读整页展示。
+ *
+ * 定位：官方 `settings.openDocument` 只把文档交给平台文本编辑器打开（返回
+ * `{ opened: true }`，不回传内容），对浏览器主站无用——远端 host 打开编辑器
+ * 用户看不到。故新增本命令，由 host 进程直接读文件原文 + mtime + 主机名，
+ * 回传给主站只读展示，并标注「来自哪个节点 / 更新于什么时间」。
+ *
+ * 路径对齐官方 `dsh-home-paths` resolveDshHome：`$DSH_HOME` 覆盖，默认 `~/.dsh`。
+ */
+async function readSettingsDocument(): Promise<RpcResult> {
+  const dshHome = process.env.DSH_HOME?.trim() || join(homedir(), '.dsh')
+  const file = join(dshHome, 'settings.yaml')
+  try {
+    const [content, st] = await Promise.all([readFile(file, 'utf8'), stat(file)])
+    return ok({
+      content,
+      path: file,
+      hostname: hostname(),
+      mtime: st.mtimeMs,
+    })
+  } catch (error) {
+    return fail(
+      'settings-document-unavailable',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
 }
 
 /** 深读取一个目录的子项（name + kind + 相对路径），供前端渲染目录树。 */
@@ -145,6 +176,11 @@ async function handleDeepc(
     const base = resolve(req)
     const children = await listDir(base, depth)
     return ok({ path: base, children: children ?? [] })
+  }
+
+  // deepc.settings.readDocument —— 读 settings 配置文件原文（供主站只读整页展示）。
+  if (method === 'deepc.settings.readDocument') {
+    return readSettingsDocument()
   }
 
   // deepc.commands.list —— 查 dsh 已注册 slash 命令（对齐官方 / 命令联想）。

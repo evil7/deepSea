@@ -78,11 +78,17 @@ export function PluginPreview() {
           className="w-fit"
         >
           <TabsList className="h-8 border border-white/15 bg-slate-900/70 text-xs">
-            <TabsTrigger value="hot">
+            <TabsTrigger
+              value="hot"
+              className="text-white/60 hover:text-white data-active:bg-white/15 data-active:text-white"
+            >
               <Flame className="size-3.5" />
               热门
             </TabsTrigger>
-            <TabsTrigger value="latest">
+            <TabsTrigger
+              value="latest"
+              className="text-white/60 hover:text-white data-active:bg-white/15 data-active:text-white"
+            >
               <Link2 className="size-3.5" />
               最新
             </TabsTrigger>

@@ -28,7 +28,6 @@ import type {
   HelloFrame,
   RpcResult,
   StreamKind,
-  ThemeStateFrame,
 } from "./protocol"
 import { PROTOCOL_VERSION } from "./protocol"
 
@@ -51,7 +50,6 @@ export interface ClientEvents {
   state: ClientState
   hello: HelloFrame
   downstream: DownstreamFrame
-  theme: ThemeStateFrame
   error: string
 }
 
@@ -194,7 +192,6 @@ export class DeepcClient {
     state: new Set(),
     hello: new Set(),
     downstream: new Set(),
-    theme: new Set(),
     error: new Set(),
   }
 
@@ -569,10 +566,6 @@ export class DeepcClient {
       }
       case "hello": {
         this.emit("hello", frame)
-        break
-      }
-      case "theme-state": {
-        this.emit("theme", frame)
         break
       }
       case "control": {

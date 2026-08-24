@@ -17,8 +17,8 @@ declare const __DEEPC_SIGNAL_BASE__: string
 export interface NodeRegistryOptions {
   /** worker 服务基址（/auth/node/*）。 */
   signalBase?: string
-  /** 本端名称（默认 hostname）。 */
-  name?: string
+  /** 本端名称（hostname，node-host 注入）。 */
+  name: string
   /** device_token（node 端注入，必填）。 */
   token: string
   /** nodeId（node 端由 hostname 派生，必填）。 */
@@ -35,11 +35,6 @@ export interface NodeRegistry {
   start: () => Promise<RegisterOutcome>
   /** 停止（登出 / 销毁）。 */
   stop: () => void
-}
-
-/** 本端名称（默认 hostname）。 */
-function defaultName(): string {
-  return 'dsh-node'
 }
 
 /** 带 device_token 的授权 fetch。 */
@@ -74,7 +69,7 @@ export function createNodeRegistry(
 
   // nodeId 由 node 端经 opts.nodeId（hostname 派生）注入；start() 时落位。
   let nodeId = ''
-  const name = opts.name ?? defaultName()
+  const name = opts.name
 
   async function register(): Promise<RegisterOutcome> {
     const token = opts.token

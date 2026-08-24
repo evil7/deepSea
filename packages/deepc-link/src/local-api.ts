@@ -40,13 +40,15 @@ function uid(prefix: string): string {
 
 /**
  * HTTP 路径域名 → apiProxy 域树键 映射（对齐官方 `toFetchHandler` 的域重映射）。
- * 官方 gateway 把 `session.*` → `sessions.*`、`subagent.*` → `subagents.*`；
+ * 官方 gateway 把 `session.*` → `sessions.*`、`subagent.*` → `subagents.*`、
+ * `agentPreset.*` → `agentPresets.*`（wire method 单数、域树键复数，不一致）；
  * 直连 apiProxy 时需显式声明。未列入的域名（workspace/settings/host/skills/
- * agentPresets/goals/credentials/llm）在 apiProxy 域树中同名直通。
+ * goals/credentials/llm）在 apiProxy 域树中同名直通。
  */
 const DOMAIN_MAP: Record<string, string> = {
   session: 'sessions',
   subagent: 'subagents',
+  agentPreset: 'agentPresets',
 }
 
 /**

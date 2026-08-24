@@ -28,6 +28,8 @@ import type {
   HelloFrame,
   HistoryEntry,
   HostRemoteEventFrame,
+  AgentPresetListResult,
+  AgentPresetReadResult,
   ModelCatalogEntry,
   ModelSelection,
   PendingInteraction,
@@ -36,6 +38,7 @@ import type {
   SessionModelsView,
   SessionSummary,
   SettingsDescribeView,
+  SettingsDocumentView,
   SettingsNamespaceView,
   TurnError,
   WorkspaceView,
@@ -70,6 +73,7 @@ export function useDeepcLink() {
   const [settings, setSettings] = useState<SettingsDescribeView | null>(null)
   const [plugins, setPlugins] = useState<PluginInventoryEntry[]>([])
   const [pluginsLoaded, setPluginsLoaded] = useState(false)
+  const [agentPresets, setAgentPresets] = useState<AgentPresetListResult | null>(null)
   const [sessionModels, setSessionModels] = useState<SessionModelsView | null>(null)
   const [pendingInteractions, setPendingInteractions] = useState<PendingInteraction[]>([])
 
@@ -150,11 +154,53 @@ export function useDeepcLink() {
     return v?.models ?? []
   }, [settings])
 
-  /** 打开本机设置配置文件（settings.openDocument）。 */
-  const openSettingsDocument = useCallback(async (): Promise<boolean> => {
-    const res = await deepcClient.call("settings.openDocument", {})
-    return res.ok
+  /** 读取 settings 配置文件原文（deepc.settings.readDocument），供设置页只读整页展示。 */
+  const readSettingsDocument = useCallback(async (): Promise<SettingsDocumentView | null> => {
+    const res = await deepcClient.call("deepc.settings.readDocument", {})
+    if (res.ok && res.value) return res.value as SettingsDocumentView
+    return null
   }, [])
+
+  /** 读取 agent 预设 roster（agentPreset.list）。 */
+  const loadAgentPresets = useCallback(async () => {
+    const res = await deepcClient.call("agentPreset.list", {})
+    if (res.ok && res.value) {
+      setAgentPresets(res.value as AgentPresetListResult)
+    } else {
+      // 失败也落到空 roster，避免设置页「预设」无限加载。
+      setAgentPresets({ presets: [], authorable: false, hasDocument: false })
+    }
+  }, [])
+
+  /** 只读查看某个预设的 composition 原文（agentPreset.read）。 */
+  const readAgentPreset = useCallback(
+    async (id: string): Promise<AgentPresetReadResult | null> => {
+      const res = await deepcClient.call("agentPreset.read", { agentPreset: id })
+      if (res.ok && res.value) return res.value as AgentPresetReadResult
+      return null
+    },
+    []
+  )
+
+  /** 复制一个预设为新的本地预设（agentPreset.copy）。 */
+  const copyAgentPreset = useCallback(
+    async (from: string, id: string, name?: string): Promise<boolean> => {
+      const res = await deepcClient.call("agentPreset.copy", { from, agentPreset: id, name })
+      if (res.ok) await loadAgentPresets()
+      return res.ok
+    },
+    [loadAgentPresets]
+  )
+
+  /** 删除一个本地预设（agentPreset.remove）。 */
+  const removeAgentPreset = useCallback(
+    async (id: string): Promise<boolean> => {
+      const res = await deepcClient.call("agentPreset.remove", { agentPreset: id })
+      if (res.ok) await loadAgentPresets()
+      return res.ok
+    },
+    [loadAgentPresets]
+  )
 
   /**
    * 写入一个 namespace 的顶层字段 patch（settings.update，带 expectedRevision）。
@@ -182,6 +228,12 @@ export function useDeepcLink() {
       return false
     },
     [settings]
+  )
+
+  /** 设为默认预设（写 settings agent-presets.default；新建会话生效）。 */
+  const setDefaultAgentPreset = useCallback(
+    async (id: string): Promise<boolean> => updateSetting("agent-presets", { default: id }),
+    [updateSetting]
   )
 
   /** 加载工作区 + 会话列表。 */
@@ -351,6 +403,7 @@ export function useDeepcLink() {
     await loadWorkspace()
     await loadSettings()
     await loadPlugins()
+    await loadAgentPresets()
     const active = activeRef.current
     if (active) {
       // 重新拉当前会话历史 + 模型（refresh 等同重新进入该会话）。
@@ -362,7 +415,7 @@ export function useDeepcLink() {
       }
       await loadSessionModels(active)
     }
-  }, [loadWorkspace, loadSettings, loadPlugins, loadSessionModels])
+  }, [loadWorkspace, loadSettings, loadPlugins, loadAgentPresets, loadSessionModels])
 
   /** 工作区重命名（对齐官方 workspace.rename）。 */
   const renameWorkspace = useCallback(
@@ -700,6 +753,7 @@ export function useDeepcLink() {
     settings,
     plugins,
     pluginsLoaded,
+    agentPresets,
     modelCatalog,
     sessionModels,
     pendingInteractions,
@@ -718,7 +772,12 @@ export function useDeepcLink() {
     loadPlugins,
     refreshAll,
     updateSetting,
-    openSettingsDocument,
+    readSettingsDocument,
+    loadAgentPresets,
+    readAgentPreset,
+    copyAgentPreset,
+    removeAgentPreset,
+    setDefaultAgentPreset,
     loadSessionModels,
     loadCommands,
     selectSessionModel,

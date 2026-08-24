@@ -3,7 +3,7 @@
 // 复刻官方 chatUI：消息无头像；用户消息右侧「时间 + 复制图标」；助手消息下方
 // 「时间 + 复制图标」；上下文注入（source.kind==="plugin"）为独立折叠行。
 //   · assistant reasoning block → 可折叠「思考」区
-//   · assistant tool-call block + tool 结果节点 → 缩进「审计」轨迹
+//   · tool 节点卡 → 合并「工具调用 + 结果」为单卡：header=工具名+命令、body=调用结果
 // ---------------------------------------------------------------------------
 
 import { useState } from "react"
@@ -13,7 +13,6 @@ import {
   CircleAlert,
   Copy,
   GitBranch,
-  Terminal,
   Wrench,
 } from "lucide-react"
 
@@ -127,9 +126,9 @@ function AssistantBlocks({ blocks }: { blocks: readonly AssistantBlock[] }) {
               <ReasoningBlock key={i} text={block.text} />
             )
           case "tool-call":
-            return (
-              <ToolCallBlock key={i} name={block.name} argsRaw={block.argsRaw} />
-            )
+            // 工具调用不在此单独渲染徽章卡：由翻折后的 tool 结果节点（ToolResultBlock）
+            // 合并展示 header=工具名+命令、body=调用结果，避免同工具出现两张独立卡。
+            return null
           case "text":
             return (
               <Bubble key={i} variant="muted" align="start">
@@ -172,47 +171,63 @@ function ReasoningBlock({ text }: { text: string }) {
   )
 }
 
-/** 工具调用卡（审计轨迹：名称 + 参数摘要）。 */
-function ToolCallBlock({ name, argsRaw }: { name: string; argsRaw: string }) {
+/**
+ * 从工具调用 argsRaw（JSON 字符串）提取 shell 命令。
+ * 对齐官方 `commandOf`：bash 族工具（bash/pwsh/zsh…）参数携带 `command` 字符串字段，
+ * 解析失败或非 string 则返回 undefined（此时 header 仅显示工具名，不显示命令）。
+ */
+function commandOf(argsRaw: string | undefined): string | undefined {
+  if (!argsRaw) return undefined
+  try {
+    const args = JSON.parse(argsRaw)
+    return typeof args.command === "string" ? args.command : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 工具节点卡（审计轨迹合二为一）：header=工具名+调用的命令，body=调用结果。 */
+function ToolResultBlock({ node }: { node: Extract<RenderNode, { kind: "tool" }> }) {
   const [open, setOpen] = useState(false)
+  const text = node.content.map(blockText).join("")
+  const isError = node.isError
+
+  // 运行的命令（官方 commandOf：从 argsRaw JSON 提取 command 字段）。
+  const command = commandOf(node.args)
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 font-mono text-xs text-foreground/80"
+        className="flex w-full min-w-0 items-center gap-1.5 text-left"
       >
-        <Wrench className="size-3.5 text-amber-400" />
-        {name || "(工具调用)"}
+        <Wrench className={cn("size-3.5 shrink-0", isError ? "text-rose-400" : "text-amber-400")} />
+        <span className="shrink-0 font-mono text-xs font-medium text-foreground/80">
+          {node.name ?? node.callId}
+        </span>
+        {command && !isError && (
+          <>
+            <span className="mx-0.5 h-3 w-px shrink-0 bg-border" />
+            <code className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+              {command}
+            </code>
+          </>
+        )}
+        {isError && <span className="shrink-0 text-xs text-rose-400">（出错）</span>}
+        <ChevronRight
+          className={cn("ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+        />
       </button>
       {open && (
-        <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {argsRaw}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-/** 工具结果节点（缩进轨迹卡片）。 */
-function ToolResultBlock({ node }: { node: Extract<RenderNode, { kind: "tool" }> }) {
-  const [open, setOpen] = useState(false)
-  const text = node.content.map(blockText).join("")
-  return (
-    <div className="ml-6 rounded-lg border border-border/50 bg-muted/20 px-3 py-1.5">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 font-mono text-xs"
-      >
-        <Terminal className={cn("size-3.5", node.isError ? "text-rose-400" : "text-cyan-400")} />
-        <span className="text-foreground/80">{node.name ?? node.callId}</span>
-        {node.isError && <span className="text-rose-400">（出错）</span>}
-      </button>
-      {open && (
-        <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {text.slice(0, 4000)}
-        </pre>
+        <div className="mt-1.5 border-t border-border/40 pt-1.5">
+          {text ? (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {text.slice(0, 4000)}
+            </pre>
+          ) : (
+            <p className="text-[11px] text-muted-foreground/60">（无输出）</p>
+          )}
+        </div>
       )}
     </div>
   )

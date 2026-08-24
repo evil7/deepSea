@@ -33,30 +33,10 @@ deepc-bridge 的连接从「临时口令单次连接」升级为**两条互补�
 
 ---
 
-## 2. 信令管理：三套并存、职责清晰
+## 2. 信令管理：账号内信箱式信令（WS + Durable Objects 推送）
 
-WebRTC 信令的本质是「两端交换加密 SDP」。deepc-bridge 需要**三种寻址方式**，对应
-三种授权语义，共用同一套「SDP 加密 + 一次性消费 + 短 TTL」底座：
-
-### 2.1 临时口令信令（KV，既有）
-
-```
-roomId = HKDF(connectId)                    → KV 键 signal:{roomId}:{kind}
-signalKey = HKDF(connectId)                 → AES-GCM 加密 SDP
-```
-
-- **connectId**：UUID v4（122-bit 熵），替代早期 8 位配对码，由插件端「临时互联」
-  开关开启时生成（`generateConnectId()`），UI 展示 + 可复制传递。
-- **寻址**：connectId 本身（谁有码谁可连）。
-- **存储**：KV `signal:{roomId}:{kind}`，60s TTL + get 读后即删（一次性消费）。
-- **单向性**：Worker 只见 `roomId = HKDF(connectId)` 的哈希，无法从 roomId 反推
-  connectId → 即便信令键泄露，也无法派生 signalKey 解密 SDP（见 §3.1）。
-- **适用**：临时授权他人 / 未登录接入。
-
-### 2.2 账号内信箱式信令（WS + Durable Objects 推送，方案 A）
-
-临时口令的局限：双方必须**同时在线**且**人工传递 connectId**。多端直连需要「定向 +
-持久」——连接方随时发起，目标设备**被动接收推送**即可接入（不再轮询）。
+WebRTC 信令的本质是「两端交换加密 SDP」。deepc-bridge 唯一的寻址方式是**账号内信箱式
+信令**：连接方随时发起，目标设备**被动接收推送**即可接入（无轮询、无人工传码）。
 
 ```
 寻址   = nodeId（插件后端 hostname 派生，同主机 = 同 ID，仅账号持有者经 /auth/node/list 可见）
@@ -75,25 +55,7 @@ signalKey = 收件人 nodeId 派生（deriveNodeSignalKey，AES-GCM 加密 SDP�
 
 > 详细设计（DO class / Hibernation / 认证 / 加密 / 费用）见 §11。
 
-### 2.3 connectId（临时互联的一次性凭证）
-
-用户心智里「link code」与「connectId」是两个独立物：
-
-| 字段 | 含义 | 生命周期 |
-|------|------|---------|
-| **link code** | 设备定位码（本端名称 / 短码），告诉主站「连哪个 node」 | 稳定（设备属性） |
-| **connectId** | UUID v4 一次性连接码，插件端「临时互联」开关开启时生成 | 单次 60s |
-
-**流程**：`/sonar` 顶部输入 link code → 弹框输 connectId → 用 connectId 派生 roomId
-走临时口令信令（2.1），连接目标即该设备。link code 只是「选择目标设备」的 UI 辅助，
-授权仍由 connectId 承载——**不引入第二个密钥体系**。
-
-> 结论：**信令底层只有两套**（临时口令 KV + 账号内信箱 WS+DO 推送），connectId 是临时口令
-> 的 UI 呈现；link code 是设备定位符，不参与密钥派生。
-
----
-
-### 2.4 前后端 token 传递（方案 A · 连接层在 node 端）
+### 2.4 前后端 token 传递（连接层在 node 端）
 
 WS 信令 `/ws/signal?token=xxx` 与设备注册 `/auth/node/*`（`Authorization: Bearer`）都需
 `device_token`。由于**连接层在插件后端（node 端）**，token 由后端持有。
@@ -121,23 +83,7 @@ WS 信令 `/ws/signal?token=xxx` 与设备注册 `/auth/node/*`（`Authorization
 
 ## 3. 安全模型
 
-### 3.1 临时连接安全（六重防护，既有强化）
-
-1. **口令熵**：connectId 升级为 UUID v4（122-bit 熵），远超早期 8 位（32^8 ≈
-   1.1×10^12），暴力枚举在 60s 时间窗内不可行。
-2. **短时效**：60s 自动失效（KV TTL + host 端倒计时到 0 自动关闭 + 信令 TTL 同步失效）。
-3. **一次性消费**：信令 get 读后即删，offer/answer 各自被消费即删除 → 连接建立
-   （DC open）时信令已被清空，**即用即删**，无残留。
-4. **连接后自删**：连接成功（finalizeHost 返回 session）后 offer/answer 已消费删除；
-   临时互联开关关闭 / 60s 超时 → 本端清 connectId + 状态复位，信令依赖 TTL + 一次性
-   消费兜底（主动 DELETE 在设备信箱端点接通后接管）。
-5. **双层限流**：错误限流（60min/5 次，按 IP + roomId 去重）+ 频次限流（≤5 req/s）。
-6. **密文透传 + 单向哈希**：SDP 用 `signalKey = HKDF(connectId)` 派生的 AES-GCM 密钥
-   加密，Worker 只见 `roomId = HKDF(connectId)` 哈希与密文，**既拿不到 connectId，
-   也拿不到 SDP 明文**。即便无意拿到 roomId（信令键），因 HKDF 单向，无法反推
-   connectId → 无法派生 signalKey → **无法解密，同样无法连接**。
-
-### 3.2 长期连接安全（新增）
+### 3.1 长期连接安全
 
 | 威胁 | 缓解 |
 |------|------|
@@ -277,18 +223,6 @@ deepc 主站登录态是 `ds_session` cookie（HttpOnly + Secure + SameSite=Lax�
   短 TTL，防重放/劫持。
 - **CORS**：`device-grant/poll` 需允许 127.0.0.1:3080 等本地 origin（白名单）。
 
-### 6.3 已连接时数据面快捷授权（辅方案）
-
-「临时互联」已建立（DataChannel 已 open）时，/sonar 的「授权登录」可经数据面直接
-传递 device_token：
-
-- /sonar 调 `POST /auth/device-grant`（cookie）→ 换取 device_token；
-- 经 DC 数据面（`bridge` 帧）把 device_token 下发给插件端；
-- 插件端保存 token → 本设备绑定到当前账号 → 升级为「多端直连」节点。
-
-> 主方案（6.2）覆盖「未连接时的主动登录」；辅方案（6.3）是「临时连接成功后的一键
-> 授权」，两者共用同一 device_token 签发端点与校验逻辑。
-
 ---
 
 ## 7. WebRTC 自动发现
@@ -299,28 +233,14 @@ WebRTC 本身**不做设备发现**——它需要先经信令交换 SDP 才能�
 | 层级 | 机制 | 触发 | 结果 |
 |------|------|------|------|
 | **L1 本机探测** | 网页端 `fetch http://127.0.0.1:3080/api/host.describe` | /sonar 加载时 | 发现本机是否运行 dsh（本机节点） |
-| **L2 账号设备发现** | `GET /auth/node/list`（登录态） | 登录后自动拉取 | 同账号所有在线设备（无需手工输入） |
+| **L2 账号设备发现** | `/ws/api-link` 节点快照帧（nodes-snapshot） | 登录后自动拉取 | 同账号所有在线设备（无需手工输入） |
 | **L3 连接后能力发现** | DC open → hello 握手帧（host/session/theme/model） | 建连后自动 | 自动同步对端会话/主题/模型 |
 
 - **L1**：本机 dsh host 在 127.0.0.1:3080 暴露 `host.describe`，网页端回环探测即可
   确认「本机有 dsh + 已装插件」，进而引导「本机即连」（走临时互联或绑定）。
-- **L2**：已注册设备天然可枚举，是「多端直连」的自动发现底座；在线判定靠
-  `last_seen`（心跳阈值 90s）。
+- **L2**：已注册设备天然可枚举，是「多端直连」的自动发现底座；在线判定靠 DO 内存态
+  （WS 存活）。
 - **L3**：已由 `host-handshake.ts` 实现——DC open 即推 hello 帧，无需人工确认。
-
----
-
-## 8. 临时连接后：保存节点 + 授权登录
-
-临时互联打通（DC open）后，/sonar 弹出「保存此节点」提示：
-
-1. **保存节点**：插件端经 hello 帧/数据面回传 `nodeId + name`；/sonar 调
-   `POST /auth/node/register`（cookie）把该设备登记到当前账号 → 下次进入多端直连
-   自动连接。
-2. **授权登录**：/sonar 调 `POST /auth/device-grant` 换取 device_token，经 DC 数据面
-   下发给插件端（§6.3）→ 插件端自此可独立做 register/heartbeat，无需再次手工配对。
-
-> 这一步把「一次性临时互联」沉淀为「长期多端直连」，是两条链路的**转化点**。
 
 ---
 
@@ -330,9 +250,9 @@ WebRTC 本身**不做设备发现**——它需要先经信令交换 SDP 才能�
    `/ws/signal` WebSocket 端点 + 归属校验（device_token/cookie）→ 见 §11。
 2. **worker 端（既有）**：D1 `deepc_nodes` 表 + register/list/heartbeat/remove +
    设备授权端点（device-grant/poll）。
-3. **插件端**：deepSea 悬浮球 → Sheet（header 登录/头像 + 配置备份/还原）；接入设备
-   授权流 + 注册/心跳；**接入 WS 信令长连接**（替换轮询）。
-4. **主站 `/sonar`**：SSH 风格设备卡片面板 + 点卡片直连（经 WS 信令）+ ping/pong 在线确认。
+3. **插件端**：deepSea 悬浮球 → Sheet（header 登录/头像 + 配置同步）；接入设备
+   授权流 + 注册；**接入 WS 信令长连接**。
+4. **主站 `/links`**：SSH 风格设备卡片面板 + 点卡片直连（经 WS 信令）。
 5. **贯通**：WS 信令全流程 + 设备授权 token 传递 + 自动发现。
 
 ---
@@ -341,8 +261,8 @@ WebRTC 本身**不做设备发现**——它需要先经信令交换 SDP 才能�
 
 - 总体方案：`docs/deepsea-deepc-bridge-plan.md`
 - Auth/D1：`docs/deepsea-auth-migration-evaluation.md` · `apps/worker/src/lib/d1.ts`
-- 浏览器端 client：`apps/web/src/lib/deepc-bridge/client.ts`
-- 信令客户端（插件端）：`packages/deepc-bridge/src/node-signaling.ts`
+- 浏览器端 client：`apps/web/src/lib/deepc-link/client.ts`
+- 信令客户端（插件端）：`packages/deepc-link/src/node-signaling.ts`
 
 ---
 
@@ -403,15 +323,6 @@ WS 只透传密文。offer/answer 仍用 `deriveNodeSignalKey(targetNodeId)` 派
   **WS 连接存活 = 在线**，不再单独发 HTTP 心跳。完整设计见 §12。
 - **WS 断连 ≠ 立即离线**：插件端检测断连后自动重连；仅当重连超时（如 30s）才判定离线。
 - 详见 §12「在线状态三级模型」。
-
-### 11.7 过渡策略（两阶段落地）
-
-| 阶段 | 内容 | 轮询状态 |
-|------|------|---------|
-| **A1** | 新增 DO + `/ws/signal`；插件端 WS 客户端；主站投递 offer 走 DO 推送 | 插件端 WS 优先，轮询兜底 |
-| **A2** | 全链路 WS 贯通验证后，移除 `/auth/node/signal/put|get` 轮询端点 + 插件端 poll 循环 + 主站 pollNodeSignal 兜底 | 彻底无轮询 |
-
-> A1/A2 均已完成（2026-08-21）：信令单一通道 = `/ws/signal`（DO 推送），HTTP 信箱轮询已整体移除。
 
 ### 11.8 安全结论（PeerJS 评估）
 

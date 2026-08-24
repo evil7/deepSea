@@ -46,6 +46,8 @@ export type RenderNode =
       time: number
       callId: string
       name: string | null
+      /** 调用命令（来自 assistant 的 tool-call block 的 argsRaw，供合并卡 header/内容）。 */
+      args?: string
       content: ContentBlock[]
       isError: boolean
     }
@@ -155,8 +157,9 @@ export function blockText(block: ContentBlock): string {
 /** 折叠事件流为渲染节点（保持时间顺序）。 */
 export function foldEvents(events: HistoryEntry[]): RenderNode[] {
   const nodes: RenderNode[] = []
-  // callId → 工具名（从 assistant 的 tool-call block 反查，供 tool/result 标注）。
+  // callId → 工具调用信息（从 assistant 的 tool-call block 反查，供 tool/result 合并卡）。
   const callNames = new Map<string, string>()
+  const callArgs = new Map<string, string>()
 
   for (const entry of events) {
     const event: SessionEvent = entry.event
@@ -194,9 +197,12 @@ export function foldEvents(events: HistoryEntry[]): RenderNode[] {
           usage?: unknown
         }
         const blocks = classifyBlocks(data.message?.content ?? [])
-        // 记录 tool-call 名称映射。
+        // 记录 tool-call 名称与命令映射。
         for (const b of blocks) {
-          if (b.kind === "tool-call") callNames.set(b.callId, b.name)
+          if (b.kind === "tool-call") {
+            callNames.set(b.callId, b.name)
+            callArgs.set(b.callId, b.argsRaw)
+          }
         }
         if (blocks.length === 0) break
         nodes.push({
@@ -224,6 +230,7 @@ export function foldEvents(events: HistoryEntry[]): RenderNode[] {
           time: event.time,
           callId,
           name: callNames.get(callId) ?? null,
+          args: callArgs.get(callId),
           content: toolResult.content ?? [],
           isError: toolResult.isError === true,
         })

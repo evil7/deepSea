@@ -160,6 +160,27 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
   const agents = opts.agents
   const pluginInventory = opts.pluginInventory
 
+  /**
+   * 读设置项「外观」（ui-theme.preference），返回 light/dark/system。
+   * 经 apiProxy.settings.describe 读官方设置 seam（与主站设置页同源）。
+   * apiProxy 缺失或读失败时回退 system（跟随系统），不抛错。
+   */
+  async function readThemePreference(): Promise<'light' | 'dark' | 'system'> {
+    const settings = (apiProxy as any)?.settings
+    if (!settings || typeof settings.describe !== 'function') return 'system'
+    try {
+      const response = await settings.describe({ rpcId: `theme-${Date.now()}`, payload: {} })
+      const namespaces = response?.result?.value?.namespaces
+      const ns = Array.isArray(namespaces)
+        ? namespaces.find((n: any) => n?.ns === 'ui-theme')
+        : undefined
+      const preference = ns?.value?.preference
+      return preference === 'light' || preference === 'dark' ? preference : 'system'
+    } catch {
+      return 'system'
+    }
+  }
+
   /** 开发模式：开启时所有基址解析切到本地 127.0.0.1:5174（vite 代理收敛本地 worker）。 */
   let devMode = false
   const resolveSignalBase = (): string => (devMode ? DEV_MODE_BASE : configuredSignalBase)
@@ -312,6 +333,11 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
         const pathname = new URL(req.url ?? '/', 'http://x').pathname
         if (req.method === 'POST' && pathname === '/deepc/status') {
           sendJson(res, 200, host.status())
+          return
+        }
+        if (req.method === 'POST' && pathname === '/deepc/theme') {
+          const preference = await readThemePreference()
+          sendJson(res, 200, { preference })
           return
         }
         if (req.method === 'POST' && pathname === '/deepc/login') {

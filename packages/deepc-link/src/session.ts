@@ -26,10 +26,6 @@ const ICE_SERVERS: RTCConfiguration['iceServers'] = [
 ]
 
 export interface SessionOptions {
-  /** 信令服务基址（默认 deepc.cn）。 */
-  signalBase?: string
-  /** 轮询超时（毫秒）。 */
-  signalTimeoutMs?: number
   /** DataChannel 打开超时（毫秒）。 */
   openTimeoutMs?: number
 }

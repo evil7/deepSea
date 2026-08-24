@@ -90,19 +90,12 @@ export interface DownstreamFrame {
   envelope: ServerRequest
 }
 
-/** 本地 → 远端：下行流结束。 */
-export interface DownstreamEndFrame {
-  kind: 'downstream-end'
-  subId: string
-}
-
-/** 私有控制命令：deepc:ping（探活请求）/ deepc:pong（探活应答）/ deepc:bye（主动断开通知）。 */
-export type ControlCmd = 'deepc:ping' | 'deepc:pong' | 'deepc:bye'
+/** 私有控制命令：deepc:bye（主动断开通知）。 */
+export type ControlCmd = 'deepc:bye'
 
 /**
- * 控制面心跳帧（deepc 私有通道，不经 dsh API）。
- * 连接建立后由本地端（host）发起 deepc:ping，远端（client）回 deepc:pong；
- * 回复超时后双端进入互相探测，确认失效即回调 onDead 触发状态自动变更。
+ * 控制面断开通知帧（deepc 私有通道，不经 dsh API）。
+ * 任一端主动断开前发 deepc:bye，对端据此不触发自动重连。
  */
 export interface ControlFrame {
   kind: 'control'
@@ -118,21 +111,11 @@ export type BridgeFrame =
   | SubscribeFrame
   | UnsubscribeFrame
   | DownstreamFrame
-  | DownstreamEndFrame
   | ControlFrame
   | HelloFrame
   | HelloAckFrame
-  | ThemeStateFrame
   | ChunkMetaFrame
   | ChunkFrame
-  | SyncHelloFrame
-  | SyncHelloAckFrame
-  | SyncFileMetaFrame
-  | SyncFileFrame
-  | SyncFileAckFrame
-  | SyncFileNackFrame
-  | SyncEndFrame
-  | SyncDoneFrame
 
 // ---------------------------------------------------------------------------
 // 连接握手 + 基础信息对齐（node → chatUI）
@@ -179,15 +162,6 @@ export interface HelloAckFrame {
   protocolVersion: number
 }
 
-/**
- * 主题状态推送帧（node → chatUI）：连接后随 hello 或主题变更时下发。
- * theme 为 settings 里 theme 命名空间的 value（passthrough，不深校验）。
- */
-export interface ThemeStateFrame {
-  kind: 'theme-state'
-  theme: unknown
-}
-
 // ---------------------------------------------------------------------------
 // 大帧自动分包（通用）：把超限的桥梁帧（如 session.history 的 unary-result /
 // 大 downstream 帧）拆成多个 chunk 帧发送，对端重组后按原帧路由。
@@ -216,124 +190,5 @@ export interface ChunkFrame {
 }
 
 // ---------------------------------------------------------------------------
-// 工程同步帧（工作区 + 聊天记录经自动分包传输）
-// ---------------------------------------------------------------------------
-
-/** 同步流握手（host 发起）：txId 会话边界，chunkBytes 分块大小，scope 同步对象。 */
-export interface SyncHelloFrame {
-  kind: 'sync-hello'
-  txId: string
-  chunkBytes: number
-  /** 同步对象范围：workspace（工作区）/ sessions（聊天记录）。 */
-  scope: 'workspace' | 'sessions'
-  total: number
-}
-
-/** 握手应答（peer 回）：确认 txId + 协商后的 chunkBytes。 */
-export interface SyncHelloAckFrame {
-  kind: 'sync-hello-ack'
-  txId: string
-  chunkBytes: number
-}
-
-/**
- * 单文件/记录元信息（发送端在分块前发出，作为校验基准）：
- * size = 原始字节数，chunks = 分块数，sha256 = 全量 SHA-256 hex（小写）。
- */
-export interface SyncFileMetaFrame {
-  kind: 'sync-file-meta'
-  txId: string
-  path: string
-  mime: string
-  size: number
-  chunks: number
-  sha256: string
-}
-
-/** 单文件/记录分块帧：data 为单个分块的 base64，chunk 为排序标号（0-based）。 */
-export interface SyncFileFrame {
-  kind: 'sync-file'
-  txId: string
-  path: string
-  chunk: number
-  data: string
-}
-
-/** 单文件确认：收齐 + hash 校验通过。 */
-export interface SyncFileAckFrame {
-  kind: 'sync-file-ack'
-  txId: string
-  path: string
-}
-
-/** 单文件否定：缺块/损坏 → 请求重发 missing 标号块。 */
-export interface SyncFileNackFrame {
-  kind: 'sync-file-nack'
-  txId: string
-  path: string
-  missing: number[]
-}
-
-/** 同步流结束（发送端告知全部已发）。 */
-export interface SyncEndFrame {
-  kind: 'sync-end'
-  txId: string
-}
-
-/** 完成告知（接收端告知结束）：received/failed 统计。 */
-export interface SyncDoneFrame {
-  kind: 'sync-done'
-  txId: string
-  received: number
-  failed: number
-}
-
-// ---------------------------------------------------------------------------
 // 常量
 // ---------------------------------------------------------------------------
-
-/** API 路径前缀（WebApiClient.resolveBase() 之后同源拼接）。 */
-export const API_PREFIX = '/api/'
-
-/**
- * 工程同步分块大小（原始字节）：16KB，base64 后 ~22KB，远低于 DataChannel
- * 单消息上限（Chrome 256KB / Firefox 64KB）。
- */
-export const SYNC_CHUNK_BYTES = 16 * 1024
-
-/** 背压高水位：DC 缓冲超过此值暂停发送，等待排空（防洪水撑爆连接）。 */
-export const SYNC_BUFFER_HIGH = 512 * 1024
-
-/** 背压低水位：缓冲降到该值以下才继续发送。 */
-export const SYNC_BUFFER_LOW = 128 * 1024
-
-/** 同步流握手超时：host 等 hello-ack 的最长等待。 */
-export const SYNC_HELLO_TIMEOUT_MS = 10_000
-
-/** 单文件收齐超时：receiver 超时未收齐 → NACK 缺块标号。 */
-export const SYNC_FILE_TIMEOUT_MS = 30_000
-
-/** 整体结束超时：sender 等 done / 整体兜底。 */
-export const SYNC_END_TIMEOUT_MS = 30_000
-
-/** 单文件 NACK 重发最大轮次（防损坏文件死循环）。 */
-export const SYNC_MAX_NACK_ROUNDS = 3
-
-/** 上行 unary 请求路径（POST /api/{method}）。 */
-export const MUX_STREAM = 'events.mux'
-export const HOST_STREAM = 'events.host'
-
-/** 判断 URL 是否为上行 unary 请求（POST /api/{method}，非 events 流）。 */
-export function isUnaryUrl(url: string): boolean {
-  return url.includes(API_PREFIX) && !isDownstreamUrl(url)
-}
-
-/** 判断 URL 是否为下行事件流（/api/events.mux 或 /api/events.host）。 */
-export function isDownstreamUrl(url: string): boolean {
-  return url.includes(`/${MUX_STREAM}`) || url.includes(`/${HOST_STREAM}`)
-}
-
-/** 从下行 URL 提取流类型。 */
-export function streamKindFromUrl(url: string): StreamKind {
-  return url.includes(`/${MUX_STREAM}`) ? 'mux' : 'host'
-}

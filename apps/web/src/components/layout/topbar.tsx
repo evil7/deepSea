@@ -5,8 +5,10 @@ import {
   Loader2,
   LogOut,
   MessagesSquare,
+  Moon,
   Package,
   RefreshCw,
+  Sun,
   UserCircle,
   Waves,
 } from "lucide-react"
@@ -14,6 +16,7 @@ import { Link } from "react-router-dom"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { useTheme } from "@/components/theme-provider"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +50,16 @@ function ProfileStat({ value, label }: { value: number; label: string }) {
 export function Topbar() {
   const { user, loading, logout } = useAuth()
   const { loginHref, reauthHref } = useAuthHrefs()
+  const { theme, setTheme } = useTheme()
+
+  const toggleTheme = () => {
+    if (theme === "system") {
+      const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+      setTheme(isDark ? "light" : "dark")
+    } else {
+      setTheme(theme === "dark" ? "light" : "dark")
+    }
+  }
 
   return (
     <header className="sticky top-0 z-50 h-16 border-b border-border/60 bg-background/80 backdrop-blur-md">
@@ -77,6 +90,16 @@ export function Topbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            aria-label={theme === "dark" ? "切换到浅色" : "切换到深色"}
+            title={theme === "dark" ? "切换到浅色" : "切换到深色"}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </Button>
           {loading ? (
             <Button variant="ghost" size="sm" disabled aria-label="加载中">
               <Loader2 className="size-4 animate-spin" />

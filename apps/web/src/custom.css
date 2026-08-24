@@ -28,21 +28,21 @@
     monospace;
 }
 
-/* —— 站点全局基调（深色海洋站点，unlayered） —— */
+/* —— 站点全局基调（unlayered） —— */
 html {
+  color-scheme: light;
+}
+html.dark {
   color-scheme: dark;
 }
 body {
-  /* 深色海洋站点：内容区默认深底，避免纯白闪烁 */
   background-color: var(--background);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * 官方组件 token 适配层（毛玻璃态统一覆盖）
- *   站点是深色海洋视觉，但脚手架 :root（light）token 为浅色 → 官方组件
- *   （Select 弹层 / Button outline / Input / Badge / Tabs 等）显示白底，
- *   与毛玻璃不协调。此处把 :root token 覆盖为「海洋深色玻璃」色板，
- *   所有通过 token 取色的官方组件自动适配，无需逐组件改。
+ * 品牌 token（浅色「海面」+ 深色「深海」，unlayered 覆盖 index.css 同名变量）
+ *   两套色板都经 shadcn token 取色，主题切换（html.dark）自动生效。
+ *   深色 border 提升到 16% 白（原 12% 太淡，link 界面边界不清）。
  *   弹层类组件（select-content 等）再叠加 backdrop-blur 毛玻璃。
  *
  * ⚠️ 必须 unlayered（顶层直接写，不要包 @layer）：index.css 的 :root /
@@ -51,45 +51,87 @@ body {
  *    :root 变量反超，覆盖不生效（实测踩坑）。
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* —— 海洋深色玻璃 token（unlayered，后加载覆盖 index.css 同层 :root） —— */
+/* —— 浅色 token（海面，:root） —— */
 :root {
-  /* —— 基础色板：深蓝黑背景 / 浅色前景 —— */
-  --background: oklch(0.13 0.022 240);
-  --foreground: oklch(0.97 0.008 230);
+  /* 基础色板：海面浅色 */
+  --background: oklch(0.985 0.003 240);
+  --foreground: oklch(0.21 0.028 250);
 
-  /* 卡片 / 弹层：实色深卡片（子路由页面还原 shadcn 默认，需清晰有边界） */
-  --card: oklch(0.19 0.025 240);
-  --card-foreground: oklch(0.97 0.008 230);
-  --popover: oklch(0.19 0.025 240);
-  --popover-foreground: oklch(0.97 0.008 230);
+  /* 卡片 / 弹层 */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.028 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.028 250);
+
+  /* 主色：深海蓝 */
+  --primary: oklch(0.55 0.18 245);
+  --primary-foreground: oklch(0.985 0.003 240);
+
+  /* 次级 / 弱化 */
+  --secondary: oklch(0.95 0.01 240);
+  --secondary-foreground: oklch(0.21 0.028 250);
+  --muted: oklch(0.95 0.01 240);
+  --muted-foreground: oklch(0.5 0.02 250);
+
+  /* 强调高亮 */
+  --accent: oklch(0.93 0.02 235);
+  --accent-foreground: oklch(0.21 0.028 250);
+
+  /* 边框 / 输入 / 焦点环 */
+  --border: oklch(0.9 0.012 240);
+  --input: oklch(0.9 0.012 240);
+  --ring: oklch(0.55 0.18 245 / 45%);
+
+  /* 侧栏 */
+  --sidebar: oklch(0.96 0.008 240);
+  --sidebar-foreground: oklch(0.21 0.028 250);
+  --sidebar-primary: oklch(0.55 0.18 245);
+  --sidebar-primary-foreground: oklch(0.985 0.003 240);
+  --sidebar-accent: oklch(0.93 0.02 235);
+  --sidebar-accent-foreground: oklch(0.21 0.028 250);
+  --sidebar-border: oklch(0.9 0.012 240);
+  --sidebar-ring: oklch(0.55 0.18 245 / 45%);
+}
+
+/* —— 深色 token（深海，.dark） —— */
+.dark {
+  /* 基础色板：深海蓝黑背景 / 浅色前景 */
+  --background: oklch(0.14 0.025 250);
+  --foreground: oklch(0.97 0.008 240);
+
+  /* 卡片 / 弹层 */
+  --card: oklch(0.19 0.03 250);
+  --card-foreground: oklch(0.97 0.008 240);
+  --popover: oklch(0.19 0.03 250);
+  --popover-foreground: oklch(0.97 0.008 240);
 
   /* 主色：青色系（海洋光柱同源） */
   --primary: oklch(0.72 0.14 230);
-  --primary-foreground: oklch(0.13 0.022 240);
+  --primary-foreground: oklch(0.14 0.025 250);
 
   /* 次级 / 弱化 */
-  --secondary: oklch(0.22 0.03 240);
-  --secondary-foreground: oklch(0.95 0.01 230);
-  --muted: oklch(0.22 0.03 240);
-  --muted-foreground: oklch(0.72 0.03 230);
+  --secondary: oklch(0.22 0.03 250);
+  --secondary-foreground: oklch(0.96 0.01 240);
+  --muted: oklch(0.22 0.03 250);
+  --muted-foreground: oklch(0.7 0.02 240);
 
-  /* 强调高亮（Select item hover / ghost hover）：深色 */
-  --accent: oklch(0.25 0.045 230);
-  --accent-foreground: oklch(0.97 0.008 230);
+  /* 强调高亮 */
+  --accent: oklch(0.26 0.04 235);
+  --accent-foreground: oklch(0.97 0.008 240);
 
-  /* 边框 / 输入 / 焦点环：白色半透明（毛玻璃描边） */
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 14%);
+  /* 边框 / 输入 / 焦点环：白色半透明（16% 提升边界清晰度） */
+  --border: oklch(1 0 0 / 16%);
+  --input: oklch(1 0 0 / 18%);
   --ring: oklch(0.72 0.14 230 / 60%);
 
-  /* 侧栏（未用但保持同色系） */
-  --sidebar: oklch(0.15 0.024 240);
-  --sidebar-foreground: oklch(0.97 0.008 230);
+  /* 侧栏 */
+  --sidebar: oklch(0.16 0.026 250);
+  --sidebar-foreground: oklch(0.97 0.008 240);
   --sidebar-primary: oklch(0.72 0.14 230);
-  --sidebar-primary-foreground: oklch(0.13 0.022 240);
-  --sidebar-accent: oklch(0.25 0.045 230 / 80%);
-  --sidebar-accent-foreground: oklch(0.97 0.008 230);
-  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-primary-foreground: oklch(0.14 0.025 250);
+  --sidebar-accent: oklch(0.26 0.04 235 / 80%);
+  --sidebar-accent-foreground: oklch(0.97 0.008 240);
+  --sidebar-border: oklch(1 0 0 / 16%);
   --sidebar-ring: oklch(0.72 0.14 230 / 60%);
 }
 
@@ -103,23 +145,11 @@ body {
   -webkit-backdrop-filter: blur(16px);
 }
 
-/* Tooltip 官方为反色设计（bg-foreground text-background），
-   token 翻转后直接覆盖为深色玻璃 + 浅字，保持可读 */
+/* Tooltip：官方反色设计（bg-foreground text-background）自动跟随主题，
+   仅叠加毛玻璃增强 */
 [data-slot="tooltip-content"] {
-  background-color: oklch(0.13 0.022 240 / 92%) !important;
-  color: oklch(0.97 0.008 230) !important;
-  border: 1px solid oklch(1 0 0 / 14%);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
-}
-/* 指向小尖角：radix Arrow 渲染的 svg 无 data-slot 属性，
-   类名为 bg-foreground fill-foreground（浅色）→ 按类名覆盖为深玻璃同色，
-   避免尖角与气泡色差 */
-[data-slot="tooltip-content"] svg[class*="bg-foreground"],
-[data-slot="tooltip-content"] svg[class*="fill-foreground"] {
-  background-color: oklch(0.13 0.022 240 / 92%) !important;
-  fill: oklch(0.13 0.022 240 / 92%) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
