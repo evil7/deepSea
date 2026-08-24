@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
 // InstallCommand —— 终端风格安装命令提示（独立组件 + 自定义 CSS）
-//   · 首页 hero：默认命令 `dsh plugin --profile web add deepc`
+//   · 首页 hero：默认命令 `dsh plugin --profile web add deepc-link`
 //   · 详情页 header：传入从 README 提取的 `dsh plugin add xxx` 命令
 //   · 终端风格：提示符 + 等宽命令 + 光标闪烁，弱化存在感不破坏美感
 //   · 点击命令条复制整条命令（复制成功短暂显示 ✓）
@@ -13,10 +13,10 @@ import { cn } from "@/lib/utils"
 //     （光标闪烁 / 玻璃底 / 外发光），避免污染其他组件
 // ---------------------------------------------------------------------------
 
-const DEFAULT_COMMAND = "dsh plugin --profile web add deepc"
+const DEFAULT_COMMAND = "dsh plugin --profile web add deepc-link"
 
 interface InstallCommandProps {
-  /** 要复制的命令（默认 `dsh plugin --profile web add deepc`） */
+  /** 要复制的命令（默认 `dsh plugin --profile web add deepc-link`） */
   command?: string
   /** 是否内联展示（详情页 header 用，去掉 mt-8 外边距） */
   inline?: boolean
