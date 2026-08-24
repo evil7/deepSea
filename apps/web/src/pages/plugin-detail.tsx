@@ -17,8 +17,8 @@ import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
 import remarkGfm from "remark-gfm"
-// GitHub 官方 Markdown 排版（dark 主题，.markdown-body 选择器作用域）
-import "github-markdown-css/github-markdown-dark.css"
+// GitHub 官方 Markdown 排版（变量驱动 base 版，随站点浅色/深色主题自动切换）
+import "github-markdown-css/github-markdown.css"
 
 import {
   fetchRepoInfo,
@@ -485,10 +485,31 @@ const README_BODY_CSS = `
     font-family: inherit;
     font-size: 14px;
     line-height: 1.7;
+    /* 主题变量接管：github-markdown-css（变量驱动 base 版）的
+       --fgColor-* / --bgColor-* / --borderColor-* → 站点 shadcn token，
+       使 markdown 排版随站点浅色/深色主题（html.dark）自动切换 */
+    --fgColor-default: var(--foreground);
+    --fgColor-muted: var(--muted-foreground);
+    --fgColor-accent: var(--primary);
+    --fgColor-attention: var(--primary);
+    --fgColor-danger: var(--foreground);
+    --fgColor-success: var(--foreground);
+    --fgColor-done: var(--foreground);
+    --bgColor-default: transparent;
+    --bgColor-muted: var(--muted);
+    --bgColor-neutral-muted: var(--muted);
+    --bgColor-attention-muted: var(--muted);
+    --borderColor-default: var(--border);
+    --borderColor-muted: var(--border);
+    --borderColor-accent-emphasis: var(--primary);
+    --borderColor-attention-emphasis: var(--border);
+    --borderColor-danger-emphasis: var(--border);
+    --borderColor-done-emphasis: var(--border);
+    --borderColor-success-emphasis: var(--border);
   }
-  /* 链接用站点海洋青色（官方为 GitHub blue） */
-  .readme-body.markdown-body a { color: #67e8f9; }
-  .readme-body.markdown-body a:hover { color: #a5f3fc; }
+  /* 链接用站点主色（浅色深蓝 / 深色海洋青） */
+  .readme-body.markdown-body a { color: var(--primary); }
+  .readme-body.markdown-body a:hover { color: color-mix(in oklab, var(--primary) 72%, var(--foreground)); }
   /* 图片：保留 DOM 尺寸控制（width/height 属性生效），
      height:auto 保证等比缩放不拉伸（官方前端渲染行为）；
      display:inline 覆盖 Tailwind preflight 的 block，badge 才能横排（官方行为） */
@@ -499,8 +520,8 @@ const README_BODY_CSS = `
   }
   .readme-body.markdown-body video { max-width: 100%; height: auto; }
   .readme-body.markdown-body picture { display: block; }
-  /* 代码块背景对齐站点深色卡片 */
-  .readme-body.markdown-body pre { background-color: rgba(2, 6, 23, 0.9); }
+  /* 代码块背景对齐站点 muted token（浅/深自动切换） */
+  .readme-body.markdown-body pre { background-color: var(--muted); }
 `
 
 /** 过滤危险协议（javascript:/data:/vbscript:）与相对路径 → raw 绝对地址 */

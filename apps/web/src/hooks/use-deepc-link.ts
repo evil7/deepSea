@@ -357,13 +357,16 @@ export function useDeepcLink() {
     []
   )
 
-  /** 新建会话（传入 cwd 关联工作区；成功后刷新会话列表并选中）。 */
+  /** 新建会话（传入 cwd 关联工作区 + 可选 agentPreset；成功后刷新会话列表并选中）。 */
   const createSession = useCallback(
-    async (cwd?: string): Promise<boolean> => {
-      const res = await deepcClient.call("session.create", cwd ? { cwd } : {})
-      if (!res.ok) return false
+    async (cwd?: string, agentPreset?: string): Promise<string | null> => {
+      const payload: Record<string, unknown> = {}
+      if (cwd) payload.cwd = cwd
+      if (agentPreset) payload.agentPreset = agentPreset
+      const res = await deepcClient.call("session.create", payload)
+      if (!res.ok) return null
       const value = (res.value ?? {}) as { sessionId?: string }
-      const sessionId = value.sessionId
+      const sessionId = value.sessionId ?? null
       await loadWorkspace()
       if (sessionId) {
         setActiveSessionId(sessionId)
@@ -371,9 +374,28 @@ export function useDeepcLink() {
         setMessages([])
         setStreaming(null)
       }
-      return true
+      return sessionId
     },
     [loadWorkspace]
+  )
+
+  /**
+   * hero 空态「一步发起会话」：用 cwd + agentPreset 创建会话，随后立即发送首条消息。
+   * 对齐官方 hero composer：选好工作区/预设后输入首条消息，发送即建会话 + 发消息。
+   * 返回新会话 id（失败 null）。
+   */
+  const startSessionAndSend = useCallback(
+    async (cwd: string | undefined, agentPreset: string | undefined, text: string): Promise<boolean> => {
+      const sessionId = await createSession(cwd, agentPreset)
+      if (!sessionId) return false
+      const res = await deepcClient.call("session.prompt", {
+        sessionId,
+        mode: "queue",
+        content: [{ type: "text", text }],
+      })
+      return res.ok
+    },
+    [createSession]
   )
 
   /** 消息分支（对齐官方 session.fork RPC）：以该事件 seq 为前缀新建子会话。 */
@@ -387,6 +409,16 @@ export function useDeepcLink() {
       if (res.ok) {
         await loadWorkspace()
       }
+      return res.ok
+    },
+    [loadWorkspace]
+  )
+
+  /** 侧栏「分叉会话」（对齐官方行菜单）：不带 atSeq = 默认最后完成轮次。 */
+  const forkSessionById = useCallback(
+    async (sessionId: string): Promise<boolean> => {
+      const res = await deepcClient.call("session.fork", { sessionId })
+      if (res.ok) await loadWorkspace()
       return res.ok
     },
     [loadWorkspace]
@@ -762,7 +794,9 @@ export function useDeepcLink() {
     selectSession,
     sendPrompt,
     createSession,
+    startSessionAndSend,
     forkSession,
+    forkSessionById,
     renameWorkspace,
     deleteWorkspace,
     renameSession,

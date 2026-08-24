@@ -18,7 +18,7 @@ import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
 import remarkGfm from "remark-gfm"
-import "github-markdown-css/github-markdown-dark.css"
+import "github-markdown-css/github-markdown.css"
 import { toast } from "sonner"
 
 import { useAuth } from "@/hooks/use-auth"
@@ -920,11 +920,33 @@ const COMMUNITY_MARKDOWN_CSS = `
     font-family: inherit;
     font-size: 14px;
     line-height: 1.7;
+    /* 主题变量接管：github-markdown-css（变量驱动 base 版）的
+       --fgColor-* / --bgColor-* / --borderColor-* → 站点 shadcn token，
+       使 markdown 排版随站点浅色/深色主题（html.dark）自动切换 */
+    --fgColor-default: var(--foreground);
+    --fgColor-muted: var(--muted-foreground);
+    --fgColor-accent: var(--primary);
+    --fgColor-attention: var(--primary);
+    --fgColor-danger: var(--foreground);
+    --fgColor-success: var(--foreground);
+    --fgColor-done: var(--foreground);
+    --bgColor-default: transparent;
+    --bgColor-muted: var(--muted);
+    --bgColor-neutral-muted: var(--muted);
+    --bgColor-attention-muted: var(--muted);
+    --borderColor-default: var(--border);
+    --borderColor-muted: var(--border);
+    --borderColor-accent-emphasis: var(--primary);
+    --borderColor-attention-emphasis: var(--border);
+    --borderColor-danger-emphasis: var(--border);
+    --borderColor-done-emphasis: var(--border);
+    --borderColor-success-emphasis: var(--border);
   }
-  .readme-body.markdown-body a { color: #67e8f9; }
-  .readme-body.markdown-body a:hover { color: #a5f3fc; }
+  /* 链接用站点主色（浅色深蓝 / 深色海洋青） */
+  .readme-body.markdown-body a { color: var(--primary); }
+  .readme-body.markdown-body a:hover { color: color-mix(in oklab, var(--primary) 72%, var(--foreground)); }
   .readme-body.markdown-body img { display: inline; vertical-align: baseline; height: auto; }
-  .readme-body.markdown-body pre { background-color: rgba(2, 6, 23, 0.9); }
+  .readme-body.markdown-body pre { background-color: var(--muted); }
 `
 
 /** 渲染 markdown → HTML（GFM + raw HTML，供 DOMPurify 消毒后注入） */
