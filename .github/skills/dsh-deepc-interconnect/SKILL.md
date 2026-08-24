@@ -51,14 +51,19 @@ user-invocable: true
 ### 3. 数据面桥（RTC 直连，不经 Worker）
 
 - `mailbox-host.ts` 建 DC 后 `installApiBridge(dc, api)` + `installHostHandshake(dc, api)`。
-- `apiFactory = (base) => wrapLocalApi(new HttpLocalApi(base))`：`deepc.*` 本地拦截，其余转发
-  `127.0.0.1:3080`（dsh 本地 API）。
+- `apiFactory = () => wrapLocalApi(new ApiProxyLocalApi(apiProxy), services)`：
+  `deepc.*`（os/fs/commands）+ `pluginInventory/list` 本地拦截，其余直连官方 `ctx.apiProxy`
+  域树（窄形 `RpcRequest` 信封 `{ rpcId, payload }`）。**无 HTTP 回环、无降级兜底**。
 - 帧协议：`unary` / `unary-result` / `subscribe` / `downstream` / `downstream-end` / `control`（ping/pong/bye）。
 
-### 4. 底层能力（`deepc-api.ts`）
+### 4. 底层能力（`deepc-api.ts` + `local-api.ts`）
 
 - `deepc.os.hostname`、`deepc.fs.roots`、`deepc.fs.listDirectories`——在 node 进程内用
   `node:os`/`node:fs` 执行，服务「新建工作区枚举系统路径」（主站 `FolderPicker` 调用）。
+- `deepc.commands.list` → `ctx.commands.list(agent)`（`agent` 由 `ctx.agents.get(sessionId)` 解析）。
+- `pluginInventory/list` → `ctx.pluginInventory.list()`（typert Remote，Host 侧 cordis service 直连）。
+- 其余 `session.*`/`workspace.*`/`settings.*`/`host.*` 等 → `ApiProxyLocalApi` 直连 `ctx.apiProxy`。
+- 下行流 `events.mux/host` → `apiProxy.events.<stream>(request, signal)` 的 `AsyncIterable`（非 WS）。
 
 ### 5. 配置同步（D1 权威 + DO 推送）
 
@@ -76,6 +81,9 @@ user-invocable: true
 7. 禁止手改 `apps/web/src/components/ui/**`。
 8. 禁止非必要在 Worker 新增 REST 端点——主站 ↔ Worker 的广播/推送/订阅/同步类数据交换一律走
    `/ws/api-link` WS 帧；仅"请求-响应 + 持久化"的 `/auth/*` 保留 REST。
+9. 禁止数据面桥回退 HTTP 回环 `127.0.0.1:3080`（`HttpLocalApi` / `HTTP_ONLY_METHODS`）——
+   本地端点唯一实现是 `ApiProxyLocalApi` 直连 `ctx.apiProxy`；apiProxy 域树外方法走 host
+   cordis service（`ctx.commands` / `ctx.pluginInventory`）。
 
 ## 关键源码锚点
 
@@ -83,9 +91,10 @@ user-invocable: true
 |--------|------|
 | node 端入口 + `/deepc` 路由 | `packages/deepc-link/src/index.ts` |
 | node 端连接层 | `src/node-host.ts` |
-| `deepc.*` 能力 | `src/deepc-api.ts` |
+| `deepc.*` 能力 + 非 apiProxy 方法拦截 | `src/deepc-api.ts` |
 | 信箱 host（WS 应答 + 装桥） | `src/mailbox-host.ts` |
 | 数据面桥 | `src/api-bridge.ts` |
+| 本地 API（`ApiProxyLocalApi`，apiProxy 直连） | `src/local-api.ts` |
 | WS 信令客户端 | `src/ws-signaling.ts` |
 | 设备注册/心跳 | `src/node-registry.ts` |
 | 配置同步 | `src/config-sync.ts` |
@@ -105,6 +114,10 @@ user-invocable: true
 - node-datachannel 的 host 与 client 建连必须**并发**（串行会 datachannel 超时）。
 - 双端新增 WS 帧类型时，**两端 `ws-signaling.ts` 必须同步解析**（新增帧 `type` 双端对齐），
   仅 PLUGIN 或仅主站解析会导致对方帧被忽略。
+- **apiProxy 必须 `inject`（硬依赖），不能 `ctx.reflect.get('apiProxy')`**：apiProxy 依赖
+  11 个服务、就绪晚于 webServer；只用 `inject:['webServer']` 再 reflect.get 会拿到 undefined，
+  数据面桥全 `method-not-found`。`inject: ['webServer', 'apiProxy']` + `ctx.apiProxy` 属性访问；
+  仅 `commands`/`agents`/`pluginInventory` 用 reflect.get 判空。
 
 ## 完成标准
 

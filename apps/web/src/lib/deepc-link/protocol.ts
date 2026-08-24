@@ -152,6 +152,16 @@ export interface WorkspaceView {
   updatedAt: string
 }
 
+/** slash 命令项（对齐官方 CommandDescriptor，deepc.commands.list 返回）。 */
+export interface CommandItem {
+  /** 小写命令名（不含前导斜杠）。 */
+  name: string
+  /** 人类可读描述（用于发现 UI）。 */
+  description: string
+  /** 可选自由输入提示（如 '<text>'）。 */
+  hint?: string
+}
+
 export interface SessionSummary {
   sessionId: string
   updatedAt: number

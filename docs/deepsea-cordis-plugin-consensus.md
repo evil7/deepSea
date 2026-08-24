@@ -4,6 +4,7 @@
 > 编写：2026-08-20 · 基于 deepseek-ai/deepseek-harness 源码与官方文档交叉核对
 > 更新：2026-08-21（旧快照/monkey-patch 方案已废弃，见 §5 结论）
 > 关联：`deepsea-deepc-bridge-plan.md`（deepc-bridge 规划，本文 §4/§5 是其载体选型依据）
+> 关联：`deepsea-dsh-plugin-guide.md`（外部权威指南落盘 + deepc-link 对照核对，§10）
 
 ## 1. 结论先行（TL;DR）
 

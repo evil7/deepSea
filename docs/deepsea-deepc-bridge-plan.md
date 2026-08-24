@@ -112,7 +112,7 @@
 [本地 dsh host 进程 (Node)]
    └─ deepc-bridge node 端 (Cordis 插件)
         ├─ ctx.apiProxy（dsh 本地功能网关，官方 seam）
-        ├─ ApiProxyLocalApi(ctx.apiProxy) → 本地 API 处理器（降级 HttpLocalApi）
+        ├─ ApiProxyLocalApi(ctx.apiProxy) → 本地 API 处理器（唯一实现，零网络）
         ├─ node-datachannel PeerConnection（headless 端点）
         │     └─ DataChannel（deepc-sonar-bridge 帧）
         └─ 信令客户端 → worker /ws/signal（DO 信号房，WS 推送）
@@ -123,11 +123,12 @@
         └─ 信令客户端 → worker /ws/signal
 ```
 
-**关键桥接点**：`ApiProxyLocalApi(ctx.apiProxy)` 直调官方 API 域树（零网络），
-失败时自动降级 `HttpLocalApi`（HTTP fetch `127.0.0.1:3080`）。远端 chatUI 的
-API 调用经 DataChannel 帧命中该 handler，响应原路返回。这正是官方
-`InProcessApiClient` 的「transport 换成 DataChannel」变体，符合 `AbstractApiClient` 正统
-扩展点（见 `deepsea-cordis-plugin-consensus.md` §4）。
+**关键桥接点**：`ApiProxyLocalApi(ctx.apiProxy)` 直调官方 API 域树（零网络），是**唯一**
+本地端点实现（无 HTTP 回环、无降级兜底）。远端 chatUI 的 API 调用经 DataChannel 帧命中
+该 handler，响应原路返回。这正是官方 `InProcessApiClient` 的「transport 换成 DataChannel」
+变体，符合 `AbstractApiClient` 正统扩展点（见 `deepsea-cordis-plugin-consensus.md` §4）。
+apiProxy 域树之外的方法（`commands` / `pluginInventory` 等 typert Remote）由
+`deepc-api.ts` 经 host 侧 cordis service（`ctx.commands` / `ctx.pluginInventory`）直连。
 
 ### 3.4 前后端分层与两条正交链路
 
@@ -183,10 +184,13 @@ deepc-bridge 作为 Cordis 插件，天然分**前端（browser）**与**后端�
   `deepc-api.ts` 的 `wrapLocalApi` → `node:fs`）跨设备枚举远端主机目录树，取代旧的
   `workspace.readDir`（已不再走 `HttpLocalApi→3080` 的 workspace API）；Win 盘符切换 +
   Unix 根目录双模态，供「新建工作区」选路径。
-- ✅ **已落地（apiProxy 直连 + 降级兜底）**：`ApiProxyLocalApi(ctx.apiProxy)` 已实现
-  （`local-api.ts`），直调官方域树（`sessions.*`/`subagents.*`/`settings.*`/`host.*`），
-  失败自动降级 `HttpLocalApi`。`HTTP_ONLY_METHODS`（`pluginInventory/list`）强制走 HTTP。
-  2026-08-23 全方法实测通过。
+- ✅ **已落地（apiProxy 单一直连，零兜底）**：`ApiProxyLocalApi(ctx.apiProxy)` 是
+  `local-api.ts` 的**唯一**实现，直调官方域树（`sessions.*`/`subagents.*`/`settings.*`/
+  `host.*` 等），窄形 `RpcRequest` 信封 `{ rpcId, payload }`（官方契约，绝不用展开形）；
+  下行流 `events.mux/host` 走 `apiProxy.events.<stream>(request, signal)` 的
+  `AsyncIterable`（非 WebSocket）。apiProxy 域树外的方法（`commands`/`pluginInventory`）
+  由 `deepc-api.ts` 经 host cordis service 直连。已移除 `HttpLocalApi` / `HTTP_ONLY_METHODS`
+  及所有 HTTP 回环兜底。
 - ⚠️ **待做**：token 目前后端 `NodeTokenStore` 仅内存自持（`restore()` 仅进程内复用）；
   跨 dsh host 重启的 token 持久化仍待后续（见 §9 疑点 5）。
 
@@ -254,13 +258,15 @@ deepc 主站 chatUI                    DataChannel               本地 dsh host
   语义稳定的 RPC，不依赖官方 UI 结构。
 - **下行事件**：`events.mux` / `events.host` 帧回灌，chatUI 据此刷新会话状态/流式输出。
 - **本地端点（node 端）**：`api-bridge.ts` 绑定 DC，经 `LocalApi` 抽象落地——
-  双路实现已就位（2026-08-23）：
-  - `ApiProxyLocalApi`（优先，`ctx.apiProxy` 直连官方域树，零网络）；域名映射
-    `DOMAIN_MAP`（`session→sessions`，`subagent→subagents`），`callUnary` 构造
-    `{ rpcId, ...payload }` 信封对齐 `toFetchHandler` 信封格式。
-  - `HttpLocalApi`（降级兜底，HTTP fetch `127.0.0.1:3080`，已端到端验证）。
-  - `HTTP_ONLY_METHODS`（`pluginInventory/list`）仅走 HTTP。
-  - `deepc.*` 能力经 `wrapLocalApi` 本地拦截（`node:os`/`node:fs`），不进 LocalApi。
+  **单一实现**（`ApiProxyLocalApi`，零网络、零兜底）：
+  - `ApiProxyLocalApi`（`ctx.apiProxy` 直连官方域树）；域名映射 `DOMAIN_MAP`
+    （`session→sessions`，`subagent→subagents`），`callUnary` 构造**窄形** `RpcRequest`
+    信封 `{ rpcId, payload }`（官方契约，绝不用展开形 `{ rpcId, ...payload }`）。
+  - 下行流：`apiProxy.events.mux/host(request, signal)` → `AsyncIterable`，`for await`
+    消费后包装成 `ServerRequest`（`method = frame.type`，对齐官方 `toFetchHandler` fullFrame）。
+  - `deepc.*` 能力 + `commands`/`pluginInventory` 经 `wrapLocalApi`（`deepc-api.ts`）本地
+    拦截：`deepc.os/fs` 走 `node:os`/`node:fs`；`deepc.commands.list` 走 `ctx.commands.list`；
+    `pluginInventory/list` 走 `ctx.pluginInventory.list()`。
 
 > **chatUI 已完整化（2026-08-21）**：主站自实现 chatUI 已从「会话列表 + 对话 + 发送」
 > 扩展到与官方 dsh 前端操作对齐——两行 composer 工具栏（命令 / 访问模式 / 模型选择 +
@@ -377,7 +383,7 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 | `src/index.ts` | node 端入口：注入 RTC polyfill + re-export host 会话 API + 数据面桥；`ctx.apiProxy` 传入 `createNodeHost`（`inject: ['webServer']`） |
 | `src/session.ts` | **零改动复用**：node 端经 `polyfill.ts` 注入 node-datachannel headless 端点（对齐浏览器 API） |
 | `src/polyfill.ts` | 新增：把 `node-datachannel/polyfill` 的 `RTCPeerConnection` 等注入 globalThis |
-| `src/local-api.ts` | `LocalApi` 抽象 + `HttpLocalApi`（HTTP 降级）+ `ApiProxyLocalApi`（`ctx.apiProxy` 直连，`DOMAIN_MAP` 域名映射，rpcId 信封，失败自动回退 HTTP） |
+| `src/local-api.ts` | `LocalApi` 抽象 + `ApiProxyLocalApi`（唯一实现：`ctx.apiProxy` 直连，`DOMAIN_MAP` 域名映射，窄形 `RpcRequest` 信封，下行流 `AsyncIterable`，无 HTTP 回环） |
 | `src/api-bridge.ts` | 新增：node 端数据面桥，DC 帧 → `LocalApi` → 回传（多端互联数据面入口） |
 | `src/client/index.ts` | browser 端：不再是「启动互联悬浮球」，改为 chatUI 引导 + 工程同步入口 |
 
@@ -408,9 +414,9 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
 1. **底座先行** ✅ 目录改名 `deepc-bridge` + 包名 + 清理废弃文件 + 保留底座编译通过。
 2. **中间件打通** ✅（node 端）`session.ts` 经 `polyfill.ts` 注入 node-datachannel，node 端
    headless 端点 + 信令互通已验证（node↔node 端到端 PASS）；浏览器端互通随 chatUI 在 S2 落地。
-3. **多端互联** ✅ node 端数据面桥（`api-bridge.ts` + `LocalApi` 双路实现）→ 主站自实现 chatUI
+3. **多端互联** ✅ node 端数据面桥（`api-bridge.ts` + `LocalApi` 单一实现）→ 主站自实现 chatUI
    （会话/消息流/composer/设置页/实时同步）已端到端贯通，并完整化对齐官方（见 §5.1 注）。
-   `ApiProxyLocalApi(ctx.apiProxy)` 直连已落地（2026-08-23），`HttpLocalApi` 降级兜底。
+   `ApiProxyLocalApi(ctx.apiProxy)` 直连已落地（零网络、零兜底），`HttpLocalApi` 已移除。
 4. **工程同步 → 配置同步** ✅ 已收敛为「配置同步（D1 权威 + DO 推送 config-changed，已实现）
    + session 迁移（后续，RTC 直传 + D1 索引，见 `deepsea-deepc-bridge-config-sync.md`）」。
 5. **账号能力** ⏳ 互联日志 + 30 天审计清理 ✅；自定义加密 key 待定（见 §9 疑点 5）。
@@ -424,12 +430,14 @@ sync-file-ack / -nack / sync-end / sync-done   同旧可靠传输框架
    mac/linux 待后续 CI 覆盖。
 2. **NAT 穿透边界**：libjuice 支持 STUN，对称 NAT 仍需 TURN —— 是否自建 TURN，还是接受边界？
 3. **`ctx.apiProxy` 精确桥接点** ✅ 已验证落地：
-   - `ctx.apiProxy` 通过 `inject: ['webServer']` 随 Context 注入，node 端可直接拿到。
-   - `ApiProxyLocalApi` 直调 `ctx.apiProxy.sessions.list({ rpcId, ... })` 已验证通过。
+   - `ctx.apiProxy` 通过 `inject: ['webServer']` 随 Context 注入，node 端经
+     `ctx.reflect.get('apiProxy')` 读取（可选服务，不触发 inject 纪律）。
+   - `ApiProxyLocalApi` 直调 `ctx.apiProxy.sessions.list({ rpcId, payload })`（窄形 `RpcRequest`）。
    - 域名映射：HTTP `session.*` → apiProxy `sessions.*`（`DOMAIN_MAP`），`subagent.*` → `subagents.*`。
-   - `callUnary` 构造 RpcRequest 信封（`{ rpcId, ...payload }`），对齐 `toFetchHandler` 信封格式。
-   - 失败自动回退 `HttpLocalApi`（兜底兼容），`HTTP_ONLY_METHODS` 强制走 HTTP。
-   - 2026-08-23 实测 `ApiProxyLocalApi` 直连 `ctx.apiProxy` 全部可用方法 200 OK。
+   - `callUnary` 构造**窄形** RpcRequest 信封 `{ rpcId, payload }`（官方契约：rpcId 显式、绝不混入 payload）。
+   - 下行流 `events.mux/host` 走 `apiProxy.events.<stream>(request, signal)` 的 `AsyncIterable`。
+   - 域树外方法（`commands`/`pluginInventory`）经 host cordis service（`ctx.commands`/
+     `ctx.pluginInventory`，`invocation: {kind:'direct'}`）直连，不走 HTTP。
 4. **node 端进程模型**：headless 端点跑在 dsh host Node 进程内（Cordis 插件），还是独立
    Node 进程经 IPC 接 `ctx.apiProxy`？
 5. **自定义加密 key**：配置同步已落地（非敏感明文 + 敏感 E2E），但「应用层自定义加密 key」

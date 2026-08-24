@@ -14,7 +14,7 @@ import { createWsSignalClient } from './ws-signaling'
 import { decodeEnvelope } from './node-signaling'
 import { installApiBridge } from './api-bridge'
 import { installHostHandshake } from './host-handshake'
-import { HttpLocalApi, type LocalApi } from './local-api'
+import type { LocalApi } from './local-api'
 import { DEFAULT_SIGNAL_BASE } from './device-auth'
 
 export interface MailboxHostOptions {
@@ -22,16 +22,18 @@ export interface MailboxHostOptions {
   nodeId: string
   /** worker 服务基址（/ws/api-link）。 */
   signalBase?: string
-  /** 本地 dsh host 基址（127.0.0.1:3080）。 */
-  hostBase?: string
   /** device_token（node 端注入，必填）。 */
   token: string
   /** 收到 config-changed 推送时回调（配置同步拉增量用）。 */
   onConfigChanged?: () => void
   /** 允许互联（默认 true）。关闭时拒绝新 offer，已有连接不受影响。 */
   allowInterconnect?: boolean
-  /** 自定义 LocalApi 工厂：node 端用 wrapLocalApi 拦截 deepc.*；浏览器端缺省用 HttpLocalApi。 */
-  apiFactory?: (hostBase: string) => LocalApi
+  /**
+   * 自定义 LocalApi 工厂（必填）：node 端由 node-host 传入
+   * wrapLocalApi(new ApiProxyLocalApi(apiProxy), services)，拦截 deepc.* + 非 apiProxy
+   * 方法，其余直连官方 apiProxy。无 API 来源时数据面桥不可用。
+   */
+  apiFactory?: () => LocalApi
 }
 
 export interface MailboxHost {
@@ -51,7 +53,6 @@ export interface MailboxHost {
  */
 export function startMailboxHost(opts: MailboxHostOptions): MailboxHost {
   const signalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
-  const hostBase = opts.hostBase ?? 'http://127.0.0.1:3080'
 
   let running = true
   let allowInterconnect = opts.allowInterconnect !== false // 默认 true
@@ -69,7 +70,12 @@ export function startMailboxHost(opts: MailboxHostOptions): MailboxHost {
 
   /** 装桥 + 握手。 */
   function installSession(session: ClientSession): void {
-    const api = opts.apiFactory ? opts.apiFactory(hostBase) : new HttpLocalApi(hostBase)
+    if (!opts.apiFactory) {
+      // 无 API 来源（apiProxy 缺失）：无法桥接，直接关闭会话。
+      session.close()
+      return
+    }
+    const api = opts.apiFactory()
     const bridge = installApiBridge(session.dc, api)
     const handshake = installHostHandshake(session.dc, api)
     sessions.add(session)

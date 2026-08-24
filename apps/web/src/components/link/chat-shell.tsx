@@ -41,7 +41,7 @@ import { ConnectStatus } from "@/components/link/connect-status"
 import { useDeepcLink } from "@/hooks/use-deepc-link"
 import { deepcClient } from "@/lib/deepc-link/client"
 import { cn } from "@/lib/utils"
-import type { SessionSummary } from "@/lib/deepc-link/protocol"
+import type { CommandItem, SessionSummary } from "@/lib/deepc-link/protocol"
 
 const TOPBAR_H = 64
 
@@ -170,6 +170,7 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     updateSetting,
     openSettingsDocument,
     selectSessionModel,
+    loadCommands,
     pendingInteractions,
   } = useDeepcLink()
 
@@ -182,6 +183,11 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
   const [permissionMenuOpen, setPermissionMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  // 输入框 `/` 命令联想（对齐官方：输入 / 动态查 dsh 注册命令）。
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [slashQuery, setSlashQuery] = useState("")
+  const [slashItems, setSlashItems] = useState<CommandItem[]>([])
+  const [slashLoading, setSlashLoading] = useState(false)
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set())
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const [viewSortOpen, setViewSortOpen] = useState(false)
@@ -234,6 +240,52 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
     setPermissionMenuOpen(false)
     setModelMenuOpen(false)
   }, [])
+
+  /**
+   * 输入框 `/` 命令联想（对齐官方 composer：末尾输入 `/` 或 `/xxx` 时，
+   * 动态查询 dsh 已注册命令并弹出联想下拉）。
+   */
+  const handleSlashEdit = useCallback(
+    async (text: string) => {
+      // 解析末尾是否有 `/` 命令前缀（取最后一个 token，且该 token 以 / 开头）。
+      const trimmed = text.trimEnd()
+      const lastToken = trimmed.split(/\s+/).pop() ?? ""
+      if (lastToken.startsWith("/") && lastToken.length > 1 && activeSessionId) {
+        const q = lastToken.slice(1).toLowerCase()
+        setSlashOpen(true)
+        setSlashQuery(q)
+        setSlashLoading(true)
+        try {
+          const all = await loadCommands(activeSessionId)
+          const filtered = q ? all.filter((c) => c.name.includes(q)) : all
+          setSlashItems(filtered)
+        } catch {
+          setSlashItems([])
+        } finally {
+          setSlashLoading(false)
+        }
+      } else {
+        // 非命令上下文 / 无 active 会话 → 收起联想。
+        setSlashOpen(false)
+        setSlashItems([])
+      }
+    },
+    [activeSessionId, loadCommands]
+  )
+
+  // 点击联选项外收起 `/` 联想。
+  const slashRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!slashOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (slashRef.current && !slashRef.current.contains(e.target as Node)) {
+        setSlashOpen(false)
+        setSlashItems([])
+      }
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [slashOpen])
 
   // 点击工具栏外部时收起下拉。
   useEffect(() => {
@@ -803,14 +855,80 @@ export function ChatShell({ onDisconnect }: { onDisconnect: () => void }) {
                 data-placeholder={activeSessionId ? "发送消息…" : "请先选择会话"}
                 data-empty={!draft}
                 className="min-h-0 resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-foreground outline-none empty:before:pointer-events-none empty:before:text-muted-foreground/60 empty:before:content-[attr(data-placeholder)] [&_mark]:rounded [&_mark]:bg-primary/15 [&_mark]:px-0.5 [&_mark]:text-foreground"
-                onInput={(e) => setDraft((e.target as HTMLDivElement).textContent ?? "")}
+                onInput={(e) => {
+                  const text = (e.target as HTMLDivElement).textContent ?? ""
+                  setDraft(text)
+                  void handleSlashEdit(text)
+                }}
                 onKeyDown={(e) => {
+                  // Esc 收起 / 联想。
+                  if (e.key === "Escape" && slashOpen) {
+                    setSlashOpen(false)
+                    setSlashItems([])
+                    return
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault()
                     void handleSend()
                   }
                 }}
               />
+              {/* 输入框 / 命令联想下拉 */}
+              {slashOpen && activeSessionId && (
+                <div
+                  ref={slashRef}
+                  className="absolute inset-x-4 z-30 mx-auto max-w-3xl overflow-hidden rounded-lg border border-border/60 bg-background p-1 shadow-xl"
+                  style={{ bottom: "calc(100% + 8px)" }}
+                >
+                  <p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    命令
+                  </p>
+                  {slashLoading ? (
+                    <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      加载命令…
+                    </div>
+                  ) : slashItems.length === 0 ? (
+                    <p className="px-2 py-2 text-xs text-muted-foreground">无匹配命令</p>
+                  ) : (
+                    slashItems.map((c) => {
+                      // 高亮命令名中匹配查询的子串（对齐官方联想高亮）。
+                      const q = slashQuery
+                      const idx = q ? c.name.toLowerCase().indexOf(q) : -1
+                      const name = `/${c.name}`
+                      const matched = idx >= 0
+                        ? (
+                            <>
+                              {name.slice(0, idx + 1)}
+                              <mark className="rounded-sm bg-primary/20 px-0.5 text-primary">
+                                {name.slice(idx + 1, idx + 1 + q.length)}
+                              </mark>
+                              {name.slice(idx + 1 + q.length)}
+                            </>
+                          )
+                        : name
+                      return (
+                        <button
+                          key={c.name}
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+                          onClick={() => {
+                            insertCommand(c.name)
+                            setSlashOpen(false)
+                            setSlashItems([])
+                          }}
+                        >
+                          <span className="font-mono text-xs font-medium text-foreground">{matched}</span>
+                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                            {c.description}
+                          </span>
+                          {c.hint && <span className="shrink-0 text-[10px] text-muted-foreground/60">{c.hint}</span>}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              )}
             </div>
             <div className="mx-auto max-w-3xl px-4">
               <div ref={toolbarRef} className="flex items-center justify-between gap-2 pb-1.5">

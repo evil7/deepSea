@@ -19,6 +19,7 @@ import {
 import type {
   AssistantBlock,
   AssistantChunkData,
+  CommandItem,
   ContentBlock,
   ContextSource,
   DownstreamFrame,
@@ -245,6 +246,19 @@ export function useDeepcLink() {
     }
     void loadSessionModels(sessionId)
   }, [])
+
+  /** 读取当前会话的 dsh slash 命令（deepc.commands.list，对齐官方 / 命令联想）。 */
+  const loadCommands = useCallback(
+    async (sessionId: string): Promise<CommandItem[]> => {
+      const res = await deepcClient.call("deepc.commands.list", { sessionId })
+      if (res.ok && res.value) {
+        const value = res.value as { items?: CommandItem[] }
+        return value.items ?? []
+      }
+      return []
+    },
+    []
+  )
 
   /** 读取当前会话模型（session.models）。 */
   const loadSessionModels = useCallback(async (sessionId: string) => {
@@ -706,6 +720,7 @@ export function useDeepcLink() {
     updateSetting,
     openSettingsDocument,
     loadSessionModels,
+    loadCommands,
     selectSessionModel,
   }
 }

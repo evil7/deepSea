@@ -28,13 +28,27 @@ export const name = 'deepc-link'
 /** node-host 单例（apply 可能被重复调用，防重复起连接层）。 */
 let nodeHost: NodeHost | null = null
 
-/** 声明依赖 webServer：等它可用才启动本插件（避免 ctx.webServer 启动时为 undefined）。 */
-export const inject = ['webServer']
+/**
+ * 声明硬依赖：
+ *   · webServer —— /deepc 前缀路由注册（同机凭证传递）
+ *   · apiProxy  —— 数据面桥的本地端点（session/workspace/host/settings 等 unary +
+ *                  events 下行流）。数据面桥缺它即无法工作，属真硬依赖，必须等它
+ *                  ACTIVE 后才 apply（否则 `ctx.reflect.get('apiProxy')` 在 strict
+ *                  模式下会拿到 undefined——apiProxy 依赖 11 个服务，就绪晚于 webServer）。
+ */
+export const inject = ['webServer', 'apiProxy']
 
 export function apply(ctx: Context): void {
   if (nodeHost) return
-  // 传入 ctx.apiProxy 使 node-host 优先走官方 apiProxy 直连（零网络）。
-  const host = createNodeHost({ apiProxy: (ctx as any).apiProxy })
+  // apiProxy 已声明 inject，直接用属性访问（硬依赖，ACTIVE 后必可读）。
+  // commands / agents / pluginInventory 是**可选**服务（无则降级），
+  // 经 ctx.reflect.get（≡ ctx.get，官方 "without inject requirement"）读取。
+  const host = createNodeHost({
+    apiProxy: ctx.apiProxy,
+    commands: ctx.reflect.get('commands'),
+    agents: ctx.reflect.get('agents'),
+    pluginInventory: ctx.reflect.get('pluginInventory'),
+  })
   nodeHost = host
   // 注册 /deepc 前缀路由承载前端控制（同源，复用 dsh 3080，免 CORS）。
   // ctx.effect 的 disposer = register 的返回函数，fiber 卸载自动撤销路由。
@@ -74,7 +88,7 @@ export { DEFAULT_SIGNAL_BASE as NODE_SIGNAL_BASE } from './device-auth'
 // 对外暴露「多端互联」数据面桥能力（S2：DataChannel 帧 → 本地 API）。
 export { installApiBridge } from './api-bridge'
 export type { ApiBridge } from './api-bridge'
-export { HttpLocalApi, DEFAULT_HOST_BASE } from './local-api'
+export { ApiProxyLocalApi } from './local-api'
 export type { LocalApi } from './local-api'
 
 // 对外暴露「基础信息对齐」握手能力（S2：hello 推送 host/theme/model）。

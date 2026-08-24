@@ -8,9 +8,10 @@
  *   · WS 信令：ws-signaling，被动接收主站 offer（token 经 query）
  *   · 后端专用前缀路由 `/deepc`（ctx.webServer.register）：接收前端控制（status / login /
  *     logout / allow / sync / disconnect），前端经 fetch 调用
- *   · deepc.* 能力：installSession 用 wrapLocalApi(ApiProxyLocalApi/HttpLocalApi)
- *     拦截 deepc.os.hostname / deepc.fs.roots / deepc.fs.listDirectories
- *     （优先 ctx.apiProxy 直连，降级走 HttpLocalApi HTTP 回环）
+ *   · deepc.* 能力：installSession 用 wrapLocalApi(new ApiProxyLocalApi(apiProxy))
+ *     拦截 deepc.os.hostname / deepc.fs.roots / deepc.fs.listDirectories /
+ *     deepc.commands.list / pluginInventory/list；其余 session/workspace/settings 等
+ *     直连 ctx.apiProxy 官方域树（零网络、零兜底）
  *
  * 与 browser 端 host-ui.ts 的协作：host-ui 只渲染 Sheet，登录状态/开关/同步等动作都
  * 经本地 HTTP 转发到本模块执行。
@@ -26,7 +27,7 @@ import { createNodeRegistry, type NodeRegistry } from './node-registry'
 import { startMailboxHost } from './mailbox-host'
 import { startConfigSync } from './config-sync'
 import { wrapLocalApi } from './deepc-api'
-import { ApiProxyLocalApi, HttpLocalApi } from './local-api'
+import { ApiProxyLocalApi } from './local-api'
 
 /** node-host 向后端控制路由暴露的路径段。 */
 export const NODE_CTRL_PATH = '/deepc'
@@ -43,13 +44,25 @@ export interface NodeHostOptions {
   signalBase?: string
   /** 主站基址（本地 dev 127.0.0.1:5174）。 */
   siteBase?: string
-  /** 本地 dsh host 基址（127.0.0.1:3080）。 */
-  hostBase?: string
   /**
-   * cordis ctx.apiProxy（官方 API 网关直连）。
-   * 有此参数时优先走 ApiProxyLocalApi（零网络）；无则降级 HttpLocalApi。
+   * cordis ctx.apiProxy（官方 API 网关直连）。数据面桥的唯一 API 来源。
+   * Host 侧必有 apiProxy（dsh-host-apiproxy 提供）；缺失时数据面桥不可用。
    */
   apiProxy?: unknown
+  /**
+   * cordis ctx.commands（CommandRuntime）：deepc.commands.list 用。
+   * 可选——未提供时 deepc.commands.list 返回 commands-unavailable。
+   */
+  commands?: unknown
+  /**
+   * cordis ctx.agents（AgentRegistry）：把 sessionId 解析成 live Agent 用（deepc.commands.list）。
+   */
+  agents?: unknown
+  /**
+   * cordis ctx.pluginInventory（PluginInventoryGateway）：pluginInventory/list 用。
+   * 可选——未提供时 pluginInventory/list 返回 plugin-inventory-unavailable。
+   */
+  pluginInventory?: unknown
 }
 
 export interface NodeHost {
@@ -142,8 +155,10 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
   const configuredSignalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
   const configuredSiteBase = opts.siteBase ?? DEFAULT_SITE_BASE
-  const hostBase = opts.hostBase ?? 'http://127.0.0.1:3080'
   const apiProxy = opts.apiProxy
+  const commands = opts.commands
+  const agents = opts.agents
+  const pluginInventory = opts.pluginInventory
 
   /** 开发模式：开启时所有基址解析切到本地 127.0.0.1:5174（vite 代理收敛本地 worker）。 */
   let devMode = false
@@ -194,16 +209,14 @@ export function createNodeHost(opts: NodeHostOptions = {}): NodeHost {
     mailbox = startMailboxHost({
       nodeId: registry.nodeId,
       signalBase,
-      hostBase,
       allowInterconnect,
       token,
-      // deepc.* 拦截在 node 端：wrapLocalApi 处理 deepc.os/fs。
-      // 优先用 ctx.apiProxy 直连（官方标准），降级走 HttpLocalApi HTTP 回环。
-      apiFactory: (base) => {
-        const inner = apiProxy
-          ? new ApiProxyLocalApi(apiProxy, base)
-          : new HttpLocalApi(base)
-        return wrapLocalApi(inner)
+      // deepc.* 拦截 + 非 apiProxy 方法（commands/pluginInventory）在 node 端：
+      // wrapLocalApi 处理 deepc.os/fs / deepc.commands.list / pluginInventory/list，
+      // 其余（session/workspace/settings/…）直连 ctx.apiProxy（官方 seam，零网络、零兜底）。
+      apiFactory: () => {
+        const inner = new ApiProxyLocalApi(apiProxy)
+        return wrapLocalApi(inner, { commands, agents, pluginInventory })
       },
       onConfigChanged: () => void configSync?.sync(),
     })

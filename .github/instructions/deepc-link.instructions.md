@@ -44,6 +44,19 @@ applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deep
   **不得为此新开 REST 端点**。REST 仅保留给「请求-响应 + 持久化」的 `/auth/*`（OAuth / device-grant /
   config put / node register）。这是区分「实时数据面（WS）」vs「身份持久化面（REST）」的边界。
 - 配置快照存 **node 进程内存**（node 无 localStorage），禁止写 localStorage。
+- **数据面桥本地端点 = `ctx.apiProxy` 直连（唯一）**：`local-api.ts` 只有 `ApiProxyLocalApi`
+  一个实现，unary 走窄形 `RpcRequest` 信封 `{ rpcId, payload }`（官方契约，**绝不用展开形**
+  `{ rpcId, ...payload }`），下行流 `events.mux/host` 走 `apiProxy.events.<stream>(request,
+  signal)` 的 `AsyncIterable`（**非 WebSocket**）。**禁止回退 HTTP 回环 `127.0.0.1:3080` /
+  `HttpLocalApi` / `HTTP_ONLY_METHODS`**。apiProxy 域树之外的方法（`commands` /
+  `pluginInventory` 等 typert Remote）由 `deepc-api.ts` 经 host 侧 cordis service
+  （`ctx.commands` / `ctx.pluginInventory`，`invocation:{kind:'direct'}`）直连。
+- **apiProxy 是硬依赖（`inject`），不是可选服务**：`index.ts` 声明
+  `inject: ['webServer', 'apiProxy']` + `ctx.apiProxy` 属性访问。apiProxy（`dsh-host-apiproxy`
+  的 `ApiProxyService`）依赖 11 个服务，就绪**晚于** webServer——若只用 `inject:['webServer']`
+  再 `ctx.reflect.get('apiProxy')`，会在 apiProxy 尚未 ACTIVE 时拿到 `undefined`，数据面桥
+  全部 `method-not-found`。`commands` / `agents` / `pluginInventory` 才是可选服务，经
+  `ctx.reflect.get`（≡ `ctx.get`）读取 + 判空降级。
 
 ## 三、红线（禁止事项）
 
@@ -73,10 +86,10 @@ applyTo: ["packages/deepc-link/**", "apps/worker/src/**", "apps/web/src/lib/deep
 |--------|------|
 | node 端入口 + `/deepc` 路由注册 | `packages/deepc-link/src/index.ts` |
 | node 端连接层（Device Grant + 注册 + 信令 + deepc.*） | `src/node-host.ts` |
-| `deepc.*` 底层能力（os/fs 本地拦截） | `src/deepc-api.ts` |
+| `deepc.*` 底层能力（os/fs 本地拦截）+ 非 apiProxy 方法（commands/pluginInventory） | `src/deepc-api.ts` |
 | 信箱 host（WS 信令被动应答 + 装桥/握手） | `src/mailbox-host.ts` |
 | 数据面桥（DC 帧 → LocalApi） | `src/api-bridge.ts` |
-| 本地 API（HttpLocalApi，访问 127.0.0.1:3080） | `src/local-api.ts` |
+| 本地 API（`ApiProxyLocalApi`：`ctx.apiProxy` 直连，零网络、零兜底） | `src/local-api.ts` |
 | 设备注册（token/nodeId 注入） | `src/node-registry.ts` |
 | WS 信令客户端（`/ws/api-link`） | `src/ws-signaling.ts` |
 | 配置同步（D1 + DO 推送，node 内存快照，版本冲突检测） | `src/config-sync.ts` |
