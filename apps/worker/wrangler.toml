@@ -52,7 +52,17 @@ class_name = "TunnelHub"
 
 [[migrations]]
 tag = "v1"
+new_sqlite_classes = ["SignalRoom"]
+
+# v2：新管理面广播 DO（TunnelHub，分区键 tunnelhub:{githubId}）。
+[[migrations]]
+tag = "v2"
 new_sqlite_classes = ["TunnelHub"]
+
+# v3：退役旧 P2P 信令房 SignalRoom（数据无需保留，删除类及其活跃实例）。
+[[migrations]]
+tag = "v3"
+deleted_classes = ["SignalRoom"]
 
 # ── KV：state（防 CSRF）/ session / user / deviceGrant（设备授权）/ 限流计数 ──────────────────
 # 创建：wrangler kv namespace create DEEPSEA_KV，然后把 id 填到下面

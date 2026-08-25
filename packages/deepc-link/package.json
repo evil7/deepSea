@@ -1,6 +1,6 @@
 {
   "name": "deepc-link",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "description": "deepc-link — deepc 本地插件 + 远程 RTC 通信中间件（多端互联 + 工程同步）",
   "main": "dist/index.js",

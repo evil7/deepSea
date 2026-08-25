@@ -10,6 +10,7 @@
 --   · deepc_device_tokens                           ← 0002
 --   · audit_event_types（含事件字典 seed）           ← 0003
 --   · deepc_tunnels（远端互联节点，仅纳管 URL）       ← 0004
+--   · deepc_tunnels.secret_hash + tunnel_access      ← 0005（主站免密）
 --
 -- 注：deepc_nodes（设备注册表）/ deepc_config（配置同步）/ deepc_preferences
 -- 已随旧 P2P 架构退役删除。新架构（TOTP 2FA + 匿名 Quick Tunnel）只纳管 URL，
@@ -81,7 +82,8 @@ CREATE TABLE IF NOT EXISTS audit_event_types (
 INSERT OR IGNORE INTO audit_event_types (code, description) VALUES
   ('device_grant',  '设备授权（签发 device_token）'),
   ('tunnel_report', '隧道上报（插件上报最新 URL）'),
-  ('tunnel_delete', '隧道节点删除（硬删 D1 行）');
+  ('tunnel_delete', '隧道节点删除（硬删 D1 行）'),
+  ('tunnel_access', '后台免密直连（签发一次性 ticket）');
 
 -- ── 远端互联节点表（deepc_tunnels）──────────────────────────────────────
 --   三模式：插件本地 3081（TOTP 2FA）+ 匿名 Quick Tunnel / 自定义域 →
@@ -94,6 +96,7 @@ CREATE TABLE IF NOT EXISTS deepc_tunnels (
   node_name    TEXT NOT NULL,        -- 节点名称（默认 hostname，可改）
   url          TEXT,                 -- 最近上报的 trycloudflare URL / 自定义域
   status       TEXT NOT NULL DEFAULT 'connected',  -- connected|deleted
+  secret_hash  TEXT,                 -- sha512(TOTP secret) 单向散列（免密直连开启时）
   created_at   INTEGER NOT NULL,     -- 首次创建时间
   modified_at  INTEGER NOT NULL      -- 最近修改时间（上报/改名）
 );
