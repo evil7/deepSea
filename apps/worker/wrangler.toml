@@ -39,6 +39,7 @@ run_worker_first = [
   "/auth/tunnel/report",
   "/auth/tunnel/list",
   "/auth/tunnel/delete",
+  "/auth/tunnel/access",
   "/ws/tunnel-events",
 ]
 

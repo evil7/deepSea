@@ -25,6 +25,7 @@ import {
   handleTunnelReport,
   handleTunnelList,
   handleTunnelDelete,
+  handleTunnelAccess,
 } from "./auth/tunnel"
 import { purgeLogs, resolveActorUserId, resolveDeviceUserIdFromToken } from "./lib/d1"
 import { checkFreqLimit, getClientIp } from "./lib/ratelimit"
@@ -145,6 +146,8 @@ const handler: ExportedHandler<Env> = {
         return handleTunnelList(request, env)
       case "/auth/tunnel/delete":
         return handleTunnelDelete(request, env)
+      case "/auth/tunnel/access":
+        return handleTunnelAccess(request, env)
       default:
         break
     }

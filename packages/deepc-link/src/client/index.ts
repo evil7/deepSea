@@ -17,10 +17,14 @@ import { bootstrapHostUi } from '../host-ui'
 
 export const name = 'deepc-link'
 
-/**
- * browser 端 apply：注入「deepc 互联」悬浮球 + Sheet 侧栏。
- * deepc-link 不依赖任何 dsh 服务（纯 WebRTC + fetch 桥），故不声明 inject。
- */
+export const inject: string[] = []
+
+// 注意：远端目录选择器的浏览器内 UI（src/client/directory-picker.ts）暂未启用。
+// 它 register 进 dsh 的 conversation.hero.workspace.directoryFlow 单席位 slot 时，
+// 会与官方 dsh-client-ui-directory-picker-native 在同一 priority 0 冲突，触发
+// "single slot already has a registration" → 前端 "Failed to load plugins"。
+// 根因与后续方案见 docs/deepsea-deepc-directory-picker-slot-conflict.md。
+
 export function apply(_ctx: unknown): void {
   bootstrapHostUi()
 }

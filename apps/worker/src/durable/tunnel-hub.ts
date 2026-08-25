@@ -2,15 +2,17 @@
 // TunnelHub —— deepc-link 管理面事件广播（Durable Object）
 //
 // 分区键 = githubId（TunnelHub:{githubId}）：同账号前端 /links + 插件 WS 连同一 DO。
-// 仅做**管理面事件广播**（节点状态），不进数据面。
+// 仅做**管理面事件广播**（节点状态事件），不进数据面。
 // 事件：
 //   · node_online  —— 插件上报 URL 后推送；前端 /links 更新状态
-//   · node_offline —— 节点下线
 //   · node_deleted —— 删节点后推送；插件收到停止本地 cloudflared
 //
 // 订阅方：
 //   · 前端 /links：WS 订阅（/ws/tunnel-events?token= 或 cookie）
 //   · 插件：出站 WS 长连接（wss://deepc.cn/ws/tunnel-events）
+//
+// 在线状态判定已改为**前端直连节点隧道地址做 WS ping/pong 探测**（纯前端，不写 DB），
+// 故本 DO 只保留「事件广播」职责，不再做 alarm 探活 / 写 status 字段。
 //
 // Hibernation：WebSocket Hibernation API（入站消息处理完即休眠，空闲不占 CPU）。
 // 广播低频（事件驱动，非轮询）→ 免费额度内。
@@ -33,6 +35,18 @@ export class TunnelHub {
     this.env = env
   }
 
+  /** 向所有已连接订阅者广播事件帧。 */
+  private broadcast(evt: { type: string; nodeId: string }): void {
+    const frame = JSON.stringify(evt)
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.send(frame)
+      } catch {
+        /* socket 已断，忽略 */
+      }
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
 
@@ -44,13 +58,8 @@ export class TunnelHub {
       } catch {
         /* ignore */
       }
-      const frame = JSON.stringify(evt)
-      for (const ws of this.state.getWebSockets()) {
-        try {
-          ws.send(frame)
-        } catch {
-          /* socket 已断，忽略 */
-        }
+      if (evt.type && evt.nodeId) {
+        this.broadcast({ type: evt.type, nodeId: evt.nodeId })
       }
       return new Response("ok")
     }

@@ -8,13 +8,30 @@
  * 校验：HMAC-SHA1 + RFC 6238 动态截断 → 6 位数字；±1 时间步容差（防时钟漂移）。
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 
 /** 生成随机 TOTP secret（默认 20 字节 → base32 32 字符）。 */
 export function generateTotpSecret(bytes = 20): string {
   return base32Encode(new Uint8Array(randomBytes(bytes)))
+}
+
+/**
+ * SHA-512 哈希（hex）—— 主站 bypass 的「远端存储散列」。
+ * 单向散列：主站存 sha512(secret)，不泄露 secret 明文（20 字节 CSPRNG，彩虹表不可行），
+ * TOTP 动态码本身仍由本地 secret 派生，安全边界不变。
+ */
+export function sha512Hex(input: string): string {
+  return createHash('sha512').update(input).digest('hex')
+}
+
+/**
+ * HMAC-SHA256（hex）—— 主站用 sha512(secret) 作密钥签一次性 ticket，插件验签。
+ * 一次性 + 短 TTL + nodeId 绑定，防重放与跨节点伪造。
+ */
+export function hmacSha256Hex(key: string, msg: string): string {
+  return createHmac('sha256', key).update(msg).digest('hex')
 }
 
 /** 字节 → base32（RFC 4648，无 padding）。 */

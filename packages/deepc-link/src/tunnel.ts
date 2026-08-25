@@ -22,6 +22,7 @@ import { join } from 'node:path'
 import { createCloudflaredManager, type CloudflaredManager } from './cloudflared'
 import { createAuthProxy, type AuthProxy } from './auth-proxy'
 import { DEFAULT_SIGNAL_BASE } from './device-auth'
+import { sha512Hex } from './totp'
 
 /** 互联模式。 */
 export type LinkMode = 'local' | 'tunnel' | 'managed'
@@ -41,8 +42,14 @@ export interface TunnelManagerOptions {
   mode: LinkMode
   /** 本地共享开关：true → 3081 监听 0.0.0.0（局域网可达）；false → 仅 127.0.0.1（本机/隧道上游）。 */
   localOn: boolean
+  /** 是否启用主站免密（bypass）：true → report 附带 sha512(secret) + 3081 注册 ticket 端点。 */
+  allowBypass: boolean
   /** 自定义域配置（Named Tunnel config.yml 路径 + 域名；无则匿名 Quick Tunnel）。 */
   namedTunnel?: { configPath: string; domain: string } | null
+  /** 鉴权代理监听端口（= dsh 端口 + 1；默认 3081）。 */
+  proxyPort?: number
+  /** 反代上游（dsh 实际端口；默认 http://127.0.0.1:3080）。 */
+  upstream?: string
   /** cloudflared 进程异常退出回调（managed 模式用于自动重连上报）。 */
   onExit?: () => void
   /** 日志回调。 */
@@ -84,10 +91,12 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
   const signalBase = opts.signalBase ?? DEFAULT_SIGNAL_BASE
   const log = opts.log ?? ((m: string) => console.log(`[deepc:tunnel] ${m}`))
   const mode = opts.mode
-  // 本地共享关闭时 3081 仅绑 127.0.0.1（本机/隧道上游）；开启则 0.0.0.0（局域网可达）。
+  const proxyPort = opts.proxyPort ?? 3081
+  const upstream = opts.upstream ?? 'http://127.0.0.1:3080'
+  // 本地共享关闭时鉴权代理仅绑 127.0.0.1（本机/隧道上游）；开启则 0.0.0.0（局域网可达）。
   const proxyHost = opts.localOn ? '0.0.0.0' : '127.0.0.1'
 
-  const proxy: AuthProxy = createAuthProxy({ log, host: proxyHost })
+  const proxy: AuthProxy = createAuthProxy({ log, host: proxyHost, port: proxyPort, upstream })
   const cf: CloudflaredManager = createCloudflaredManager({
     log,
     onUrl: (u) => {
@@ -120,6 +129,8 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
           nodeName: opts.nodeName ?? opts.nodeId,
           url,
           status,
+          // 免密直连开启时附带 sha512(secret)（单向散列，非明文）。
+          ...(opts.allowBypass ? { secretHash: sha512Hex(opts.totpSecret) } : {}),
         }),
       })
       if (!res.ok) return { ok: false, error: `report-${res.status}` }
@@ -160,7 +171,7 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
     }
     log('使用匿名 Quick Tunnel（trycloudflare.com）')
     return {
-      args: ['tunnel', '--url', 'http://127.0.0.1:3081', '--no-autoupdate'],
+      args: ['tunnel', '--url', `http://127.0.0.1:${proxyPort}`, '--no-autoupdate'],
       fixedUrl: null,
     }
   }
@@ -169,6 +180,8 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
     async connect() {
       // 1. 注入 TOTP secret + 启动 3081 鉴权代理
       proxy.setSecret(opts.totpSecret)
+      // 免密直连：开启时注入 nodeId（3081 注册 ticket 端点；关闭时 null）。
+      proxy.setBypass(opts.allowBypass ? opts.nodeId : null)
       await proxy.start()
 
       // 2. local 模式：只本地共享，不启动 cloudflared

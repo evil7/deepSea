@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 
-const CLIENT_GLOBAL = '__deepcLinkClient'
 const CLIENT_ID = 'deepc-link'
 
 /**
@@ -59,6 +58,12 @@ function buildNode(esbuildExe) {
     '--format=esm',
     '--platform=node',
     '--target=es2022',
+    // 关键：http-proxy 是 CJS 包，其内部 `require('util')` 等 node 内置模块在
+    // --format=esm 下会被 esbuild 转成 `__require(...)` 动态 require，而 Node ESM
+    // 无全局 require → 运行时抛 "Dynamic require of util is not supported"。
+    // --packages=external 让 http-proxy 整体 external，由 Node 以 CJS 原生加载
+    //（内部 require 由 Node 处理），规避该问题。运行时依赖 deepc-link 的 dependencies。
+    '--packages=external',
     '--outfile=dist/index.js',
   ]
   // node 端同样依赖 site/signal 基址常量（device-auth），
@@ -70,14 +75,18 @@ function buildNode(esbuildExe) {
   execFileSync(esbuildExe, args, { cwd: root, stdio: 'inherit' })
 }
 
-/** 用 esbuild 打包单文件 IIFE（可自动执行）。 */
-function bundleIife(esbuildExe, entry, outfile, globalName) {
+/** 用 esbuild 打包 browser 端 → 临时 CJS 输出（react external，运行时由 dsh 前端 ModuleLoader 提供）。 */
+function bundleClient(esbuildExe) {
+  const outfile = join(root, 'dist', 'client.cjs.js')
   const args = [
-    entry,
+    'src/client/index.ts',
     '--bundle',
-    '--format=iife',
-    `--global-name=${globalName}`,
+    '--format=cjs',
+    '--platform=browser',
     '--target=es2022',
+    // react 由 dsh 前端运行时提供（require("react")），不打包进产物。
+    '--external:react',
+    '--external:react/jsx-runtime',
     `--outfile=${outfile}`,
   ]
   for (const [name, value] of Object.entries(DEFINE)) {
@@ -85,13 +94,6 @@ function bundleIife(esbuildExe, entry, outfile, globalName) {
   }
   execFileSync(esbuildExe, args, { cwd: root, stdio: 'inherit' })
   return readFileSync(outfile, 'utf8')
-}
-
-/** 用 esbuild 打包 browser 端 → 临时 iife 输出。 */
-function bundleClient(esbuildExe) {
-  const outfile = join(root, 'dist', 'client.iife.js')
-  const code = bundleIife(esbuildExe, 'src/client/index.ts', outfile, CLIENT_GLOBAL)
-  return code
 }
 
 /** 把 esbuild iife 输出包装成 window.__ModuleLoader__.load 格式。 */
@@ -106,8 +108,6 @@ ${iifeCode
   .split('\n')
   .map((line) => '\t\t' + line)
   .join('\n')}
-\t\texports.name = ${CLIENT_GLOBAL}.name;
-\t\texports.apply = ${CLIENT_GLOBAL}.apply;
 \t\treturn module.exports;
 \t}
 });
@@ -123,10 +123,10 @@ function main() {
   buildNode(esbuildExe)
 
   console.log('# 2/2 browser 端（esbuild → dist/deepc-link-client.js）')
-  const iife = bundleClient(esbuildExe)
-  const wrapped = wrapClient(iife)
+  const cjs = bundleClient(esbuildExe)
+  const wrapped = wrapClient(cjs)
   writeFileSync(join(root, 'dist', 'deepc-link-client.js'), wrapped)
-  rmSync(join(root, 'dist', 'client.iife.js'), { force: true })
+  rmSync(join(root, 'dist', 'client.cjs.js'), { force: true })
   console.log('  ✓ dist/deepc-link-client.js')
 }
 

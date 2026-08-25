@@ -20,6 +20,14 @@ export interface TunnelNodeView {
   createdAt: number
 }
 
+/** 主站签发的一次性 ticket（后台免密直连 bypass）。 */
+export interface TunnelTicket {
+  nodeId: string
+  ts: number
+  nonce: string
+  sig: string
+}
+
 async function authFetch<T>(
   url: string,
   init?: RequestInit
@@ -52,4 +60,24 @@ export async function deleteTunnel(nodeId: string): Promise<boolean> {
     body: JSON.stringify({ nodeId }),
   })
   return data?.ok === true
+}
+
+/**
+ * 请求后台免密直连（bypass）：主站签发一次性 ticket。
+ * 成功返回 { url, ticket }；失败（未启用 bypass / 无权限 / 未登录）返回 null，
+ * 前端回退到「新窗口打开 + 手动输 TOTP」。
+ */
+export async function requestAccess(
+  nodeId: string
+): Promise<{ url: string; ticket: TunnelTicket } | null> {
+  const data = await authFetch<{
+    ok?: boolean
+    url?: string
+    ticket?: TunnelTicket
+  }>("/auth/tunnel/access", {
+    method: "POST",
+    body: JSON.stringify({ nodeId }),
+  })
+  if (!data?.ok || !data.url || !data.ticket) return null
+  return { url: data.url, ticket: data.ticket }
 }

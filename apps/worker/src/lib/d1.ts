@@ -78,6 +78,7 @@ export type AuditEventCode =
   | "device_grant"
   | "tunnel_report"
   | "tunnel_delete"
+  | "tunnel_access"
 
 /** deepc 设备授权令牌行（只存 token 哈希）。 */
 export interface DeepcDeviceTokenRow {
@@ -403,6 +404,7 @@ export interface DeepcTunnelRow {
   node_name: string
   url: string | null
   status: string
+  secret_hash: string | null
   created_at: number
   modified_at: number
 }
@@ -422,18 +424,21 @@ export async function reportTunnel(
     url: string
     /** 节点在线状态：connected（默认，上报即在线）/ offline（断链上报离线）。 */
     status?: "connected" | "offline"
+    /** sha512(TOTP secret)（免密直连开启时附带；关闭时缺省 → 清掉旧散列）。 */
+    secretHash?: string
   }
 ): Promise<void> {
   const now = Date.now()
   const status = input.status ?? "connected"
   await env.DEEPSEA_D1.prepare(
     `INSERT INTO deepc_tunnels
-       (node_id, github_id, node_name, url, status, created_at, modified_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+       (node_id, github_id, node_name, url, status, secret_hash, created_at, modified_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(node_id) DO UPDATE SET
        node_name = excluded.node_name,
        url = excluded.url,
        status = excluded.status,
+       secret_hash = excluded.secret_hash,
        modified_at = excluded.modified_at`
   )
     .bind(
@@ -442,6 +447,7 @@ export async function reportTunnel(
       input.nodeName,
       input.url,
       status,
+      input.secretHash ?? null,
       now,
       now,
     )

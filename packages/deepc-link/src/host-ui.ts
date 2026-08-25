@@ -95,6 +95,8 @@ interface BackendStatus {
   totpSecret: string | null
   otpauthUri: string | null
   devMode?: boolean
+  allowBypass?: boolean
+  connectedAt?: number | null
   profile?: { login: string; avatar_url: string; name: string | null }
   error?: string
 }
@@ -113,6 +115,12 @@ const QR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" str
 
 /** 用户 icon（登录按钮，user circle；登录后替换为实际头像）。 */
 const USER_ICON = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.5 3.6-6 8-6s8 2.5 8 6"/></svg>`
+
+/** 复制 icon（内联 SVG，lucide copy）。 */
+const COPY_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+
+/** 对勾 icon（复制成功反馈）。 */
+const CHECK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`
 
 /** 现代简约设计 token（移植 shadcn 语义到 vanilla DOM，插件端不依赖 React/Tailwind）。 */
 const CSS = `
@@ -208,9 +216,10 @@ const CSS = `
 .dcb-row + .dcb-row { border-top: 1px solid var(--dc-border); }
 .dcb-row-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .dcb-row-label { font-size: 13px; font-weight: 600; color: var(--dc-fg); }
-.dcb-row-sub { font-size: 11px; color: var(--dc-fg-dim); line-height: 1.4; }
-.dcb-addr { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.dcb-addr code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: var(--dc-fg-soft); word-break: break-all; line-height: 1.4; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcb-row-sub { font-size: 11px; color: var(--dc-fg-dim); line-height: 1.4; display: flex; align-items: center; }
+.dcb-sub-copy { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; padding: 0; border: none; background: transparent; color: var(--dc-fg-dim); cursor: pointer; transition: color .15s ease; flex-shrink: 0; }
+.dcb-sub-copy:hover { color: var(--dc-primary); }
+.dcb-sub-copy.copied { color: #34d399; }
 .dcb-user { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 4px; }
 .dcb-user-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; background: var(--dc-bg-soft); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--dc-primary); overflow: hidden; border: 1px solid var(--dc-border-strong); }
 .dcb-user-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -238,6 +247,11 @@ const CSS = `
 /* 开发模式行 */
 .dcb-dev { border: 1px solid var(--dc-border); border-radius: var(--dc-radius); background: var(--dc-card); }
 
+/* 远端单行（时长 + 断开） */
+.dcb-remote-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px; }
+.dcb-remote-duration { font-size: 15px; font-weight: 700; color: var(--dc-fg); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.dcb-remote-status { font-size: 11px; color: var(--dc-fg-dim); margin-top: 2px; }
+
 @keyframes dcbFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 /* ····· 二维码整卡切换面板 ····· */
@@ -259,10 +273,16 @@ function qrDataUrl(otpauthUri: string): string {
   return `https://api.qrserver.com/v1/create-qr-code/?size=132x132&data=${encoded}`
 }
 
-/** 隧道 URL 的二级域名前缀（去 https:// 协议）。 */
+/** 隧道 URL 的二级域名前缀（去 https:// 协议与路径）。 */
 function prettyHost(url: string | null): string {
   if (!url) return ''
   return url.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+}
+
+/** 隧道 URL 的最前段（标识字段），如 surround-magnetic-belly-intelligent。 */
+function prettySubdomain(url: string | null): string {
+  if (!url) return ''
+  return prettyHost(url).split('.')[0] || ''
 }
 
 /** 文字复制（剪贴板 + 按钮「已复制」短暂反馈）。 */
@@ -270,6 +290,18 @@ function copyText(text: string, btn: HTMLElement): void {
   void navigator.clipboard?.writeText(text)
   btn.textContent = '已复制'
   setTimeout(() => (btn.textContent = '复制'), 1200)
+}
+
+/** 复制完整 URL（icon 按钮：复制 → 对勾短暂反馈）。 */
+function copyIconText(text: string, btn: HTMLElement): void {
+  if (!text) return
+  void navigator.clipboard?.writeText(text)
+  btn.innerHTML = CHECK_ICON
+  btn.classList.add('copied')
+  setTimeout(() => {
+    btn.innerHTML = COPY_ICON
+    btn.classList.remove('copied')
+  }, 1200)
 }
 
 /** TOTP secret 分组显示（每 4 字符一空格）。 */
@@ -286,6 +318,21 @@ export function hostUiInjected(): boolean {
 function isRemoteContext(): boolean {
   const { hostname, port } = window.location
   return hostname === 'sonar-landing-page.deepc.cn' || port === '8789'
+}
+
+/** 是否 loopback 访问（本地 dsh：显示完整配置卡片；远端：仅显示时长+断开单行）。 */
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
+}
+
+/** 连接时长格式化（MM:SS，超 1 小时 HH:MM:SS）。 */
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
 }
 
 /** 注入悬浮球 + Sheet 卡片，返回控制句柄。 */
@@ -327,6 +374,14 @@ export function bootstrapHostUi(): HostUi {
     </div>
     <div class="dcb-body">
 
+      <div class="dcb-remote-row" id="dcb-remote-row" style="display:none">
+        <div class="dcb-row-main">
+          <div class="dcb-remote-duration" id="dcb-remote-duration">已连接</div>
+          <div class="dcb-remote-status">远程控制 · 本机配置不可见</div>
+        </div>
+        <button class="dcb-iconbtn danger" id="dcb-remote-disconnect">断开</button>
+      </div>
+
       <div class="dcb-card dcb-otp" id="dcb-otp-panel">
         <div class="dcb-otp-head">
           <span class="dcb-otp-label dcb-otp-label-row">
@@ -367,19 +422,15 @@ export function bootstrapHostUi(): HostUi {
         <div class="dcb-row">
           <div class="dcb-row-main">
             <div class="dcb-row-label">隧道映射</div>
-            <div class="dcb-row-sub" id="dcb-tunnel-sub">通过 Cloudflare 暴露到公网</div>
+            <div class="dcb-row-sub">
+              <span id="dcb-tunnel-sub">通过 Cloudflare 暴露到公网</span>
+              <button class="dcb-sub-copy" id="dcb-tunnel-url-copy" title="复制完整地址" style="display:none">${COPY_ICON}</button>
+            </div>
           </div>
           <label class="dcb-switch">
             <input type="checkbox" id="dcb-tunnel-switch" />
             <span class="dcb-track"></span>
           </label>
-        </div>
-        <div class="dcb-row" id="dcb-tunnel-row" style="display:none">
-          <div class="dcb-row-main">
-            <div class="dcb-row-label">公网地址</div>
-            <div class="dcb-addr"><code id="dcb-tunnel-url-code"></code></div>
-          </div>
-          <button class="dcb-iconbtn" id="dcb-tunnel-url-copy">复制</button>
         </div>
         <div class="dcb-row">
           <div class="dcb-row-main">
@@ -388,6 +439,16 @@ export function bootstrapHostUi(): HostUi {
           </div>
           <label class="dcb-switch">
             <input type="checkbox" id="dcb-devmode" />
+            <span class="dcb-track"></span>
+          </label>
+        </div>
+        <div class="dcb-row">
+          <div class="dcb-row-main">
+            <div class="dcb-row-label">主站免密</div>
+            <div class="dcb-row-sub">从 deepc 后台打开节点时免输 2FA</div>
+          </div>
+          <label class="dcb-switch">
+            <input type="checkbox" id="dcb-bypass" />
             <span class="dcb-track"></span>
           </label>
         </div>
@@ -414,6 +475,7 @@ export function bootstrapHostUi(): HostUi {
   const headAvatar = sheet.querySelector<HTMLElement>('#dcb-head-avatar')!
   const headName = sheet.querySelector<HTMLElement>('#dcb-head-name')!
   const devModeInput = sheet.querySelector<HTMLInputElement>('#dcb-devmode')!
+  const bypassInput = sheet.querySelector<HTMLInputElement>('#dcb-bypass')!
   const totpCodeEl = sheet.querySelector<HTMLElement>('#dcb-totp-code')!
   const totpBar = sheet.querySelector<HTMLElement>('#dcb-totp-bar')!
   const totpRemain = sheet.querySelector<HTMLElement>('#dcb-totp-remain')!
@@ -429,9 +491,30 @@ export function bootstrapHostUi(): HostUi {
   const localSub = sheet.querySelector<HTMLElement>('#dcb-local-sub')!
   const tunnelSwitch = sheet.querySelector<HTMLInputElement>('#dcb-tunnel-switch')!
   const tunnelSub = sheet.querySelector<HTMLElement>('#dcb-tunnel-sub')!
-  const tunnelRow = sheet.querySelector<HTMLElement>('#dcb-tunnel-row')!
-  const tunnelUrlCode = sheet.querySelector<HTMLElement>('#dcb-tunnel-url-code')!
   const tunnelUrlCopy = sheet.querySelector<HTMLElement>('#dcb-tunnel-url-copy')!
+  const remoteRow = sheet.querySelector<HTMLElement>('#dcb-remote-row')!
+  const remoteDuration = sheet.querySelector<HTMLElement>('#dcb-remote-duration')!
+  const remoteDisconnect = sheet.querySelector<HTMLElement>('#dcb-remote-disconnect')!
+
+  // 是否远端访问（非 loopback）：远端只显示「时长 + 断开」单行，隐藏本机配置卡片。
+  const remoteMode = !isLoopbackHost(window.location.hostname)
+  if (remoteMode) {
+    otpPanel.style.display = 'none'
+    qrPanel.style.display = 'none'
+    const group = sheet.querySelector<HTMLElement>('.dcb-group')
+    if (group) group.style.display = 'none'
+    remoteRow.style.display = ''
+    // 每秒刷新连接时长
+    setInterval(() => {
+      if (status.connectedAt) {
+        remoteDuration.textContent = formatDuration(Date.now() - status.connectedAt)
+      }
+    }, 1000)
+    // 断开按钮：断开隧道（远端访问随之失效）
+    remoteDisconnect.addEventListener('click', () => {
+      void deepcCall('disconnect').then(() => refreshStatus())
+    })
+  }
 
   // 前端展示态（从后端 status 同步）。
   let status: BackendStatus = {
@@ -446,14 +529,9 @@ export function bootstrapHostUi(): HostUi {
     otpauthUri: null,
   }
 
-  // 隧道开关意图（用户本会话内的选择；登录后锁定为开）。
-  let tunnelOn = false
-  let tunnelOnInit = false
-
-  /** 有效模式（前端推导）：登录 → managed；隧道开关 → tunnel；否则 local。 */
-  function effectiveMode(): BackendStatus['mode'] {
-    if (status.loggedIn) return 'managed'
-    return tunnelOn ? 'tunnel' : 'local'
+  /** 前端调试日志（开发模式下输出到浏览器控制台）。 */
+  function debugLog(msg: string): void {
+    if (status.devMode) console.log(`[deepc:ui] ${msg}`)
   }
 
   function renderHead(): void {
@@ -494,17 +572,23 @@ export function bootstrapHostUi(): HostUi {
       localSub.textContent = '已关闭，仅本机可访问'
       localSub.title = ''
     }
-    // 隧道映射：登录后锁定为开（纳管需要隧道）。
-    const locked = status.loggedIn
-    tunnelSwitch.checked = tunnelOn || locked
-    tunnelSwitch.disabled = locked
-    // 隧道开启后：直接显示公网地址（去协议、无路径的 host）；未取到则回退占位描述。
+    // 隧道映射：mode 非 local 即隧道开（tunnel/managed）。始终可开可关（不因登录锁定）。
+    const tunnelActive = status.mode !== 'local'
+    tunnelSwitch.checked = tunnelActive
+    tunnelSwitch.disabled = false
+    // 隧道开启后：仅显示前方二级域字段；复制按钮复制完整 URL。
     if (status.url) {
-      tunnelSub.textContent = prettyHost(status.url)
+      tunnelSub.textContent = prettySubdomain(status.url)
       tunnelSub.title = status.url
-    } else {
-      tunnelSub.textContent = locked ? '已随云端纳管启用' : '通过 Cloudflare 暴露到公网'
+      tunnelUrlCopy.style.display = ''
+    } else if (tunnelActive) {
+      tunnelSub.textContent = status.loggedIn ? '已随云端纳管启用' : '隧道连接中…'
       tunnelSub.title = ''
+      tunnelUrlCopy.style.display = 'none'
+    } else {
+      tunnelSub.textContent = '通过 Cloudflare 暴露到公网'
+      tunnelSub.title = ''
+      tunnelUrlCopy.style.display = 'none'
     }
   }
 
@@ -530,33 +614,41 @@ export function bootstrapHostUi(): HostUi {
     const now = Date.now()
     const stepMs = 30_000
     const remainingMs = stepMs - (now % stepMs)
+    const remainSec = Math.ceil(remainingMs / 1000)
     const code = await browserTotpCode(status.totpSecret, now)
     totpCodeEl.textContent = `${code.slice(0, 3)} ${code.slice(3)}`
-    totpRemain.textContent = `${Math.ceil(remainingMs / 1000)}s`
+    totpRemain.textContent = `${remainSec}s`
+    // 剩余 ≤ 5s 时倒计时/进度条转红，提示动态码即将轮换（参考主流 TOTP 应用）。
+    const expiring = remainSec <= 5
+    totpRemain.style.color = expiring ? 'var(--dc-danger)' : ''
     totpBar.style.width = `${(remainingMs / stepMs) * 100}%`
-  }
-
-  function renderAddresses(): void {
-    // 隧道开启时显示公网地址行；不隐藏本地共享行（本地共享是独立开关）。
-    const tunnel = status.url
-    const tunnelRowVisible = tunnelOn || status.connected
-    tunnelRow.style.display = tunnelRowVisible && tunnel ? '' : 'none'
-    tunnelUrlCode.textContent = tunnel ?? ''
+    totpBar.style.background = expiring ? 'var(--dc-danger)' : ''
   }
 
   /** 根据后端状态快照刷新 UI。 */
+  /** 远端单行：刷新连接时长。 */
+  function renderRemote(): void {
+    if (status.connectedAt) {
+      remoteDuration.textContent = formatDuration(Date.now() - status.connectedAt)
+    } else {
+      remoteDuration.textContent = status.connected ? '已连接' : '未连接'
+    }
+  }
+
   function applyStatus(next: BackendStatus): void {
     status = next
-    if (!tunnelOnInit) {
-      tunnelOn = next.mode === 'tunnel' || next.mode === 'managed'
-      tunnelOnInit = true
+    if (remoteMode) {
+      renderRemote()
+    } else {
+      renderHead()
+      renderTiers()
+      renderTotp()
     }
-    renderHead()
-    renderTiers()
-    renderTotp()
-    renderAddresses()
     if (typeof next.devMode === 'boolean' && devModeInput.checked !== next.devMode) {
       devModeInput.checked = next.devMode
+    }
+    if (typeof next.allowBypass === 'boolean' && bypassInput.checked !== next.allowBypass) {
+      bypassInput.checked = next.allowBypass
     }
   }
 
@@ -565,11 +657,15 @@ export function bootstrapHostUi(): HostUi {
     const s = await deepcCall<BackendStatus>('status')
     if (!s) return
     applyStatus(s)
+    debugLog(
+      `状态：mode=${s.mode}, connected=${s.connected}, url=${s.url ?? '-'}, localOn=${s.localOn}, loggedIn=${s.loggedIn}`,
+    )
   }
 
   // ── 本地共享开关 ──
   localSwitch.addEventListener('change', () => {
     void (async () => {
+      debugLog(`本地共享 → ${localSwitch.checked}`)
       const r = await deepcCall<{ ok?: boolean }>('local', { on: localSwitch.checked })
       if (r && !r.ok) {
         localSwitch.checked = !localSwitch.checked
@@ -580,15 +676,12 @@ export function bootstrapHostUi(): HostUi {
 
   // ── 隧道映射开关 ──
   tunnelSwitch.addEventListener('change', () => {
-    if (status.loggedIn) {
-      // 登录后锁定为开（纳管需要隧道）。
-      tunnelSwitch.checked = true
-      return
-    }
-    tunnelOn = tunnelSwitch.checked
+    const on = tunnelSwitch.checked
     void (async () => {
-      await deepcCall('mode', { mode: effectiveMode() })
-      if (status.connected) await deepcCall('connect')
+      // 开：已登录 → managed（上报）；未登录 → tunnel。关：local（仅 3081 局域网）。
+      const target: BackendStatus['mode'] = on ? (status.loggedIn ? 'managed' : 'tunnel') : 'local'
+      debugLog(`隧道映射 → ${on ? '开' : '关'}（mode=${target}）`)
+      await deepcCall('mode', { mode: target })
       await refreshStatus()
     })()
   })
@@ -596,7 +689,7 @@ export function bootstrapHostUi(): HostUi {
   // ── 登录 / 登出（头部）──
   headLogin.addEventListener('click', () => {
     void (async () => {
-      await deepcCall('mode', { mode: 'managed' })
+      debugLog('登录（Device Grant）')
       const r = await deepcCall<{ url?: string }>('login')
       if (r?.url) window.open(r.url, '_blank')
       await refreshStatus()
@@ -607,8 +700,8 @@ export function bootstrapHostUi(): HostUi {
     const name = status.profile?.name?.trim() || status.profile?.login || '当前账号'
     if (window.confirm(`登出 ${name} 并断开互联？`)) {
       void (async () => {
+        debugLog('登出')
         await deepcCall('logout')
-        await deepcCall('mode', { mode: tunnelOn ? 'tunnel' : 'local' })
         await refreshStatus()
       })()
     }
@@ -631,7 +724,7 @@ export function bootstrapHostUi(): HostUi {
     copyText(status.totpSecret ?? '', totpCopy)
   })
   tunnelUrlCopy.addEventListener('click', () => {
-    copyText(status.url ?? '', tunnelUrlCopy)
+    copyIconText(status.url ?? '', tunnelUrlCopy)
   })
 
   // ── 重新生成安全码 ──
@@ -641,7 +734,14 @@ export function bootstrapHostUi(): HostUi {
 
   // ── 开发模式开关 ──
   devModeInput.addEventListener('change', () => {
+    debugLog(`开发模式 → ${devModeInput.checked}`)
     void deepcCall('devmode', { enabled: devModeInput.checked }).then(() => refreshStatus())
+  })
+
+  // ── 主站免密开关 ──
+  bypassInput.addEventListener('change', () => {
+    debugLog(`主站免密 → ${bypassInput.checked}`)
+    void deepcCall('bypass', { enabled: bypassInput.checked }).then(() => refreshStatus())
   })
 
   // ── 展开/收起动画（animejs）─────────────────────

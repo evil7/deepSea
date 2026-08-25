@@ -97,3 +97,27 @@ export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(input))
   return bytesToHex(new Uint8Array(digest))
 }
+
+/**
+ * SHA-512 哈希（hex）—— 主站 bypass 的「远端存储散列」（sha512(TOTP secret)）。
+ * 单向散列，主站不存 secret 明文。
+ */
+export async function sha512Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-512", encoder.encode(input))
+  return bytesToHex(new Uint8Array(digest))
+}
+
+/**
+ * HMAC-SHA256（hex）—— 主站用 sha512(secret) 作密钥签一次性 ticket（插件端验签）。
+ */
+export async function hmacSha256Hex(key: string, msg: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  )
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(msg))
+  return bytesToHex(new Uint8Array(sig))
+}

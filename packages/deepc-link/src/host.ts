@@ -44,6 +44,8 @@ export interface DeepcHostOptions {
   siteBase?: string
   /** 日志回调。 */
   log?: (msg: string) => void
+  /** dsh 实际监听端口（getter：listen 完成前可能返回 undefined，兜底 3080）。 */
+  getDshPort?: () => number
 }
 
 export interface DeepcHost {
@@ -67,6 +69,8 @@ export interface DeepcHost {
   rotateTotpSecret: () => Promise<string>
   /** 切换开发模式。 */
   setDevMode: (enabled: boolean) => Promise<void>
+  /** 切换主站免密（bypass：report 附 sha512(secret) + 3081 ticket 端点）。 */
+  setBypass: (enabled: boolean) => Promise<void>
   /** 处理控制路由请求。 */
   handleControl: (req: IncomingMessage, res: ServerResponse) => Promise<void>
   /** 销毁。 */
@@ -91,6 +95,10 @@ export interface DeepcHostStatus {
   otpauthUri: string | null
   /** 开发模式。 */
   devMode: boolean
+  /** 主站免密开关（bypass）。 */
+  allowBypass: boolean
+  /** 互联建立时间戳（前端「时长」显示用；null = 未连接）。 */
+  connectedAt: number | null
   profile?: { login: string; avatar_url: string; name: string | null }
   error?: string
 }
@@ -164,8 +172,18 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
 
   /** 开发模式：开启时基址切到本地 127.0.0.1:5174。 */
   let devMode = false
+  /** 开发模式调试日志（仅 devMode 下输出，避免污染生产日志）。 */
+  const debugLog = (m: string): void => {
+    if (devMode) log(m)
+  }
   const resolveSignalBase = (): string => (devMode ? DEV_MODE_BASE : configuredSignalBase)
   const resolveSiteBase = (): string => (devMode ? DEV_MODE_BASE : configuredSiteBase)
+  /** dsh 实际监听端口（getter 延迟读取，listen 未完成兜底 3080）。 */
+  const resolveDshPort = (): number => opts.getDshPort?.() ?? 3080
+  /** 鉴权代理端口 = dsh 端口 + 1。 */
+  const resolveProxyPort = (): number => resolveDshPort() + 1
+  /** 反代上游 = 本机 dsh 端口。 */
+  const resolveUpstream = (): string => `http://127.0.0.1:${resolveDshPort()}`
 
   const deviceName = hostname() ?? 'dsh-node'
   const nodeId = deriveNodeId(deviceName)
@@ -175,11 +193,14 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
   let totpSecret: string | null = null
   let tunnel: TunnelManager | null = null
   let events: TunnelEventsClient | null = null
-  let loggedIn = false
   let lastError: string | undefined
   let profile: DeepcHostStatus['profile']
   // 本地共享开关（3081 局域网暴露）。默认开；关 → 3081 仅绑 127.0.0.1（隧道仍可用）。
   let localOn = true
+  // 主站免密（bypass）。默认关；开 → report 附 sha512(secret) + 3081 注册 ticket 端点。
+  let allowBypass = false
+  /** 互联建立时间戳（前端「时长」显示用；null = 未连接）。 */
+  let connectedAt: number | null = null
 
   let pollGeneration = 0
 
@@ -206,6 +227,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     // 必须 await disconnect：确保 3081 端口真正释放，否则切模式重建 tunnel 时
     // 新 proxy 立即 listen 会与旧 proxy 撞 EADDRINUSE（见 auth-proxy.start 幂等 + 此处顺序）。
     if (t) await t.disconnect()
+    connectedAt = null
   }
 
   /** 建立互联层（tunnel manager 按 mode；managed 模式加 DO 事件订阅）。 */
@@ -219,7 +241,10 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       totpSecret,
       mode,
       localOn,
+      allowBypass,
       namedTunnel: mode !== 'local' ? detectNamedTunnel() : null,
+      proxyPort: resolveProxyPort(),
+      upstream: resolveUpstream(),
       onExit: () => {
         // cloudflared 断链 → 先上报离线（主站实时标记），再退避重连（成功后 report 恢复在线）。
         // 指数退避：1s → 2s → 4s → … 上限 30s，避免 CF 限流(429)后疯狂重连。
@@ -258,11 +283,39 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     }
   }
 
-  /** 载入持久化的 device_token 与 TOTP secret。 */
+  /** 持久化运行时状态（mode/localOn/devMode/allowBypass），刷新/重启后恢复。 */
+  async function persistState(): Promise<void> {
+    try {
+      await persistFile('state.json', JSON.stringify({ mode, localOn, devMode, allowBypass }))
+    } catch {
+      /* 忽略写盘失败（降级为内存态） */
+    }
+  }
+
+  /** 读取持久化的运行时状态（不存在/损坏则返回空对象，取默认值）。 */
+  async function readState(): Promise<{ mode?: LinkMode; localOn?: boolean; devMode?: boolean; allowBypass?: boolean }> {
+    const raw = await readFileIfExists('state.json')
+    if (!raw) return {}
+    try {
+      return JSON.parse(raw) as { mode?: LinkMode; localOn?: boolean; devMode?: boolean; allowBypass?: boolean }
+    } catch {
+      return {}
+    }
+  }
+
+  /** 载入持久化的运行时状态 + device_token + TOTP secret。 */
   async function loadPersisted(): Promise<void> {
+    // 恢复运行时状态（mode/localOn/devMode/allowBypass）
+    const st = await readState()
+    if (st.mode === 'local' || st.mode === 'tunnel' || st.mode === 'managed') mode = st.mode
+    if (typeof st.localOn === 'boolean') localOn = st.localOn
+    if (typeof st.devMode === 'boolean') devMode = st.devMode
+    if (typeof st.allowBypass === 'boolean') allowBypass = st.allowBypass
+    // 恢复 device_token
     if (!token) {
       token = await readFileIfExists('device-token')
     }
+    // 恢复 TOTP secret（无则生成并持久化）
     if (!totpSecret) {
       const saved = await readFileIfExists('totp-secret')
       if (saved) totpSecret = saved
@@ -273,20 +326,52 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     }
   }
 
+  /** 启动当前模式的互联层（local 也启动 3081 鉴权代理；tunnel/managed 额外启动 cloudflared）。 */
+  async function connect(): Promise<{ ok: boolean; url?: string; error?: string }> {
+    if (mode === 'managed' && !token) {
+      lastError = 'not-logged-in'
+      return { ok: false, error: 'not-logged-in' }
+    }
+    if (!totpSecret) {
+      totpSecret = generateTotpSecret()
+      await persistFile('totp-secret', totpSecret)
+    }
+    if (!tunnel) setupConnections()
+    resetReconnect()
+    const r = (await tunnel?.connect()) ?? { ok: false, error: 'no-tunnel-manager' }
+    if (!r.ok) {
+      lastError = r.error
+      connectedAt = null
+    } else {
+      lastError = undefined
+      connectedAt = Date.now()
+    }
+    return r
+  }
+
   return {
     async login() {
-      if (mode !== 'managed') {
-        return { ok: false, reason: 'mode-not-managed' }
-      }
       if (token) {
-        loggedIn = true
+        // 已登录：确保 managed 模式 + 上报（token 可能持久化自上次会话）
+        if (mode !== 'managed') {
+          await stopConnections()
+          mode = 'managed'
+          await persistState()
+        }
         setupConnections()
-        // 已有 token（持久化自上次会话）也应拉取 profile，供头部头像/姓名展示。
+        await connect()
         if (!profile) {
           const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
           if (p) profile = p.profile
         }
         return { ok: true }
+      }
+      // 未登录：切到 managed 模式（先不 connect，等授权拿到 token 后自动 connect 上报）
+      if (mode !== 'managed') {
+        await stopConnections()
+        mode = 'managed'
+        await persistState()
+        setupConnections()
       }
       const state = generateConnectId()
       const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}`
@@ -296,9 +381,9 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         if (!t || gen !== pollGeneration) return
         token = t
         await persistFile('device-token', t)
-        loggedIn = true
         log('Device Grant 完成，已获取 device_token')
         setupConnections()
+        await connect()
         const p = await fetchDeviceProfile(t, { signalBase: resolveSignalBase() })
         if (p) profile = p.profile
       })()
@@ -306,18 +391,24 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     },
     async restore() {
       await loadPersisted()
-      if (token && mode === 'managed') {
-        loggedIn = true
-        setupConnections()
+      debugLog(
+        `恢复状态：mode=${mode}, localOn=${localOn}, devMode=${devMode}, token=${token ? '已登录' : '未登录'}`,
+      )
+      // 恢复登录档案（token 存在即已登录，拉 profile 供头部展示）
+      if (token) {
         const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
         if (p) profile = p.profile
+      }
+      // 有 secret 就真正启动互联层（local 模式也启动 3081 鉴权代理）
+      if (totpSecret) {
+        setupConnections()
+        await connect()
       }
       lastError = undefined
     },
     async logout() {
       pollGeneration++
       token = null
-      loggedIn = false
       profile = undefined
       try {
         const { unlink } = await import('node:fs/promises')
@@ -326,92 +417,98 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         /* ignore */
       }
       await stopConnections()
+      // 登出后：managed → tunnel（保留隧道，停止纳管上报）
+      if (mode === 'managed') {
+        mode = 'tunnel'
+        await persistState()
+      }
+      setupConnections()
+      if (totpSecret) await connect()
     },
     status() {
       return {
         mode,
-        loggedIn,
+        loggedIn: token !== null,
         deviceName,
         connected: tunnel?.status().connected ?? false,
+        connectedAt,
         url: tunnel?.url() ?? null,
-        localUrl: localOn && localLanIp() ? `http://${localLanIp()}:3081` : null,
+        localUrl: localOn && localLanIp() ? `http://${localLanIp()}:${resolveProxyPort()}` : null,
         localOn,
         totpSecret,
         otpauthUri: totpSecret ? otpauthUri(totpSecret, deviceName) : null,
         devMode,
+        allowBypass,
         profile,
         error: lastError,
       }
     },
-    async connect() {
-      if (mode === 'managed' && !token) {
-        lastError = 'not-logged-in'
-        return { ok: false, error: 'not-logged-in' }
-      }
-      if (!totpSecret) {
-        totpSecret = generateTotpSecret()
-        await persistFile('totp-secret', totpSecret)
-      }
-      if (!tunnel) setupConnections()
-      resetReconnect()
-      const r = (await tunnel?.connect()) ?? { ok: false, error: 'no-tunnel-manager' }
-      if (!r.ok) lastError = r.error
-      else lastError = undefined
-      return r
-    },
+    connect,
     async disconnect() {
       await tunnel?.disconnect()
+      connectedAt = null
     },
     async setMode(next) {
       if (mode === next) return
-      const wasConnected = tunnel?.status().connected ?? false
       await stopConnections()
       mode = next
+      // 强关联：开启隧道/纳管 → 本地共享必然开启（隧道映射的地址就是本地共享 3081 反代）。
+      if (next !== 'local' && !localOn) {
+        localOn = true
+        log('隧道映射开启 → 本地共享一并开启')
+      }
+      await persistState()
       log(`互联模式 → ${next}`)
       if (next === 'managed' && token) {
-        loggedIn = true
         const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
         if (p) profile = p.profile
       }
       setupConnections()
-      if (wasConnected && next !== 'local') {
-        await tunnel?.connect()
-      }
+      if (totpSecret) await connect()
     },
     async setLocal(on: boolean) {
       if (localOn === on) return
-      const wasConnected = tunnel?.status().connected ?? false
       await stopConnections()
       localOn = on
+      // 本地共享关闭 → 隧道映射一并关闭（隧道/纳管是「本地共享」之上的增强暴露）。
+      if (!on && mode !== 'local') {
+        mode = 'local'
+        log('本地共享关闭 → 隧道映射一并关闭')
+      }
+      await persistState()
       log(`本地共享 ${on ? '开启' : '关闭'}（3081 → ${on ? '0.0.0.0' : '127.0.0.1'}）`)
       setupConnections()
-      if (wasConnected) {
-        await tunnel?.connect()
-      }
+      if (totpSecret) await connect()
     },
     async rotateTotpSecret() {
       totpSecret = generateTotpSecret()
       await persistFile('totp-secret', totpSecret)
       log('TOTP secret 已重新生成（需重新绑定 2FA 应用）')
-      if (tunnel) {
-        const wasConnected = tunnel.status().connected
-        await stopConnections()
-        setupConnections()
-        if (wasConnected) await tunnel?.connect()
-      }
+      await stopConnections()
+      setupConnections()
+      if (totpSecret) await connect()
       return totpSecret
     },
     /** 切换开发模式（基址在 production 与本地 127.0.0.1:5174 间切换）。 */
     async setDevMode(enabled: boolean) {
       if (devMode === enabled) return
       devMode = enabled
+      await persistState()
       log(`开发模式 ${enabled ? '开启' : '关闭'}（基址 → ${resolveSignalBase()}）`)
-      const wasConnected = tunnel?.status().connected ?? false
       await stopConnections()
       setupConnections()
-      if (wasConnected && mode !== 'local') {
-        await tunnel?.connect()
-      }
+      if (totpSecret) await connect()
+    },
+    /** 切换主站免密（bypass：report 附 sha512(secret) + 3081 ticket 端点）。 */
+    async setBypass(enabled: boolean) {
+      if (allowBypass === enabled) return
+      allowBypass = enabled
+      await persistState()
+      log(`主站免密 ${enabled ? '开启' : '关闭'}`)
+      // 重建连接：让 tunnel 重新上报（附/不附 secretHash）并刷新 3081 ticket 端点注册。
+      await stopConnections()
+      setupConnections()
+      if (totpSecret) await connect()
     },
     async handleControl(req, res) {
       try {
@@ -492,6 +589,22 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
           }
           await this.setDevMode(enabled)
           sendJson(res, 200, { ok: true, devMode: enabled })
+          return
+        }
+        if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/bypass`) {
+          const raw = await new Promise<string>((resolve) => {
+            let d = ''
+            req.on('data', (c) => (d += c))
+            req.on('end', () => resolve(d))
+          })
+          let enabled = false
+          try {
+            enabled = (JSON.parse(raw || '{}') as { enabled?: boolean }).enabled === true
+          } catch {
+            /* 非法 body → 默认 false */
+          }
+          await this.setBypass(enabled)
+          sendJson(res, 200, { ok: true, allowBypass: enabled })
           return
         }
         sendJson(res, 404, { ok: false, error: 'not-found' })

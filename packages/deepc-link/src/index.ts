@@ -32,7 +32,11 @@ export const inject = ['webServer']
 
 export function apply(ctx: Context): void {
   if (deepcHost) return
-  const host = createDeepcHost()
+  // 动态判定 dsh 实际监听端口（webServer 服务暴露 port；listen 未完成时为 undefined → 兜底 3080）。
+  // 鉴权代理端口 = dsh 端口 + 1，反代上游 = dsh 端口（127.0.0.1）。
+  const host = createDeepcHost({
+    getDshPort: () => ctx.webServer.port ?? 3080,
+  })
   deepcHost = host
   // 注册 /deepc 前缀路由承载前端控制（同源，复用 dsh 3080，免 CORS）。
   ctx.effect(() =>

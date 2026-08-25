@@ -23,6 +23,7 @@ import {
   deleteTunnel,
 } from "../lib/d1"
 import { appendLog } from "../lib/d1"
+import { hmacSha256Hex, randomTokenHex } from "../lib/crypto"
 import { getClientIp } from "../lib/ratelimit"
 
 const CORS_HEADERS = {
@@ -62,9 +63,9 @@ export async function handleTunnelReport(
   const githubId = await resolveActorUserId(request, env)
   if (githubId === null) return json({ ok: false, authed: false }, 401)
 
-  let body: { nodeId?: unknown; nodeName?: unknown; url?: unknown; status?: unknown }
+  let body: { nodeId?: unknown; nodeName?: unknown; url?: unknown; status?: unknown; secretHash?: unknown }
   try {
-    body = (await request.json()) as { nodeId?: unknown; nodeName?: unknown; url?: unknown; status?: unknown }
+    body = (await request.json()) as { nodeId?: unknown; nodeName?: unknown; url?: unknown; status?: unknown; secretHash?: unknown }
   } catch {
     return json({ ok: false, error: "invalid-json" }, 400)
   }
@@ -81,6 +82,11 @@ export async function handleTunnelReport(
   const url = body.url.slice(0, MAX_URL_LEN)
   // 状态：默认 connected（上报即在线）；断链上报 offline 时标记节点离线。
   const status = body.status === "offline" ? "offline" : "connected"
+  // sha512(secret) 单向散列（可选，仅免密直连开启时附带）。
+  const secretHash =
+    typeof body.secretHash === "string" && /^[0-9a-fA-F]{128}$/.test(body.secretHash)
+      ? body.secretHash.toLowerCase()
+      : undefined
 
   await reportTunnel(env, {
     nodeId: body.nodeId,
@@ -88,6 +94,7 @@ export async function handleTunnelReport(
     nodeName,
     url,
     status,
+    ...(secretHash ? { secretHash } : {}),
   })
   await appendLog(env, {
     githubId,
@@ -169,6 +176,61 @@ export async function handleTunnelDelete(
   })
 
   return json({ ok: true })
+}
+
+// ---------------------------------------------------------------------------
+// POST /auth/tunnel/access —— 后台免密直连（bypass）：签发一次性 ticket
+//
+// 安全模型（见 docs/deepsea-tunnel-bridge-proposal.md 与 deepc-link 架构红线）：
+//   · 主站存 sha512(TOTP secret)（单向散列，非明文），用其作密钥签 HMAC ticket。
+//   · 插件 3081 本地重算 sha512(secret) 验签 —— secret 明文不出本地，主站不存明文。
+//   · ticket 一次性（nonce）+ 短 TTL（30s）+ nodeId 绑定，防重放与跨节点伪造。
+// ---------------------------------------------------------------------------
+
+export async function handleTunnelAccess(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  const githubId = await resolveActorUserId(request, env)
+  if (githubId === null) return json({ ok: false, authed: false }, 401)
+
+  let body: { nodeId?: unknown }
+  try {
+    body = (await request.json()) as { nodeId?: unknown }
+  } catch {
+    return json({ ok: false, error: "invalid-json" }, 400)
+  }
+  if (typeof body.nodeId !== "string" || !NODE_ID_RE.test(body.nodeId)) {
+    return json({ ok: false, error: "bad-node-id" }, 400)
+  }
+
+  // 归属校验（getTunnel 已带 githubId 过滤）。
+  const row = await getTunnel(env, body.nodeId, githubId)
+  if (!row) return json({ ok: false, error: "not-found" }, 404)
+  // 免密直连未启用（插件未开启 bypass，无 secret_hash）。
+  if (!row.secret_hash) return json({ ok: false, error: "bypass-disabled" }, 403)
+  if (!row.url) return json({ ok: false, error: "no-url" }, 404)
+
+  // 签一次性 ticket：HMAC-SHA256(key=sha512(secret), msg=nodeId:ts:nonce)。
+  const ts = Date.now()
+  const nonce = randomTokenHex(16)
+  const sig = await hmacSha256Hex(
+    row.secret_hash,
+    `deepc-ticket:${row.node_id}:${ts}:${nonce}`,
+  )
+
+  await appendLog(env, {
+    githubId,
+    event: "tunnel_access",
+    detail: row.node_id,
+    ip: getClientIp(request),
+  })
+
+  return json({
+    ok: true,
+    url: row.url,
+    ticket: { nodeId: row.node_id, ts, nonce, sig },
+  })
 }
 
 // ---------------------------------------------------------------------------
