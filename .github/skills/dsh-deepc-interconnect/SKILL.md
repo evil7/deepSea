@@ -1,126 +1,99 @@
 ---
 name: dsh-deepc-interconnect
-description: 'deepc-link 多端互联 + 多端直连架构。Use when: 开发/调试 deepc-link 前后端分层、WebRTC 数据面桥、WS+DO 信令、设备注册与授权、配置同步、RTC 直连、nodeId/token 注入、chatUI 数据面。'
-argument-hint: '要处理的互联场景，例如 "多端直连信令" 或 "RTC 数据面桥" 或 "设备授权流"'
+description: 'deepc-link 三模式远端互联（本地共享/Tunnel 暴露/主站纳管）+ TOTP 2FA。Use when: 开发/调试 deepc-link 三模式编排、3081 鉴权代理、cloudflared Quick Tunnel/自定义域、Device Grant 授权、主站纳管 URL、TOTP secret 注入。'
+argument-hint: '要处理的互联场景，例如 "TOTP 2FA 鉴权" 或 "断链自动重连上报" 或 "自定义域探测"'
 user-invocable: true
 ---
 
-# deepc-link 互联架构
+# deepc-link 三模式远端互联
 
 ## 目标
 
-为 deepSea 的「深海套装互联底座」提供领域知识：deepc-link 插件如何把本地 dsh host 的
-能力经加密 RTC 通道暴露给 deepc 主站，实现**多端互联**（远程控制）与**工程同步**（配置同步）。
+为 deepSea 的「深海套装互联底座」提供领域知识：deepc-link 插件如何把本地 dsh host
+经 3081 鉴权代理（TOTP 2FA）+ cloudflared Quick Tunnel 暴露，并可选登录主站纳管 URL。
 
 ## 何时使用
 
-- 开发 / 调试 deepc-link 的前后端分层与两条链路
-- 处理 WebRTC DataChannel 数据面桥（unary / subscribe / downstream）
-- 处理 WS + Durable Objects 信令（offer / answer 推送）
-- 处理设备注册 / 心跳 / Device Grant 授权 / 配置同步
-- 定位主站 chatUI ↔ RTC ↔ 本地 dsh API 的接线问题
+- 开发 / 调试 deepc-link 的三模式编排与前后端分层
+- 处理 3081 鉴权代理（TOTP 2FA + 反代 + WS hijack + 防暴力）
+- 处理 cloudflared 托管（下载 + 匿名 Quick Tunnel / 自定义域自动探测）
+- 处理 Device Grant 授权 / 主站纳管 URL / 断链自动重连上报
+- 定位主站 /links ↔ Worker ↔ 插件 的接线问题
 
-## 核心架构（唯一权威：`docs/deepsea-deepc-bridge-plan.md`）
+## 核心架构（唯一权威：`docs/deepsea-tunnel-bridge-proposal.md`）
 
-### 1. 前后端分层（两条正交链路）
+### 1. 三种互联模式（用户自选，递进）
 
-| 链路 | 通道 | 承载 | 语义 |
-|------|------|------|------|
-| ① 主站 links ↔ 插件后端 | WebRTC DataChannel（WS 信令） | `deepc.*` + `session.*`/`workspace.*` | 远端远程控制 |
-| ② 插件前端 ↔ 插件后端 | `/deepc` 前缀路由（`ctx.webServer.register`） | token/登录态/开关 | 同机凭证传递 |
+| 模式 | 能力 | 登录 | CF |
+|------|------|------|----|
+| local | 仅 3081（TOTP 2FA），局域网访问 | 否 | 否 |
+| tunnel | local + cloudflared（匿名 Quick Tunnel / 自定义域） | 否 | 是 |
+| managed | tunnel + 登录上报 URL，断链自动重连上报 | 是 | 是 |
 
-- **前端（`host-ui.ts`，browser）只做展示**：登录态/开关/同步/断开经 `/deepc/*` 转发后端。
-- **后端（`index.ts`/`node-host.ts`，node）承载一切逻辑**：Device Grant、注册/心跳、WS 信令、
-  `deepc.*` 能力（`node:os`/`node:fs`）、配置同步。
-- token/nodeId **由 node 后端注入自持**（`NodeTokenStore` 内存 / `deriveNodeId(hostname)`），
-  **禁止浏览器端 localStorage 兜底**。
+### 2. TOTP 2FA（本地生成，主站零 secret）
 
-### 2. 信令（唯一通道：WS + DO，禁止轮询）
+- secret 插件本地生成（20 字节 base32），持久化 `~/.deepc/totp-secret`（chmod 600）。
+- 用户 2FA 应用扫码/手动绑定；动态码 30s 轮换。
+- 3081 用 `verifyTotp(secret, code)` 校验（RFC 6238，HMAC-SHA1，±1 步容差）。
+- 前端 6 位分组输入 `[][][] - [][][]`；失败 5 次锁 1 小时。
+- 主站 Worker 只纳管 URL，不存 secret、不签 ticket、不代过鉴权。
 
-- `createWsSignalClient`（插件端）→ `/ws/api-link?nodeId&token`，DO `SignalRoom`（分区键
-  `room:{githubId}`）按 nodeId 推送密文 offer/answer。
-- 同一端点也承载 link 在线同步数据：节点注册表 `nodes-snapshot`/`nodes-changed`（替代
-  `/auth/node/list`）、`config-changed`、`presence`。signal 只是其中一种内部命令帧。
-- **远端数据交换规范（红线）**：主站 ↔ Worker 的「广播/推送/订阅/同步」类数据交换，一律扩展
-  `/ws/api-link` 的 WS 帧（`type` 加新帧类型 + 双端 `ws-signaling.ts` 同步解析），**非必要不新开
-  REST 端点**。REST 仅保留给"请求-响应 + 持久化"的 `/auth/*`（OAuth / device-grant / config put /
-  node register）。判断「实时数据面（WS）」vs「身份持久化面（REST）」的边界：是否需广播给所有在线端。
-- **HTTP 信箱轮询已整体移除（A2）**——任何「退回轮询」都是红线违反（浪费 Worker 额度）。
-- 认证：浏览器 WS 无法设 Authorization → token 经 query 传（wss 加密）；主站同源 cookie。
+### 3. 3081 鉴权代理
 
-### 3. 数据面桥（RTC 直连，不经 Worker）
+- 监听 `0.0.0.0:3081`，反代 dsh 3080（HTTP）+ WS hijack 透传。
+- 无 cookie → 401 + 内置鉴权页（6 位 2FA 输入）→ POST /__deepc_auth → Set-Cookie → 302。
 
-- `mailbox-host.ts` 建 DC 后 `installApiBridge(dc, api)` + `installHostHandshake(dc, api)`。
-- `apiFactory = () => wrapLocalApi(new ApiProxyLocalApi(apiProxy), services)`：
-  `deepc.*`（os/fs/commands）+ `pluginInventory/list` 本地拦截，其余直连官方 `ctx.apiProxy`
-  域树（窄形 `RpcRequest` 信封 `{ rpcId, payload }`）。**无 HTTP 回环、无降级兜底**。
-- 帧协议：`unary` / `unary-result` / `subscribe` / `downstream` / `downstream-end` / `control`（ping/pong/bye）。
+### 4. cloudflared 托管
 
-### 4. 底层能力（`deepc-api.ts` + `local-api.ts`）
+- GitHub Release 下载（pinned + SHA-256）→ `~/.deepc/bin/cloudflared` → 子进程托管。
+- 匿名 Quick Tunnel 默认；自定义域（Named Tunnel config.yml + CF_TUNNEL_DOMAIN）自动探测。
 
-- `deepc.os.hostname`、`deepc.fs.roots`、`deepc.fs.listDirectories`——在 node 进程内用
-  `node:os`/`node:fs` 执行，服务「新建工作区枚举系统路径」（主站 `FolderPicker` 调用）。
-- `deepc.commands.list` → `ctx.commands.list(agent)`（`agent` 由 `ctx.agents.get(sessionId)` 解析）。
-- `pluginInventory/list` → `ctx.pluginInventory.list()`（typert Remote，Host 侧 cordis service 直连）。
-- 其余 `session.*`/`workspace.*`/`settings.*`/`host.*` 等 → `ApiProxyLocalApi` 直连 `ctx.apiProxy`。
-- 下行流 `events.mux/host` → `apiProxy.events.<stream>(request, signal)` 的 `AsyncIterable`（非 WS）。
+### 5. 主站 Worker（纯管理面）
 
-### 5. 配置同步（D1 权威 + DO 推送）
-
-- 权威源 = D1 `deepc_config`（LWW + worker 单调时间戳）；通知 = DO 广播 `config-changed`。
-- 插件端 `config-sync.ts`：本地快照存 **node 进程内存**，收到通知才拉增量（since 下推 SQL，零轮询）。
+- `POST /auth/tunnel/report`（上报 URL）/ `GET /auth/tunnel/list` / `POST /auth/tunnel/delete`。
+- `/ws/tunnel-events`（TunnelHub DO 广播 node_online/offline/deleted）。
+- D1 `deepc_tunnels` 无 security_code 列。
 
 ## 红线（禁止事项，逐条对照）
 
-1. 禁止给 Worker 加 `/api/*` 代理路由（dsh 官方 gateway 独占，数据面走 P2P）。
-2. 禁止信令退回轮询（WS + DO 是唯一通道）。
-3. 禁止会话消息/工作区/配置详情落 Worker 存储（走 RTC 直传）。
-4. 禁止复刻官方前端 / DOM snapshot / monkey-patch `fetch`/`WebSocket`。
-5. 禁止插件端在浏览器侧注册/心跳/连信令/派生 nodeId。
-6. 禁止密钥/device_token 落明文（Worker 只见 AES-GCM 密文）。
+1. 禁止给 Worker 加 `/api/*` 代理路由（数据面走 CF Tunnel）。
+2. 禁止主站存/代任何 secret（无 security_code、无 ticket、无自动过鉴权）。
+3. 禁止会话/工作区/配置详情落 Worker（走 CF Tunnel 直传，D1 只存 URL）。
+4. 禁止复刻官方前端 / DOM snapshot / monkey-patch fetch/WebSocket。
+5. 禁止插件端在浏览器侧启动隧道/鉴权/派生 secret（全部在 node 后端）。
+6. 禁止 TOTP secret / device_token 落明文（落盘 chmod 600）。
 7. 禁止手改 `apps/web/src/components/ui/**`。
-8. 禁止非必要在 Worker 新增 REST 端点——主站 ↔ Worker 的广播/推送/订阅/同步类数据交换一律走
-   `/ws/api-link` WS 帧；仅"请求-响应 + 持久化"的 `/auth/*` 保留 REST。
-9. 禁止数据面桥回退 HTTP 回环 `127.0.0.1:3080`（`HttpLocalApi` / `HTTP_ONLY_METHODS`）——
-   本地端点唯一实现是 `ApiProxyLocalApi` 直连 `ctx.apiProxy`；apiProxy 域树外方法走 host
-   cordis service（`ctx.commands` / `ctx.pluginInventory`）。
+8. 禁止非必要在 Worker 新增 REST 端点（节点状态走 /ws/tunnel-events WS 帧）。
 
 ## 关键源码锚点
 
 | 关注点 | 文件 |
 |--------|------|
 | node 端入口 + `/deepc` 路由 | `packages/deepc-link/src/index.ts` |
-| node 端连接层 | `src/node-host.ts` |
-| `deepc.*` 能力 + 非 apiProxy 方法拦截 | `src/deepc-api.ts` |
-| 信箱 host（WS 应答 + 装桥） | `src/mailbox-host.ts` |
-| 数据面桥 | `src/api-bridge.ts` |
-| 本地 API（`ApiProxyLocalApi`，apiProxy 直连） | `src/local-api.ts` |
-| WS 信令客户端 | `src/ws-signaling.ts` |
-| 设备注册/心跳 | `src/node-registry.ts` |
-| 配置同步 | `src/config-sync.ts` |
-| Worker 信令 DO | `apps/worker/src/durable/signal-room.ts` |
-| 主站 RTC client | `apps/web/src/lib/deepc-link/client.ts` |
-| 主站设备节点 API | `apps/web/src/lib/deepc-link/nodes.ts` |
+| 三模式编排 + Device Grant + TOTP secret | `src/host.ts` |
+| TOTP 2FA | `src/totp.ts` |
+| 3081 鉴权代理 | `src/auth-proxy.ts` |
+| cloudflared 托管 | `src/cloudflared.ts` |
+| 互联编排 + 上报 + 断链重连 | `src/tunnel.ts` |
+| DO 事件订阅 | `src/events.ts` |
+| 悬浮球 UI | `src/host-ui.ts` |
+| Worker 隧道端点 | `apps/worker/src/auth/tunnel.ts` |
+| Worker DO 广播 | `apps/worker/src/durable/tunnel-hub.ts` |
+| 主站节点 API | `apps/web/src/lib/deepc-link/tunnels.ts` |
 
 ## 已知坑（务必规避）
 
 - node 端打包漏 `--define:__DEEPC_SITE_BASE__/__DEEPC_SIGNAL_BASE__` → 运行时
-  `ReferenceError`、`apply` 抛错、`/deepc` 路由不注册。**构建时注入默认基址 `https://deepc.cn`，
-  一个编译命令通用 dev/prod**；本地联调靠「开发模式」开关运行时切到 `http://127.0.0.1:5174`，
-  **无需 `--local` / `build:local` 单独产物**。
-- `respondMailboxOffer` 必须**先投 answer 再 `awaitSession()`**（顺序反了会死锁）。
-- `disconnect` 前发 `deepc:bye` 控制帧，否则对端误判「意外断开」自动重连，断开无效。
-- cordis 无 `ctx.on('dispose')`，清理用 `ctx.effect(() => ... return disposer)`。
-- node-datachannel 的 host 与 client 建连必须**并发**（串行会 datachannel 超时）。
-- 双端新增 WS 帧类型时，**两端 `ws-signaling.ts` 必须同步解析**（新增帧 `type` 双端对齐），
-  仅 PLUGIN 或仅主站解析会导致对方帧被忽略。
-- **apiProxy 必须 `inject`（硬依赖），不能 `ctx.reflect.get('apiProxy')`**：apiProxy 依赖
-  11 个服务、就绪晚于 webServer；只用 `inject:['webServer']` 再 reflect.get 会拿到 undefined，
-  数据面桥全 `method-not-found`。`inject: ['webServer', 'apiProxy']` + `ctx.apiProxy` 属性访问；
-  仅 `commands`/`agents`/`pluginInventory` 用 reflect.get 判空。
+  `ReferenceError`、`apply` 抛错、`/deepc` 路由不注册。构建时注入默认基址 `https://deepc.cn`，
+  一个编译命令通用 dev/prod；本地联调靠「开发模式」开关切到 `http://127.0.0.1:5174`。
+- TOTP 校验必须用 `verifyTotp`（±1 步容差，常量时间比较），不能直接字符串比对。
+- 3081 监听 `0.0.0.0`（local 模式局域网可达）；测试 mock 上游要避开真实 dsh 3080 端口。
+- 失败锁定是「secret 级全局」（remoteAddress 恒为本地 cloudflared，IP 限速无效）；5 次锁 1 小时。
+- cloudflared 断链 → `onExit` 回调 → 自动重连 + 重新上报（managed 模式）；Quick Tunnel URL 重启漂移。
+- 自定义域探测：`~/.deepc/cloudflared/config.yml` 存在 + `CF_TUNNEL_DOMAIN` 环境变量才启用；否则匿名。
 
 ## 完成标准
 
 - [ ] 不违反任一条红线
-- [ ] 改动经 `typecheck` + `build`（单一命令）+ 端到端验证
+- [ ] 改动经 `typecheck` + `build`（单一命令）+ 测试（`node test/totp.test.mjs` / `auth-proxy.test.mjs` / `pnpm --filter @deepsea/worker test`）
 - [ ] 结论沉淀到 `/memories/repo/` 对应记忆文件

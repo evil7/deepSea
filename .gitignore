@@ -37,5 +37,8 @@ dist-ssr
 # 临时计划/工作区（不进版本库）
 tmp/
 
+# deepc-link 测试打包产物（esbuild 生成的 .bundle.mjs，运行 build-tests.mjs 产出）
+packages/deepc-link/test/.*.bundle.mjs
+
 # cache 分支发布用的临时 worktree（scripts/publish-cache.mjs 生成）
 .cache-worktree/

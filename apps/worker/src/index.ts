@@ -18,17 +18,17 @@ import { handleLogout } from "./auth/logout"
 import { handleMe } from "./auth/me"
 import { handleInterconnectLog } from "./auth/preferences"
 import {
-  handleNodeRegister,
-  handleNodeRemove,
-} from "./auth/node"
-import {
   handleDeviceGrant,
   handleDeviceGrantPoll,
 } from "./auth/device"
-import { handleConfigList, handleConfigPut } from "./auth/config"
+import {
+  handleTunnelReport,
+  handleTunnelList,
+  handleTunnelDelete,
+} from "./auth/tunnel"
 import { purgeLogs, resolveActorUserId, resolveDeviceUserIdFromToken } from "./lib/d1"
 import { checkFreqLimit, getClientIp } from "./lib/ratelimit"
-import { SignalRoom } from "./durable/signal-room"
+import { TunnelHub } from "./durable/tunnel-hub"
 
 /** Worker 环境变量 / 绑定 */
 export interface Env {
@@ -38,8 +38,8 @@ export interface Env {
   DEEPSEA_D1: D1Database
   /** 静态资源绑定（../web/dist 构建产物） */
   ASSETS: Fetcher
-  /** DO 信号房（WS 推送，方案 A；分区键 room:{githubId}） */
-  SIGNAL_ROOM: DurableObjectNamespace
+  /** DO 隧道事件广播（管理面；分区键 tunnelhub:{githubId}） */
+  TUNNEL_HUB: DurableObjectNamespace
   /** 站点基址：OAuth callback 为 {DEEPSEA_BASE}/auth/callback */
   DEEPSEA_BASE: string
   /** GitHub OAuth App client_id（secret 注入） */
@@ -62,11 +62,10 @@ export interface Env {
   DEVICE_TOKEN_TTL_SECONDS?: string
 }
 
-/** 需要跨域 CORS 的 /auth/* 路径（插件端/主站跨源调用：设备 + 授权 + me）。 */
+/** 需要跨域 CORS 的 /auth/* 路径（插件端/主站跨源调用：设备授权 + tunnel + me）。 */
 function isCorsAuthPath(pathname: string): boolean {
   return (
-    pathname.startsWith("/auth/node/") ||
-    pathname.startsWith("/auth/config") ||
+    pathname.startsWith("/auth/tunnel") ||
     pathname === "/auth/device-grant" ||
     pathname === "/auth/device-grant/poll" ||
     pathname === "/auth/me"
@@ -115,17 +114,12 @@ const handler: ExportedHandler<Env> = {
       }
     }
 
-    // WebSocket 信令（DO 信号房）：Upgrade 请求路由到 room:{githubId}。
-    // worker 层先拿 githubId 确定分区；DO 层再做完整认证 + nodeId 归属校验。
-    if (url.pathname === "/ws/api-link") {
-      let githubId = await resolveActorUserId(request, env)
-      if (githubId === null) {
-        const token = url.searchParams.get("token")
-        if (token) githubId = await resolveDeviceUserIdFromToken(token, env)
-      }
-      if (githubId === null) return new Response("unauthorized", { status: 401 })
-      const id = env.SIGNAL_ROOM.idFromName(`room:${githubId}`)
-      const stub = env.SIGNAL_ROOM.get(id)
+    // WebSocket 隧道事件订阅（管理面：前端 /links + 插件；TunnelHub DO）。
+    if (url.pathname === "/ws/tunnel-events") {
+      const id = env.TUNNEL_HUB.idFromName(
+        `tunnelhub:${await resolveTunnelHubUser(request, env) ?? "anon"}`,
+      )
+      const stub = env.TUNNEL_HUB.get(id)
       return stub.fetch(request)
     }
 
@@ -141,18 +135,16 @@ const handler: ExportedHandler<Env> = {
         return handleLogout(request, env)
       case "/auth/interconnect-log":
         return handleInterconnectLog(request, env)
-      case "/auth/node/register":
-        return handleNodeRegister(request, env)
-      case "/auth/node/remove":
-        return handleNodeRemove(request, env)
       case "/auth/device-grant":
         return handleDeviceGrant(request, env)
       case "/auth/device-grant/poll":
         return handleDeviceGrantPoll(request, env)
-      case "/auth/config/list":
-        return handleConfigList(request, env)
-      case "/auth/config/put":
-        return handleConfigPut(request, env)
+      case "/auth/tunnel/report":
+        return handleTunnelReport(request, env)
+      case "/auth/tunnel/list":
+        return handleTunnelList(request, env)
+      case "/auth/tunnel/delete":
+        return handleTunnelDelete(request, env)
       default:
         break
     }
@@ -188,5 +180,15 @@ const handler: ExportedHandler<Env> = {
 
 export default handler
 
-// DO 信号房（wrangler.toml [[durable_objects.bindings]] class_name 需从 main 模块导出）。
-export { SignalRoom }
+/** 解析 WS 订阅者 githubId（cookie / token）；未登录返回 null。 */
+async function resolveTunnelHubUser(request: Request, env: Env): Promise<number | null> {
+  let githubId = await resolveActorUserId(request, env)
+  if (githubId === null) {
+    const token = new URL(request.url).searchParams.get("token")
+    if (token) githubId = await resolveDeviceUserIdFromToken(token, env)
+  }
+  return githubId
+}
+
+// DO 隧道事件广播（管理面）。
+export { TunnelHub }

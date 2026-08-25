@@ -16,7 +16,6 @@ import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
 import { LinksPage } from "@/pages/links"
-import { LinkDetailPage } from "@/pages/link-detail"
 import { DeviceLoginPage } from "@/pages/device-login"
 import { RequireAuth } from "@/components/auth/require-auth"
 import { SiteFooter } from "@/components/layout/site-footer"
@@ -44,9 +43,6 @@ export function App() {
   // /auth/* 为登录等纯功能路由（worker 处理），不改变海洋展示状态（视为首页）
   const isAuthRoute = location.pathname.startsWith("/auth/")
   const isSubPage = !isAuthRoute && location.pathname !== "/"
-
-  // chatUI 沉浸式全屏页（/link/:nodeId）：隐藏全局 footer，避免挤压三栏布局
-  const isChatPage = location.pathname.startsWith("/link/")
 
   // 统一海洋状态：surface=海面（首页 hero/插件精选），deep=深海
   // 驱动源（动画路径统一）：
@@ -119,14 +115,6 @@ export function App() {
             </RequireAuth>
           }
         />
-        <Route
-          path="/link/:nodeId"
-          element={
-            <RequireAuth>
-              <LinkDetailPage />
-            </RequireAuth>
-          }
-        />
         <Route path="/device-login" element={<DeviceLoginPage />} />
         <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
         <Route path="/community/dsh" element={<CommunityPage />} />
@@ -157,7 +145,7 @@ export function App() {
 
       {/* 子页面共享 footer（首页 / 保留其专属三行布局 footer；/auth/* 为 Worker 路由不渲染；
           /link/:nodeId 为沉浸式全屏 chatUI，隐藏 footer 避免挤压） */}
-      {isSubPage && !isChatPage && <SiteFooter />}
+      {isSubPage && <SiteFooter />}
 
       {/* 全局提示（自行捕捞需登录等）
            · richColors：开启后 success/info/warning/error 各自醒目配色

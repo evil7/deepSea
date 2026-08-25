@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // deepc-link build —— 产出可安装插件（node 端 + browser 端）
 //
-//   · node 端：esbuild 打包 src/index.ts → dist/index.js（ESM，external node-datachannel）
+//   · node 端：esbuild 打包 src/index.ts → dist/index.js（ESM）
 //   · browser 端：esbuild 打包 src/client/index.ts → 包装成
 //     `window.__ModuleLoader__.load({...})` 格式 → dist/deepc-link-client.js
 //     （dsh-client-modules 发现 dsh.client 声明后，serve 此文件并注入 __DSH_BOOT__）
@@ -25,7 +25,7 @@ const CLIENT_ID = 'deepc-link'
  *
  * 默认基址 = 生产 `https://deepc.cn`（作为默认后端）。本地 dev 联调无需单独编译——
  * 在插件 Sheet 打开「开发模式」开关后，node 后端把基址切到 `http://127.0.0.1:5174`
- * （vite 代理 /auth/* /ws/* /api/* 到本地 worker 8787），见 node-host.ts 的 DEV_MODE_BASE。
+ * （vite 代理 /auth/* /ws/* /api/* 到本地 worker 8787），见 host.ts 的 DEV_MODE_BASE。
  * 因此无需 `--local` / `DEEPC_BASE` 之分：一个编译命令产出 dev/prod 通用插件。
  *
  * 故 __DEEPC_SITE_BASE__ 与 __DEEPC_SIGNAL_BASE__ 恒相等（默认生产基址）。
@@ -51,7 +51,7 @@ function findEsbuild() {
   return 'esbuild'
 }
 
-/** 用 esbuild 打包 node 端（ESM，external node-datachannel 原生模块）。 */
+/** 用 esbuild 打包 node 端（ESM）。不再 external node-datachannel（已退役）。 */
 function buildNode(esbuildExe) {
   const args = [
     'src/index.ts',
@@ -59,11 +59,9 @@ function buildNode(esbuildExe) {
     '--format=esm',
     '--platform=node',
     '--target=es2022',
-    '--external:node-datachannel',
-    '--external:node-datachannel/polyfill',
     '--outfile=dist/index.js',
   ]
-  // node 端同样依赖 site/signal 基址常量（device-auth / node-registry / node-host），
+  // node 端同样依赖 site/signal 基址常量（device-auth），
   // 必须与 browser 端一致地注入，否则运行时 __DEEPC_SITE_BASE__ 未定义抛 ReferenceError，
   // 导致 node 端 apply 失败、/deepc 路由不注册。
   for (const [name, value] of Object.entries(DEFINE)) {

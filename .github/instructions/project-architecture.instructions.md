@@ -36,11 +36,11 @@ deepSea 是 DeepSeek Harness（dsh）插件生态聚合站：
    - **能前端化的 GitHub 数据一律前端 octokit 直调**（搜索 / discussions 列表详情回复表情发帖 /
      issues / releases），前端 access token 由 `/auth/me` 返回（内存保存）。
      **禁止给 Worker 加 `/api/*` 代理路由**。
-   - **deepc-link 互联数据**（`/auth/node/*` 设备注册、`/auth/device-grant*` 设备授权、
-     `/ws/api-link` 信令+在线同步 DO、`/auth/config/*` 账号配置、审计日志）属于 auth 边界，允许；
-     但**数据面（会话消息 / 工作区内容 / 配置详情）一律走 P2P DataChannel，绝不进 Worker**。
-   - **远端数据交换用 WS**：主站 ↔ Worker 的广播/推送/订阅/同步类数据一律扩展 `/ws/api-link`
-     WS 帧；**非必要不新开 REST 端点**（REST 仅保留给"请求-响应 + 持久化"的 `/auth/*`）。
+   - **deepc-link 互联数据**（`/auth/device-grant*` 设备授权、`/auth/tunnel/*` 隧道节点纳管、
+     `/ws/tunnel-events` 节点状态 DO 广播、审计日志）属于 auth 边界，允许；
+     但**数据面（远程访问 dsh UI / 会话内容）一律走 CF Tunnel 直连，绝不进 Worker**。
+   - **节点状态用 WS**：主站 ↔ Worker 的节点在线/删除类数据走 `/ws/tunnel-events` WS 帧
+     （TunnelHub DO 广播）；REST 仅保留 report/list/delete（管理面，仅纳管 URL）。
    - 详细红线与前后端分层见 `deepc-link.instructions.md`。
 4. **路径别名 `@/*` 指向 `apps/web/src/*`**（见 `apps/web/tsconfig.app.json` 与 `vite.config.ts`）。
 5. animejs 只允许用于展示/落地页的动效，业务 UI 保持克制，避免影响可读性与性能。
@@ -54,7 +54,6 @@ apps/web/src/
 ├── components/     # 业务组件（按功能分子目录）
 │   ├── ui/         # shadcn 生成组件（CLI 管理，禁止手改）
 │   ├── layout/     # 跨页面布局组件（Topbar、PageHeader 共享页头）
-│   ├── link/      # 多端互联 chatUI（消息流 / composer / FolderPicker）
 │   └── showcase/   # 展示/落地页动效（Ocean、插件码牌、usePageEnter/useSlideReveal 过渡 hook）
 ├── lib/
 │   ├── github/     # octokit 封装（client、search、discussions、issues）

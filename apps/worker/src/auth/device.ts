@@ -9,7 +9,7 @@
 //   主站   ②用户点确认 → POST /auth/device-grant { state }（cookie 登录态）
 //           → Worker 签发 device_token（D1 存哈希）+ KV deviceGrant:{state} 暂存
 //   插件端 ③轮询 POST /auth/device-grant/poll { state } → 一次性换取 device_token
-//           → 本地持久化 → 后续 node 端点带 Authorization: Bearer device_token
+//           → 本地持久化 → 后续 tunnel 上报端点带 Authorization: Bearer device_token
 //
 // 安全模型：
 //   · device_token 随机 256-bit，D1 只存 SHA-256 哈希（不落明文）。

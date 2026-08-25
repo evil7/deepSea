@@ -34,25 +34,24 @@ run_worker_first = [
   "/auth/me",
   "/auth/logout",
   "/auth/interconnect-log",
-  "/auth/node/register",
-  "/auth/node/remove",
   "/auth/device-grant",
   "/auth/device-grant/poll",
-  "/auth/config/list",
-  "/auth/config/put",
-  "/ws/api-link",
+  "/auth/tunnel/report",
+  "/auth/tunnel/list",
+  "/auth/tunnel/delete",
+  "/ws/tunnel-events",
 ]
 
-# ── Durable Objects：信令房（WS 推送，方案 A）────────────────────────────
-# 同账号所有设备/主站路由到同一 DO 实例（分区键 room:{githubId}），跨连接推送信令。
-# SQLite-backed DO（Free 计划唯一支持）；Hibernation 空闲不占 CPU。
+# ── Durable Objects：隧道事件广播（管理面）───────────────────────────────
+# 分区键 tunnelhub:{githubId}：前端 /links + 插件 WS 连同一 DO，接收节点状态事件。
+# 仅管理面广播，不进数据面；广播低频（事件驱动）。
 [[durable_objects.bindings]]
-name = "SIGNAL_ROOM"
-class_name = "SignalRoom"
+name = "TUNNEL_HUB"
+class_name = "TunnelHub"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["SignalRoom"]
+new_sqlite_classes = ["TunnelHub"]
 
 # ── KV：state（防 CSRF）/ session / user / deviceGrant（设备授权）/ 限流计数 ──────────────────
 # 创建：wrangler kv namespace create DEEPSEA_KV，然后把 id 填到下面

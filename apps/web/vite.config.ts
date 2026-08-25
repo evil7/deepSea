@@ -12,6 +12,10 @@ export default defineConfig({
     },
   },
   server: {
+    // 固定 5174：插件「开发模式」的 DEV_MODE_BASE = http://127.0.0.1:5174
+    //（vite 代理收敛本地 worker），端口漂移会导致插件连不到主站。
+    port: 5174,
+    strictPort: true,
     // 监听 127.0.0.1：本地 OAuth 回调 DEEPSEA_BASE=127.0.0.1:5174
     // 明确 host，避免直接 `pnpm dev` 时默认 localhost 导致回调域名不匹配
     host: "127.0.0.1",

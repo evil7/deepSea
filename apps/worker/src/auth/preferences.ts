@@ -2,8 +2,7 @@
 // /auth/interconnect-log —— 互联日志读取（安全审计）
 //
 //   · 互联日志：仅登录用户可查自己的日志（github_id 匹配）。
-//   · 配置同步（theme / model / 偏好）见 auth/config.ts（D1 存储 + DO 推送，
-//     已从 gist 迁回）。
+//   · 配置同步（theme / model / 偏好）已随旧 P2P 架构退役删除。
 // ---------------------------------------------------------------------------
 
 import type { Env } from "../index"

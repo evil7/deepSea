@@ -1,144 +1,155 @@
 // ---------------------------------------------------------------------------
-// /links —— 多端互联设备列表页（deepc-link 多端直连入口）。
+// /links —— 远端互联隧道节点卡片页（deepc-link 管理形态入口）。
 //
-// 列出同账号已登录的 DSH 节点；点击「连接」导航到 /link/:nodeId 建立 RTC。
-// 设备列表 + 在线状态由常驻 WS `/ws/api-link` 节点注册表快照/变更帧刷新：
-//   · connect 时 DO 推 nodes-snapshot（全量）
-//   · 节点增/删/改名/上下线时 DO 推 nodes-changed（全量）
-// 登录后注册主站控制端节点（console）用于发起连接。
+// 三模式说明（见 docs/deepsea-tunnel-bridge-proposal.md）：
+//   1. local   本地域内共享：插件 3081 鉴权代理（TOTP 2FA），局域网直接访问。
+//   2. tunnel  CF Tunnel 暴露：匿名 Quick Tunnel / 自定义域。
+//   3. managed 主站纳管：登录后插件上报最新 URL，本页列出（断链自动重连上报）。
+//
+// 主站只纳管 URL，不存任何 secret（TOTP 动态码由用户本地 2FA 应用生成）。
+// 卡片「打开」= 新窗口打开节点 URL，进入 3081 鉴权页输入 2FA 码。
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useCallback, useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { PageHeader } from "@/components/layout/page-header"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
 import {
-  registerConsoleNode,
-  removeNode,
-  isConsoleNode,
-  type NodeView,
-} from "@/lib/deepc-link/nodes"
-import { createWsLinkClient } from "@/lib/deepc-link/ws-signaling"
-import { Laptop, Link2, Loader2, RefreshCw, Trash2 } from "lucide-react"
+  listTunnels,
+  deleteTunnel,
+  type TunnelNodeView,
+} from "@/lib/deepc-link/tunnels"
+import {
+  ExternalLink,
+  Globe,
+  Laptop,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react"
 
 export function LinksPage() {
   const { user } = useAuth()
-  const navigate = useNavigate()
-  const [nodes, setNodes] = useState<NodeView[]>([])
-  const [nodesLoaded, setNodesLoaded] = useState(false)
-  const [consoleNodeId, setConsoleNodeId] = useState<string | null>(null)
+  const [nodes, setNodes] = useState<TunnelNodeView[]>([])
+  const [loaded, setLoaded] = useState(false)
 
-  // 登录后注册主站控制端节点（多端直连发起方）。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const refresh = useCallback(async () => {
+    setLoaded(false)
+    const rows = await listTunnels()
+    setNodes(rows)
+    setLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    if (user) void refresh()
+  }, [user, refresh])
+
+  // WS 订阅 TunnelHub DO：node_online / node_deleted → 刷新列表
   useEffect(() => {
     if (!user) return
-    let cancelled = false
-    void registerConsoleNode(user.id).then((id) => {
-      if (!cancelled) setConsoleNodeId(id)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [user])
-
-  // 设备列表源 = WS 节点注册表快照/变更（无 HTTP /auth/node/list）。
-  const wsRef = useRef<ReturnType<typeof createWsLinkClient> | null>(null)
-
-  // 登录后常驻 WS（DO 信号房）：connect 时收 nodes-snapshot，此后任何节点增/删/改名/
-  // 上下线收 nodes-changed（全量）。统一处理：过滤掉主站自身控制端节点后覆写列表。
-  useEffect(() => {
-    if (!user || !consoleNodeId) return
-    const ws = createWsLinkClient()
-    wsRef.current = ws
-    let disposed = false
-    const applyNodes = (all: NodeView[]): void => {
-      setNodes(all.filter((n) => !isConsoleNode(n)))
-      setNodesLoaded(true)
-    }
-    const offSnapshot = ws.onNodesSnapshot(applyNodes)
-    const offChanged = ws.onNodesChanged(applyNodes)
-    void ws.connect(consoleNodeId).then((ok) => {
-      if (!ok && !disposed) {
-        // 连接失败：标记已加载（空列表），避免无限 loading。
-        setNodesLoaded(true)
+    let ws: WebSocket | null = null
+    try {
+      ws = new WebSocket(
+        `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/tunnel-events`,
+      )
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data as string) as {
+            type?: string
+            nodeId?: string
+          }
+          if (
+            msg.type === "node_online" ||
+            msg.type === "node_offline" ||
+            msg.type === "node_deleted"
+          ) {
+            void refresh()
+          }
+        } catch {
+          /* ignore */
+        }
       }
-    })
-    return () => {
-      disposed = true
-      offSnapshot()
-      offChanged()
-      ws.disconnect()
-      if (wsRef.current === ws) wsRef.current = null
+    } catch {
+      /* WS 不可用则依赖手动刷新 */
     }
-  }, [user, consoleNodeId])
+    return () => ws?.close()
+  }, [user, refresh])
 
-  // 「刷新」按钮：主动向 DO 请求一次 nodes-snapshot（服务器回推全量）。
-  const refreshNodes = useCallback(() => {
-    setNodesLoaded(false)
-    wsRef.current?.refreshNodes()
-    // 兜底：若 WS 未就绪，稍后快照到达会置 nodesLoaded。此处若超时仍空列表则兜底。
-  }, [])
+  const handleDelete = async (node: TunnelNodeView) => {
+    await deleteTunnel(node.nodeId)
+    void refresh()
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-10 sm:px-6">
       <PageHeader
-        title="多端互联"
-        description="连接同账号DSH节点，实现远程控制、多端管理"
+        title="远端互联"
+        description="三种方式自选：本地共享 / Tunnel 暴露 / 主站纳管。安全码由你本地 2FA 应用管理。"
         sticky={false}
         showTopButton={false}
       />
 
-      {/* 设备卡片网格 */}
       <div className="mt-10">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">已登录设备</h2>
-          <Button variant="ghost" size="sm" onClick={() => void refreshNodes()} className="gap-1.5 text-xs">
+          <h2 className="text-sm font-medium text-muted-foreground">纳管节点</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void refresh()}
+            className="gap-1.5 text-xs"
+          >
             <RefreshCw className="size-3.5" />
             刷新
           </Button>
         </div>
 
         {!user ? (
-          <Card className="border-dashed">
-            <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-              登录 GitHub 账号后，可查看并连接同一账号下的所有设备
-            </CardContent>
-          </Card>
-        ) : !nodesLoaded ? (
+          <Empty className="border-none">
+            <EmptyMedia variant="icon">
+              <ShieldCheck />
+            </EmptyMedia>
+            <EmptyTitle>登录后管理节点</EmptyTitle>
+            <EmptyDescription>
+              登录 GitHub 账号后，可查看并管理同一账号下上报的 dsh 节点
+            </EmptyDescription>
+          </Empty>
+        ) : !loaded ? (
           <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
             <Loader2 className="mr-2 size-4 animate-spin" />
-            加载设备…
+            加载节点…
           </div>
         ) : nodes.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-              <Laptop className="size-8 opacity-40" />
-              暂无已登录设备
-              <p className="text-xs text-muted-foreground/70">
-                在本地 dsh 的 deepc 侧栏登录并注册设备后，会显示在这里
-              </p>
-            </CardContent>
-          </Card>
+          <Empty className="border-none">
+            <EmptyMedia variant="icon">
+              <Laptop />
+            </EmptyMedia>
+            <EmptyTitle>暂无纳管节点</EmptyTitle>
+            <EmptyDescription>
+              在本地 dsh 安装 deepc-link 插件，选择「主站纳管」模式并登录后，
+              节点会显示在这里
+            </EmptyDescription>
+          </Empty>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {nodes.map((node) => (
-              <NodeCard
-                key={node.nodeId}
-                node={node}
-                onConnect={() => {
-                  if (consoleNodeId) {
-                    navigate(`/link/${node.nodeId}`)
-                  }
-                }}
-                onRemove={() => {
-                  void removeNode(node.nodeId).then(() => refreshNodes())
-                }}
-              />
+              <TunnelCard key={node.nodeId} node={node} onDelete={() => void handleDelete(node)} />
             ))}
           </div>
         )}
@@ -147,96 +158,85 @@ export function LinksPage() {
   )
 }
 
-/** 设备卡片（SSH 多端管理风格）。 */
-function NodeCard({
-  node,
-  onConnect,
-  onRemove,
-}: {
-  node: NodeView
-  onConnect: () => void
-  onRemove: () => void
-}) {
-  const [confirmRemove, setConfirmRemove] = useState(false)
-  return (
-    <Card className="transition-colors hover:border-primary/50">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Laptop className="size-5 shrink-0 text-primary" />
-            <CardTitle className="truncate text-base">{node.name}</CardTitle>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Badge
-              variant="outline"
-              className={cn(
-                "shrink-0 border-transparent",
-                node.online
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : "bg-slate-500/20 text-slate-400"
-              )}
-            >
-              {node.online ? "在线" : "离线"}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "shrink-0 gap-1 px-1.5 transition-all",
-                confirmRemove
-                  ? "text-rose-400 hover:text-rose-300"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => {
-                if (confirmRemove) {
-                  setConfirmRemove(false)
-                  onRemove()
-                } else {
-                  setConfirmRemove(true)
-                  setTimeout(() => setConfirmRemove(false), 3000)
-                }
-              }}
-            >
-              <Trash2 className="size-3.5" />
-              {confirmRemove && <span>确认删除？</span>}
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="truncate font-mono text-xs text-muted-foreground">
-          {node.nodeId}
-        </p>
-        {node.lastSeen && (
-          <p className="text-xs text-muted-foreground">
-            最后活跃 {relativeTime(node.lastSeen)}
-          </p>
-        )}
-        <Button
-          onClick={onConnect}
-          disabled={!node.online}
-          variant="outline"
-          size="sm"
-          className="w-full gap-2"
-        >
-          <Link2 className="size-3.5" />
-          连接
-        </Button>
-      </CardContent>
-    </Card>
-  )
+/** 从完整 URL 提取二级域名展示（去掉 https:// 前缀；主站仅显示可读子域）。 */
+function prettyHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url.replace(/^https?:\/\//, '')
+  }
 }
 
-/** 相对时间（复刻官方「X分钟/X小时/X天」）。 */
-function relativeTime(ms: number): string {
-  const diff = Date.now() - ms
-  const min = Math.floor(diff / 60_000)
-  if (min < 1) return "刚刚"
-  if (min < 60) return `${min}分钟`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}小时`
-  const day = Math.floor(hr / 24)
-  return `${day}天`
+/** 隧道节点卡片：名称 + 状态 + 二级域名 + 打开(新窗口) + 删除。 */
+function TunnelCard({
+  node,
+  onDelete,
+}: {
+  node: TunnelNodeView
+  onDelete: () => void
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const host = prettyHost(node.url)
+  const online = node.status === "connected"
+
+  return (
+    <Card className="transition-shadow hover:shadow-sm">
+      <CardHeader className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Laptop className="size-4" />
+          </div>
+          <CardTitle className="truncate">{node.name}</CardTitle>
+        </div>
+        <Badge variant="outline" className="gap-1.5 font-normal">
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              online ? "bg-emerald-500" : "bg-muted-foreground/50",
+            )}
+          />
+          {online ? "在线" : "离线"}
+        </Badge>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
+          <Globe className="size-3.5 shrink-0 text-muted-foreground" />
+          <code className="min-w-0 flex-1 truncate font-mono text-xs">{host}</code>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <a href={node.url} target="_blank" rel="noreferrer" className="flex-1">
+            <Button size="sm" className="w-full gap-1.5">
+              <ExternalLink className="size-3.5" />
+              打开节点
+            </Button>
+          </a>
+          <Button
+            variant={confirmDelete ? "destructive" : "ghost"}
+            size={confirmDelete ? "sm" : "icon-sm"}
+            className="shrink-0"
+            onClick={() => {
+              if (confirmDelete) {
+                setConfirmDelete(false)
+                onDelete()
+              } else {
+                setConfirmDelete(true)
+                setTimeout(() => setConfirmDelete(false), 3000)
+              }
+            }}
+          >
+            {confirmDelete ? "确认" : <Trash2 />}
+          </Button>
+        </div>
+      </CardContent>
+
+      <CardFooter className="gap-1.5 text-xs text-muted-foreground">
+        <ShieldCheck className="size-3.5 shrink-0" />
+        打开后输入你本地 2FA 应用中的动态码完成验证
+      </CardFooter>
+    </Card>
+  )
 }
 
 export default LinksPage

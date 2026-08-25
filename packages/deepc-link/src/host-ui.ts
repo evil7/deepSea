@@ -4,21 +4,68 @@
  * 跑在本地 dsh 前端（browser 端 cordis 插件）。用原生 DOM + 注入独立命名空间
  * CSS 实现，不依赖 dsh 前端的样式系统，避免污染官方 UI。动效用 animejs。
  *
- * 交互：
- *   右下角 deepSea 图标 → 点击「变形成」卡片式 Sheet（从图标位置向上生长）
- *   点击 Sheet 外部 → 收起回图标
- *   图标无操作 1s → 向右滑出屏幕外侧（藏起）
- *   鼠标靠近右下角触发角 → 图标滑回
- *   Sheet header：`(deepc logo) deepSea` + 登录按钮；body：配置同步 + 状态
+ * 交互（递进式升级设置，见 docs/deepsea-tunnel-bridge-proposal.md）：
+ *   1. 本地共享 —— 默认基线：启动 3081（TOTP 2FA），局域网访问，始终可用
+ *   2. 隧道映射 —— 开关升级：再启动 cloudflared（匿名 Quick Tunnel / 自定义域）
+ *   3. 主站纳管 —— 登录升级：登录 deepc 主站上报 URL，断链自动重连上报
+ *   悬浮球直接显示 6 位 TOTP 动态码（本地即 2FA 客户端），可展开二维码绑定外部应用。
  *
- * 前端**只做展示**：登录态/开关/同步/断开均经 `/deepc/*` 调插件后端（node 端）
- * 执行（见 plan §3.4 前后端分层）。后端自持 token/注册/心跳/信令/deepc.* 能力。
- * 临时连接已移除（见 docs/deepsea-deepc-bridge-config-gist.md）。
+ * 前端**只做展示 + 控制**：连接/断开/隧道开关/登录均经 `/deepc/*` 调插件后端（node）。
+ * TOTP secret 由后端生成并返回（node 内存 + chmod 600 文件）；前端仅用其**展示**
+ * 动态码与二维码（不派生新 secret、不启动隧道/鉴权）。
  */
 
 import { animate } from 'animejs'
 
-/** 后端控制路由基址（与 node-host.ts 的 NODE_CTRL_PATH 一致；同源 3080）。 */
+/** base32 → 字节（浏览器端，与 node 端 totp.ts 同算法，仅用于展示动态码）。 */
+function base32Decode(str: string): Uint8Array<ArrayBuffer> {
+  const cleaned = str.toUpperCase().replace(/[\s-]/g, '').replace(/=+$/, '')
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = 0
+  let value = 0
+  const out: number[] = []
+  for (const ch of cleaned) {
+    const idx = alphabet.indexOf(ch)
+    if (idx === -1) continue
+    value = (value << 5) | idx
+    bits += 5
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff)
+      bits -= 8
+    }
+  }
+  return new Uint8Array(out)
+}
+
+/** 浏览器端 TOTP 动态码（RFC 6238 HMAC-SHA1，Web Crypto；仅用于悬浮球展示）。 */
+async function browserTotpCode(secret: string, time = Date.now()): Promise<string> {
+  const counter = Math.floor(time / 1000 / 30)
+  const key = base32Decode(secret)
+  const msg = new Uint8Array(8)
+  let c = counter
+  for (let i = 7; i >= 0; i--) {
+    msg[i] = c & 0xff
+    c = Math.floor(c / 256)
+  }
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    key,
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign'],
+  )
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, msg))
+  const offset = sig[sig.length - 1] & 0x0f
+  const binary =
+    ((sig[offset] & 0x7f) << 24) |
+    ((sig[offset + 1] & 0xff) << 16) |
+    ((sig[offset + 2] & 0xff) << 8) |
+    (sig[offset + 3] & 0xff)
+  const code = binary % 1_000_000
+  return code.toString().padStart(6, '0')
+}
+
+/** 后端控制路由基址（与 host.ts 的 NODE_CTRL_PATH 一致；同源 3080）。 */
 const DEEPC_CTRL_BASE = '/deepc'
 
 /** 调用插件后端控制端点。 */
@@ -36,16 +83,20 @@ async function deepcCall<T>(action: string, body?: unknown): Promise<T | null> {
   }
 }
 
-/** 后端状态（对齐 node-host.ts 的 NodeHostStatus）。 */
+/** 后端状态（对齐 host.ts 的 DeepcHostStatus）。 */
 interface BackendStatus {
+  mode: 'local' | 'tunnel' | 'managed'
   loggedIn: boolean
   deviceName: string
-  sessions: number
-  allowInterconnect: boolean
+  connected: boolean
+  url: string | null
+  localUrl: string | null
+  localOn: boolean
+  totpSecret: string | null
+  otpauthUri: string | null
   devMode?: boolean
-  configConflicts?: string[]
-  error?: string
   profile?: { login: string; avatar_url: string; name: string | null }
+  error?: string
 }
 
 /** 悬浮球 + sheet + 触发热区根节点 id（幂等守卫）。 */
@@ -57,245 +108,173 @@ const TRIGGER_ID = '__deepc_bridge_trigger'
 /** deepSea 品牌图标（内联 SVG，蓝色圆角底 + 三波浪线，与主站 deepsea.svg 一致）。 */
 const DEEPSEA_LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="#16b3eb"/><g transform="translate(4 4) scale(0.6667)" stroke="#02080f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 q2.5 2 5 0 t5 0 t5 0 t5 0"/><path d="M2 19 q2.5 2 5 0 t5 0 t5 0 t5 0"/><path d="M2 5 q2.5 2 5 0 t5 0 t5 0 t5 0"/></g></svg>`
 
-/** 深蓝玻璃风格配色（与主站统一）。 */
+/** 二维码 icon（内联 SVG；front-end token 一致的主站深度蓝）。 */
+const QR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v7M14 21h3M18.5 18H21"/></svg>`
+
+/** 用户 icon（登录按钮，user circle；登录后替换为实际头像）。 */
+const USER_ICON = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.5 3.6-6 8-6s8 2.5 8 6"/></svg>`
+
+/** 现代简约设计 token（移植 shadcn 语义到 vanilla DOM，插件端不依赖 React/Tailwind）。 */
 const CSS = `
+:root {
+  --dc-bg: rgba(12, 16, 28, .98);
+  --dc-bg-soft: rgba(20, 26, 42, .75);
+  --dc-card: rgba(255, 255, 255, .025);
+  --dc-card-hover: rgba(255, 255, 255, .05);
+  --dc-border: rgba(148, 163, 184, .14);
+  --dc-border-strong: rgba(148, 163, 184, .26);
+  --dc-fg: #e6ebf2;
+  --dc-fg-soft: #9aa6b8;
+  --dc-fg-dim: #6b7688;
+  --dc-primary: #3fb2f0;
+  --dc-primary-soft: rgba(63, 178, 240, .13);
+  --dc-danger: #fb7185;
+  --dc-radius: 14px;
+  --dc-radius-sm: 9px;
+  --dc-gap: 12px;
+}
 #${HOST_ZONE_ID}, #${HOST_ZONE_ID} * { box-sizing: border-box; }
 #${FAB_ID} {
   position: fixed; bottom: 16px; right: 16px;
-  width: 42px; height: 42px; z-index: 2147483000;
+  width: 44px; height: 44px; z-index: 2147483000;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 12px; cursor: pointer;
-  background: rgba(10,15,28,.92);
-  border: 1px solid rgba(148,163,184,.25);
-  box-shadow: 0 6px 20px rgba(2,8,24,.5);
+  border-radius: 14px; cursor: pointer;
+  background: var(--dc-bg);
+  border: 1px solid var(--dc-border-strong);
+  box-shadow: 0 10px 30px rgba(2, 8, 24, .55);
   overflow: hidden;
+  transition: border-color .18s ease, transform .18s ease;
 }
-#${FAB_ID}:hover { border-color: rgba(22,179,235,.55); }
+#${FAB_ID}:hover { border-color: var(--dc-primary); transform: translateY(-1px); }
 #${SHEET_ID} {
-  position: fixed; bottom: 16px; right: 16px; width: 324px; z-index: 2147482999;
-  background: rgba(10,15,28,.97);
-  border: 1px solid rgba(148,163,184,.18);
-  border-radius: 16px;
-  box-shadow: 0 18px 48px rgba(2,8,24,.65);
+  position: fixed; bottom: 16px; right: 16px; width: 356px; z-index: 2147482999;
+  background: var(--dc-bg);
+  border: 1px solid var(--dc-border);
+  border-radius: 18px;
+  box-shadow: 0 24px 64px rgba(2, 8, 24, .7);
   transform-origin: 100% 100%;
-  display: flex; flex-direction: column; color: #e2e8f0; font-family: system-ui, sans-serif;
+  display: flex; flex-direction: column;
+  color: var(--dc-fg);
+  /* 字体沿用主站（dsh 前端注入 --dsw-font-family；无则 fallback），保证字体一致性。 */
+  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif);
   overflow: hidden;
   opacity: 0; pointer-events: none; visibility: hidden;
+  backdrop-filter: blur(18px) saturate(1.2);
 }
 #${TRIGGER_ID} {
   position: fixed; bottom: 0; right: 0; width: 96px; height: 96px; z-index: 2147482998;
   pointer-events: auto;
 }
-.dcb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid rgba(148,163,184,.15); }
-.dcb-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.dcb-brand-title { font-size: 15px; font-weight: 700; color: #f1f5f9; line-height: 1.15; }
-.dcb-brand-sub { font-size: 11px; color: #94a3b8; }
-.dcb-auth { flex-shrink: 0; }
-.dcb-login-btn { padding: 7px 12px; border-radius: 8px; border: 1px solid rgba(125,211,252,.4); background: rgba(125,211,252,.1); color: #7dd3fc; cursor: pointer; font-size: 12px; font-weight: 500; }
-.dcb-login-btn:hover { background: rgba(125,211,252,.2); }
-.dcb-user-avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; background: #334155; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #7dd3fc; overflow: hidden; border: 1px solid rgba(148,163,184,.25); }
+.dcb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--dc-border); }
+.dcb-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dcb-brand-title { font-size: 15px; font-weight: 700; color: var(--dc-fg); line-height: 1.15; letter-spacing: -.01em; }
+.dcb-brand-sub { font-size: 11px; color: var(--dc-fg-dim); }
+.dcb-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* 登录按钮：user icon 头像（未登录）；登录后整体由 profile 头像替换。 */
+.dcb-head-login { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--dc-border-strong); background: var(--dc-bg-soft); color: var(--dc-fg-soft); cursor: pointer; transition: all .15s ease; }
+.dcb-head-login:hover { color: var(--dc-primary); border-color: var(--dc-primary); background: var(--dc-primary-soft); }
+.dcb-head-user { display: flex; align-items: center; gap: 7px; position: relative; cursor: pointer; padding: 3px 9px 3px 3px; border-radius: 999px; border: 1px solid transparent; transition: border-color .15s ease, background .15s ease; }
+.dcb-head-user:hover { border-color: var(--dc-border); background: var(--dc-card-hover); }
+.dcb-head-user .dcb-user-name { max-width: 108px; }
+.dcb-head-user .dcb-user-avatar { width: 28px; height: 28px; }
+.dcb-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: var(--dc-gap); max-height: 74vh; overflow-y: auto; }
+.dcb-body::-webkit-scrollbar { width: 6px; }
+.dcb-body::-webkit-scrollbar-thumb { background: rgba(148,163,184,.2); border-radius: 8px; }
+
+/* ····· 核心卡：2FA 验证码 ····· */
+.dcb-card { border: 1px solid var(--dc-border); border-radius: var(--dc-radius); background: var(--dc-card); padding: 14px; }
+.dcb-otp { display: flex; flex-direction: column; gap: 12px; }
+.dcb-otp-head { display: flex; align-items: baseline; justify-content: space-between; }
+.dcb-otp-label { font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--dc-fg-dim); text-transform: uppercase; }
+.dcb-otp-label-row { display: inline-flex; align-items: center; gap: 7px; }
+.dcb-otp-qr-trigger { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 4px; border-radius: 7px; border: 1px solid var(--dc-border-strong); background: var(--dc-bg-soft); color: var(--dc-fg-soft); cursor: pointer; transition: all .15s ease; vertical-align: middle; }
+.dcb-otp-qr-trigger:hover { color: var(--dc-primary); border-color: var(--dc-primary); background: var(--dc-primary-soft); }
+.dcb-totp-remain { font-size: 12px; color: var(--dc-fg-dim); font-variant-numeric: tabular-nums; }
+.dcb-otp-code { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', monospace; font-size: 38px; font-weight: 700; letter-spacing: .1em; color: var(--dc-fg); line-height: 1; text-align: center; }
+.dcb-otp-count { height: 4px; border-radius: 999px; background: rgba(148,163,184,.14); overflow: hidden; }
+.dcb-totp-bar { display: block; height: 100%; background: var(--dc-primary); border-radius: 999px; width: 100%; transition: width 1s linear; }
+.dcb-qr-wrap { display: flex; flex-direction: column; gap: 10px; animation: dcbFadeIn .2s ease; }
+.dcb-qr { display: block; margin: 0 auto; width: 128px; height: 128px; image-rendering: pixelated; border-radius: 10px; background: #fff; padding: 6px; }
+.dcb-qr-hint { font-size: 10.5px; color: var(--dc-fg-dim); line-height: 1.5; text-align: center; margin: 0; }
+.dcb-copyrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--dc-radius-sm); background: var(--dc-bg-soft); border: 1px solid var(--dc-border); }
+.dcb-copyrow code { flex: 1; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: var(--dc-fg-soft); word-break: break-all; line-height: 1.5; }
+.dcb-iconbtn { flex-shrink: 0; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--dc-border); background: transparent; color: var(--dc-fg-dim); cursor: pointer; font-size: 11px; transition: all .15s ease; }
+.dcb-iconbtn:hover { color: var(--dc-primary); border-color: var(--dc-primary); }
+.dcb-iconbtn.danger:hover { color: var(--dc-danger); border-color: rgba(251,113,133,.4); }
+
+/* ····· 配置分组行 ····· */
+.dcb-group { display: flex; flex-direction: column; border: 1px solid var(--dc-border); border-radius: var(--dc-radius); background: var(--dc-card); overflow: hidden; }
+.dcb-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; }
+.dcb-row + .dcb-row { border-top: 1px solid var(--dc-border); }
+.dcb-row-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.dcb-row-label { font-size: 13px; font-weight: 600; color: var(--dc-fg); }
+.dcb-row-sub { font-size: 11px; color: var(--dc-fg-dim); line-height: 1.4; }
+.dcb-addr { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dcb-addr code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: var(--dc-fg-soft); word-break: break-all; line-height: 1.4; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcb-user { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 4px; }
+.dcb-user-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; background: var(--dc-bg-soft); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--dc-primary); overflow: hidden; border: 1px solid var(--dc-border-strong); }
 .dcb-user-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.dcb-brand-text { min-width: 0; }
-.dcb-brand-text .dcb-brand-title { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcb-logout-btn { padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(148,163,184,.3); background: transparent; color: #94a3b8; cursor: pointer; font-size: 12px; flex-shrink: 0; transition: color .15s ease, border-color .15s ease, background .15s ease; }
-.dcb-logout-btn:hover { color: #e2e8f0; border-color: rgba(148,163,184,.5); }
-.dcb-logout-btn.confirm { background: rgba(251,113,133,.15); border-color: rgba(251,113,133,.45); color: #fb7185; }
-.dcb-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
-.dcb-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.dcb-row-text { min-width: 0; }
-.dcb-row-label { font-size: 13px; font-weight: 600; color: #e2e8f0; }
-.dcb-row-desc { font-size: 11px; color: #94a3b8; margin-top: 2px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dcb-switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+.dcb-user-name { font-size: 12px; color: var(--dc-fg); font-weight: 500; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcb-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* 开关（shadcn Switch 语义） */
+.dcb-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
 .dcb-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
-.dcb-switch .dcb-track { position: absolute; inset: 0; border-radius: 999px; background: rgba(100,116,139,.45); transition: background .18s ease; pointer-events: none; }
-.dcb-switch .dcb-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #e2e8f0; transition: transform .18s ease; }
-.dcb-switch input:checked + .dcb-track { background: #16b3eb; }
+.dcb-switch .dcb-track { position: absolute; inset: 0; border-radius: 999px; background: rgba(100,116,139,.4); transition: background .18s ease; pointer-events: none; }
+.dcb-switch .dcb-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s ease, box-shadow .18s ease; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.dcb-switch input:checked + .dcb-track { background: var(--dc-primary); }
 .dcb-switch input:checked + .dcb-track::after { transform: translateX(18px); }
-.dcb-id-label { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: block; }
-.dcb-id-box { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px; background: rgba(15,23,42,.7); border: 1px dashed rgba(125,211,252,.4); }
-.dcb-id-box code { flex: 1; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; color: #7dd3fc; word-break: break-all; line-height: 1.5; }
-.dcb-copy { flex-shrink: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(125,211,252,.35); background: transparent; color: #7dd3fc; cursor: pointer; font-size: 11px; }
-.dcb-copy:hover { background: rgba(125,211,252,.15); }
-.dcb-countdown { text-align: center; font-size: 12px; color: #fbbf24; font-family: ui-monospace, monospace; margin-top: 8px; }
-.dcb-btn { width: 100%; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: filter .15s ease; }
-.dcb-btn:hover { filter: brightness(1.1); }
-.dcb-btn-amber { background: rgba(251,191,36,.15); color: #fbbf24; border: 1px solid rgba(251,191,36,.35); }
-.dcb-btn-ghost { background: rgba(125,211,252,.08); color: #7dd3fc; border: 1px solid rgba(125,211,252,.3); }
-.dcb-sync-mini { width: auto; flex-shrink: 0; padding: 5px 12px; border-radius: 8px; font-size: 12px; }
-.dcb-backup-row { display: flex; gap: 8px; }
-.dcb-backup-row .dcb-btn { width: auto; flex: 1; }
-.dcb-note { font-size: 11px; color: #94a3b8; line-height: 1.5; margin: 0; }
-.dcb-pass-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(148,163,184,.25); background: rgba(15,23,42,.6); color: #e2e8f0; font-size: 13px; outline: none; }
-.dcb-pass-input:focus { border-color: rgba(125,211,252,.5); }
-.dcb-status { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: rgba(15,23,42,.6); }
-.dcb-status .dcb-status-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dcb-disconnect { flex-shrink: 0; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(251,191,36,.4); background: rgba(251,191,36,.12); color: #fbbf24; cursor: pointer; font-size: 11px; font-weight: 500; }
-.dcb-toast { position: fixed; top: 16px; right: 16px; z-index: 2147483001; width: 324px; background: rgba(10,15,28,.98); border: 1px solid rgba(251,191,36,.35); border-radius: 12px; padding: 14px; box-shadow: 0 18px 48px rgba(2,8,24,.65); display: flex; flex-direction: column; gap: 10px; color: #e2e8f0; font-family: system-ui, sans-serif; opacity: 0; transform: translateY(-12px); transition: opacity .2s ease, transform .2s ease; }
-.dcb-toast.show { opacity: 1; transform: translateY(0); }
-.dcb-toast-title { font-size: 13px; font-weight: 700; color: #fbbf24; }
-.dcb-toast .dcb-note { margin: 0; }
-.dcb-disconnect:hover { background: rgba(251,191,36,.22); }
-.dcb-manage-link { color: #7dd3fc; text-decoration: underline; cursor: pointer; margin-left: 2px; }
-.dcb-manage-link:hover { color: #38bdf8; }
-.dcb-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; flex-shrink: 0; }
-.dcb-dot.on { background: #34d399; }
-.dcb-dot.offering { background: #38bdf8; }
-.dcb-dot.error { background: #fb7185; }
+.dcb-switch input:disabled { cursor: not-allowed; }
+.dcb-switch input:disabled + .dcb-track { opacity: .45; }
+
+/* ····· 主操作按钮 ····· */
+.dcb-primary { width: 100%; padding: 11px; border-radius: var(--dc-radius-sm); border: none; cursor: pointer; font-size: 13px; font-weight: 600; letter-spacing: .01em; background: var(--dc-primary); color: #031018; transition: all .15s ease; }
+.dcb-primary:hover { filter: brightness(1.08); }
+.dcb-primary.danger { background: var(--dc-danger); color: #2a060b; }
+.dcb-primary:disabled { opacity: .5; cursor: not-allowed; }
+.dcb-btn-row { display: flex; gap: 8px; }
+.dcb-btn-row .dcb-primary { flex: 1; }
+
+/* 开发模式行 */
+.dcb-dev { border: 1px solid var(--dc-border); border-radius: var(--dc-radius); background: var(--dc-card); }
+
+@keyframes dcbFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* ····· 二维码整卡切换面板 ····· */
+.dcb-qr-panel { display: flex; flex-direction: column; gap: 12px; animation: dcbFadeIn .2s ease; }
+.dcb-qr-close { margin-left: auto; padding: 2px 10px; border: 1px solid var(--dc-border); background: transparent; color: var(--dc-fg-dim); border-radius: 7px; cursor: pointer; font-size: 14px; line-height: 1; transition: all .15s ease; }
+.dcb-qr-close:hover { color: var(--dc-danger); border-color: rgba(251,113,133,.4); }
 `
 
 type HostState = 'idle' | 'ready'
-
-// ── 前端偏好（auto 用 localStorage 持久化；allow 由后端 status 回填）─────
-const AUTO_KEY = 'deepc:autoEnable'
-
-function readBoolSetting(key: string, fallback: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key)
-    if (v === null) return fallback
-    return v === 'true'
-  } catch { return fallback }
-}
-
-function writeBoolSetting(key: string, value: boolean): void {
-  try { localStorage.setItem(key, String(value)) } catch { /* ignore */ }
-}
 
 interface HostUi {
   state: HostState
   dispose: () => void
 }
 
-/** 渲染 header 登录区：brand 区显示 logo（未登录）/头像+昵称（已登录）；auth 区登录/登出按钮。 */
-function renderAuth(
-  brandEl: HTMLElement,
-  authEl: HTMLElement,
-  opts: {
-    status: BackendStatus
-    /** 点登录：调 /deepc/login，返回授权 URL 则打开。 */
-    onLogin: () => Promise<void>
-    /** 点登出：调 /deepc/logout。 */
-    onLogout: () => Promise<void>
-  }
-): {
-  cancel: () => void
-  rerender: (next: BackendStatus) => void
-} {
-  // 取消「确认登出」态的回调（关闭 sheet 时由 bootstrapHostUi 调用）。
-  let cancelConfirm: (() => void) | null = null
-
-  const renderBrandLogo = (): void => {
-    brandEl.innerHTML = `${DEEPSEA_LOGO}
-      <div class="dcb-brand-text">
-        <div class="dcb-brand-title">deepSea</div>
-        <div class="dcb-brand-sub">deepc bridge</div>
-      </div>`
-  }
-
-  const renderLogin = (): void => {
-    cancelConfirm = null
-    renderBrandLogo()
-    authEl.innerHTML = `<button class="dcb-login-btn" id="dcb-login">登录</button>`
-    authEl.querySelector('#dcb-login')?.addEventListener('click', () => {
-      void opts.onLogin()
-    })
-  }
-
-  const renderLoggedIn = (profile: NonNullable<BackendStatus['profile']>): void => {
-    const name = profile.name?.trim() || profile.login
-    // 头像对齐主站：referrerpolicy no-referrer 保证 GitHub 头像正常加载。
-    // 用 DOM API 创建 img（避免 innerHTML 字符串注入时请求被中止缓存），
-    // 加载失败 onerror 回退到 login 前两位大写（与主站 AvatarFallback 一致）。
-    const avatarSpan = document.createElement('span')
-    avatarSpan.className = 'dcb-user-avatar'
-    if (profile.avatar_url) {
-      const img = document.createElement('img')
-      img.src = profile.avatar_url
-      img.alt = name
-      img.referrerPolicy = 'no-referrer'
-      img.addEventListener('error', () => {
-        avatarSpan.textContent = profile.login.slice(0, 2).toUpperCase()
-      })
-      avatarSpan.appendChild(img)
-    } else {
-      avatarSpan.textContent = profile.login.slice(0, 2).toUpperCase()
-    }
-
-    brandEl.innerHTML = ''
-    brandEl.appendChild(avatarSpan)
-    const textDiv = document.createElement('div')
-    textDiv.className = 'dcb-brand-text'
-    textDiv.innerHTML = `
-      <div class="dcb-brand-title">${escapeHtml(name)}</div>
-      <div class="dcb-brand-sub">@${escapeHtml(profile.login)}</div>`
-    brandEl.appendChild(textDiv)
-    authEl.innerHTML = `<button class="dcb-logout-btn" id="dcb-logout">登出</button>`
-
-    // 登出需二次确认：点「登出」→「确认登出？」；3s 无操作自动取消。
-    const logoutBtn = authEl.querySelector<HTMLButtonElement>('#dcb-logout')!
-    let confirming = false
-    let confirmTimer: ReturnType<typeof setTimeout> | null = null
-    const resetConfirm = (): void => {
-      confirming = false
-      if (confirmTimer) clearTimeout(confirmTimer)
-      confirmTimer = null
-      logoutBtn.textContent = '登出'
-      logoutBtn.classList.remove('confirm')
-    }
-    cancelConfirm = resetConfirm
-    logoutBtn.addEventListener('click', () => {
-      if (!confirming) {
-        confirming = true
-        logoutBtn.textContent = '确认登出？'
-        logoutBtn.classList.add('confirm')
-        confirmTimer = setTimeout(resetConfirm, 3000)
-      } else {
-        resetConfirm()
-        void opts.onLogout()
-      }
-    })
-  }
-
-  /** 根据后端状态快照刷新 header。 */
-  function render(status: BackendStatus): void {
-    if (status.loggedIn && status.profile) {
-      renderLoggedIn(status.profile)
-    } else {
-      renderLogin()
-    }
-  }
-  render(opts.status)
-
-  return {
-    /** 关闭 sheet 时取消「确认登出」态。 */
-    cancel: () => {
-      cancelConfirm?.()
-    },
-    /** 后端状态变化时刷新登录 header（登录/登出前头像主体）。 */
-    rerender: (next: BackendStatus) => {
-      render(next)
-    },
-  }
+/** 生成 TOTP otpauth URI 的二维码（data URL；用公开二维码服务，离线时降级为手动输入）。 */
+function qrDataUrl(otpauthUri: string): string {
+  const encoded = encodeURIComponent(otpauthUri)
+  return `https://api.qrserver.com/v1/create-qr-code/?size=132x132&data=${encoded}`
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
-  )
+/** 隧道 URL 的二级域名前缀（去 https:// 协议）。 */
+function prettyHost(url: string | null): string {
+  if (!url) return ''
+  return url.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
 }
 
-function escapeAttr(s: string): string {
-  return escapeHtml(s)
+/** 文字复制（剪贴板 + 按钮「已复制」短暂反馈）。 */
+function copyText(text: string, btn: HTMLElement): void {
+  void navigator.clipboard?.writeText(text)
+  btn.textContent = '已复制'
+  setTimeout(() => (btn.textContent = '复制'), 1200)
 }
 
-/** 秒数格式化为 HH:MM:SS 或 MM:SS（连接时长展示）。 */
-function formatElapsed(ms: number): string {
-  const total = Math.floor(ms / 1000)
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
-  const mm = String(m).padStart(2, '0')
-  const ss = String(s).padStart(2, '0')
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+/** TOTP secret 分组显示（每 4 字符一空格）。 */
+function formatSecret(secret: string): string {
+  return secret.replace(/(.{4})/g, '$1 ').trim()
 }
 
 /** 判断是否已注入（幂等守卫）。 */
@@ -331,38 +310,88 @@ export function bootstrapHostUi(): HostUi {
   sheet.id = SHEET_ID
   sheet.innerHTML = `
     <div class="dcb-head">
-      <div class="dcb-brand" id="dcb-brand">
+      <div class="dcb-brand">
         ${DEEPSEA_LOGO}
         <div>
           <div class="dcb-brand-title">deepSea</div>
-          <div class="dcb-brand-sub">deepc bridge</div>
+          <div class="dcb-brand-sub">远端互联</div>
         </div>
       </div>
-      <div class="dcb-auth" id="dcb-auth"></div>
+      <div class="dcb-head-right">
+        <button class="dcb-head-login" id="dcb-head-login" title="登录主站">${USER_ICON}</button>
+        <div class="dcb-head-user" id="dcb-head-user" style="display:none" title="点击登出">
+          <span class="dcb-user-avatar" id="dcb-head-avatar"></span>
+          <span class="dcb-user-name" id="dcb-head-name"></span>
+        </div>
+      </div>
     </div>
     <div class="dcb-body">
-      <div class="dcb-row">
-        <div class="dcb-row-text">
-          <div class="dcb-row-label">允许互联</div>
-          <div class="dcb-row-desc">关闭后拒绝新连接</div>
+
+      <div class="dcb-card dcb-otp" id="dcb-otp-panel">
+        <div class="dcb-otp-head">
+          <span class="dcb-otp-label dcb-otp-label-row">
+            2FA 安全码
+            <button class="dcb-otp-qr-trigger" id="dcb-qr-toggle" title="显示二维码绑定">${QR_ICON}</button>
+          </span>
+          <span class="dcb-totp-remain" id="dcb-totp-remain"></span>
         </div>
-        <label class="dcb-switch"><input type="checkbox" id="dcb-allow" checked><span class="dcb-track"></span></label>
+        <div class="dcb-otp-code" id="dcb-totp-code">------</div>
+        <div class="dcb-otp-count"><span class="dcb-totp-bar" id="dcb-totp-bar"></span></div>
       </div>
-      <div class="dcb-row">
-        <div class="dcb-row-text">
-          <div class="dcb-row-label">自动开启</div>
-          <div class="dcb-row-desc">登录后自动启动</div>
+
+      <div class="dcb-card dcb-qr-panel" id="dcb-qr-panel" style="display:none">
+        <div class="dcb-otp-head">
+          <span class="dcb-otp-label">绑定 2FA</span>
+          <button class="dcb-qr-close" id="dcb-qr-close">×</button>
         </div>
-        <label class="dcb-switch"><input type="checkbox" id="dcb-auto" checked><span class="dcb-track"></span></label>
-      </div>
-      <div class="dcb-row">
-        <div class="dcb-row-text">
-          <div class="dcb-row-label">开发模式</div>
-          <div class="dcb-row-desc">以本地 127.0.0.1:5174 调试后端</div>
+        <img class="dcb-qr" id="dcb-qr" alt="2FA 二维码" />
+        <div class="dcb-copyrow">
+          <code id="dcb-totp-secret"></code>
+          <button class="dcb-iconbtn" id="dcb-totp-copy">复制</button>
+          <button class="dcb-iconbtn danger" id="dcb-totp-rotate">重置</button>
         </div>
-        <label class="dcb-switch"><input type="checkbox" id="dcb-dev-mode"><span class="dcb-track"></span></label>
+        <p class="dcb-qr-hint">用 2FA 应用（Google Authenticator 等）扫码绑定；也可手动输入上方密钥。完成绑定后返回。</p>
       </div>
-      <div class="dcb-status"><span class="dcb-dot" id="dcb-dot"></span><span class="dcb-status-label" id="dcb-status-text">未连接</span><button class="dcb-disconnect" id="dcb-disconnect" style="display:none">断开</button></div>
+
+      <div class="dcb-group">
+        <div class="dcb-row">
+          <div class="dcb-row-main">
+            <div class="dcb-row-label">本地共享</div>
+            <div class="dcb-row-sub" id="dcb-local-sub">局域网可访问本机 3081 端口</div>
+          </div>
+          <label class="dcb-switch">
+            <input type="checkbox" id="dcb-local-switch" />
+            <span class="dcb-track"></span>
+          </label>
+        </div>
+        <div class="dcb-row">
+          <div class="dcb-row-main">
+            <div class="dcb-row-label">隧道映射</div>
+            <div class="dcb-row-sub" id="dcb-tunnel-sub">通过 Cloudflare 暴露到公网</div>
+          </div>
+          <label class="dcb-switch">
+            <input type="checkbox" id="dcb-tunnel-switch" />
+            <span class="dcb-track"></span>
+          </label>
+        </div>
+        <div class="dcb-row" id="dcb-tunnel-row" style="display:none">
+          <div class="dcb-row-main">
+            <div class="dcb-row-label">公网地址</div>
+            <div class="dcb-addr"><code id="dcb-tunnel-url-code"></code></div>
+          </div>
+          <button class="dcb-iconbtn" id="dcb-tunnel-url-copy">复制</button>
+        </div>
+        <div class="dcb-row">
+          <div class="dcb-row-main">
+            <div class="dcb-row-label">开发模式</div>
+            <div class="dcb-row-sub">使用本地 127.0.0.1:5174 基址</div>
+          </div>
+          <label class="dcb-switch">
+            <input type="checkbox" id="dcb-devmode" />
+            <span class="dcb-track"></span>
+          </label>
+        </div>
+      </div>
     </div>
   `
 
@@ -380,137 +409,247 @@ export function bootstrapHostUi(): HostUi {
   let isHovering = false
   let hideTimer: ReturnType<typeof setTimeout> | null = null
 
-  const authEl = sheet.querySelector<HTMLElement>('#dcb-auth')!
-  const brandEl = sheet.querySelector<HTMLElement>('#dcb-brand')!
-  const dot = sheet.querySelector<HTMLElement>('#dcb-dot')!
-  const statusText = sheet.querySelector<HTMLElement>('#dcb-status-text')!
-  const disconnectBtn = sheet.querySelector<HTMLElement>('#dcb-disconnect')!
-  const devModeToggle = sheet.querySelector<HTMLInputElement>('#dcb-dev-mode')!
-  const allowToggle = sheet.querySelector<HTMLInputElement>('#dcb-allow')!
-  const autoToggle = sheet.querySelector<HTMLInputElement>('#dcb-auto')!
+  const headLogin = sheet.querySelector<HTMLElement>('#dcb-head-login')!
+  const headUser = sheet.querySelector<HTMLElement>('#dcb-head-user')!
+  const headAvatar = sheet.querySelector<HTMLElement>('#dcb-head-avatar')!
+  const headName = sheet.querySelector<HTMLElement>('#dcb-head-name')!
+  const devModeInput = sheet.querySelector<HTMLInputElement>('#dcb-devmode')!
+  const totpCodeEl = sheet.querySelector<HTMLElement>('#dcb-totp-code')!
+  const totpBar = sheet.querySelector<HTMLElement>('#dcb-totp-bar')!
+  const totpRemain = sheet.querySelector<HTMLElement>('#dcb-totp-remain')!
+  const otpPanel = sheet.querySelector<HTMLElement>('#dcb-otp-panel')!
+  const qrToggle = sheet.querySelector<HTMLElement>('#dcb-qr-toggle')!
+  const qrPanel = sheet.querySelector<HTMLElement>('#dcb-qr-panel')!
+  const qrClose = sheet.querySelector<HTMLElement>('#dcb-qr-close')!
+  const qrImg = sheet.querySelector<HTMLImageElement>('#dcb-qr')!
+  const totpSecretEl = sheet.querySelector<HTMLElement>('#dcb-totp-secret')!
+  const totpCopy = sheet.querySelector<HTMLElement>('#dcb-totp-copy')!
+  const totpRotate = sheet.querySelector<HTMLElement>('#dcb-totp-rotate')!
+  const localSwitch = sheet.querySelector<HTMLInputElement>('#dcb-local-switch')!
+  const localSub = sheet.querySelector<HTMLElement>('#dcb-local-sub')!
+  const tunnelSwitch = sheet.querySelector<HTMLInputElement>('#dcb-tunnel-switch')!
+  const tunnelSub = sheet.querySelector<HTMLElement>('#dcb-tunnel-sub')!
+  const tunnelRow = sheet.querySelector<HTMLElement>('#dcb-tunnel-row')!
+  const tunnelUrlCode = sheet.querySelector<HTMLElement>('#dcb-tunnel-url-code')!
+  const tunnelUrlCopy = sheet.querySelector<HTMLElement>('#dcb-tunnel-url-copy')!
 
-  // 前端互联展示态（从后端 status 同步；auto 为前端偏好，localStorage 持久化）。
-  let status: BackendStatus = { loggedIn: false, deviceName: '', sessions: 0, allowInterconnect: true }
-
-  // 初始化 toggle（auto 为前端偏好；allow 由后端 status 回填）。
-  autoToggle.checked = readBoolSetting(AUTO_KEY, true)
-  allowToggle.checked = true
-
-  allowToggle.addEventListener('change', () => {
-    void deepcCall('allow', { enabled: allowToggle.checked })
-  })
-
-  autoToggle.addEventListener('change', () => {
-    writeBoolSetting(AUTO_KEY, autoToggle.checked)
-  })
-
-  function setStatus(label: string, dotState: string): void {
-    statusText.textContent = label
-    dot.className = `dcb-dot ${dotState}`
+  // 前端展示态（从后端 status 同步）。
+  let status: BackendStatus = {
+    mode: 'local',
+    loggedIn: false,
+    deviceName: '',
+    connected: false,
+    url: null,
+    localUrl: null,
+    localOn: true,
+    totpSecret: null,
+    otpauthUri: null,
   }
 
-  /** 根据后端状态快照刷新状态栏 + header + 开关。 */
+  // 隧道开关意图（用户本会话内的选择；登录后锁定为开）。
+  let tunnelOn = false
+  let tunnelOnInit = false
+
+  /** 有效模式（前端推导）：登录 → managed；隧道开关 → tunnel；否则 local。 */
+  function effectiveMode(): BackendStatus['mode'] {
+    if (status.loggedIn) return 'managed'
+    return tunnelOn ? 'tunnel' : 'local'
+  }
+
+  function renderHead(): void {
+    if (status.loggedIn && status.profile) {
+      const p = status.profile
+      const name = p.name?.trim() || p.login
+      headLogin.style.display = 'none'
+      headUser.style.display = 'flex'
+      headName.textContent = name
+      headName.title = `@${p.login}`
+      headAvatar.innerHTML = ''
+      if (p.avatar_url) {
+        const img = document.createElement('img')
+        img.src = p.avatar_url
+        img.alt = name
+        img.referrerPolicy = 'no-referrer'
+        img.addEventListener('error', () => {
+          headAvatar.textContent = p.login.slice(0, 2).toUpperCase()
+        })
+        headAvatar.appendChild(img)
+      } else {
+        headAvatar.textContent = p.login.slice(0, 2).toUpperCase()
+      }
+    } else {
+      headLogin.style.display = ''
+      headUser.style.display = 'none'
+    }
+  }
+
+  function renderTiers(): void {
+    // 本地共享开关（默认开）。
+    localSwitch.checked = status.localOn !== false
+    // 本地共享开启后：直接显示局域网访问地址；未取到本机 IP 时回退占位描述。
+    if (status.localOn !== false) {
+      localSub.textContent = status.localUrl ?? '局域网可访问本机 3081 端口'
+      localSub.title = status.localUrl ?? ''
+    } else {
+      localSub.textContent = '已关闭，仅本机可访问'
+      localSub.title = ''
+    }
+    // 隧道映射：登录后锁定为开（纳管需要隧道）。
+    const locked = status.loggedIn
+    tunnelSwitch.checked = tunnelOn || locked
+    tunnelSwitch.disabled = locked
+    // 隧道开启后：直接显示公网地址（去协议、无路径的 host）；未取到则回退占位描述。
+    if (status.url) {
+      tunnelSub.textContent = prettyHost(status.url)
+      tunnelSub.title = status.url
+    } else {
+      tunnelSub.textContent = locked ? '已随云端纳管启用' : '通过 Cloudflare 暴露到公网'
+      tunnelSub.title = ''
+    }
+  }
+
+  function renderTotp(): void {
+    if (status.otpauthUri) {
+      qrImg.src = qrDataUrl(status.otpauthUri)
+      totpSecretEl.textContent = formatSecret(status.totpSecret ?? '')
+    } else {
+      qrImg.removeAttribute('src')
+      totpSecretEl.textContent = ''
+    }
+    void tickTotp()
+  }
+
+  /** 刷新 6 位 TOTP 动态码 + 30s 倒计时（本地即 2FA 客户端）。 */
+  async function tickTotp(): Promise<void> {
+    if (!status.totpSecret) {
+      totpCodeEl.textContent = '------'
+      totpRemain.textContent = ''
+      totpBar.style.width = '0%'
+      return
+    }
+    const now = Date.now()
+    const stepMs = 30_000
+    const remainingMs = stepMs - (now % stepMs)
+    const code = await browserTotpCode(status.totpSecret, now)
+    totpCodeEl.textContent = `${code.slice(0, 3)} ${code.slice(3)}`
+    totpRemain.textContent = `${Math.ceil(remainingMs / 1000)}s`
+    totpBar.style.width = `${(remainingMs / stepMs) * 100}%`
+  }
+
+  function renderAddresses(): void {
+    // 隧道开启时显示公网地址行；不隐藏本地共享行（本地共享是独立开关）。
+    const tunnel = status.url
+    const tunnelRowVisible = tunnelOn || status.connected
+    tunnelRow.style.display = tunnelRowVisible && tunnel ? '' : 'none'
+    tunnelUrlCode.textContent = tunnel ?? ''
+  }
+
+  /** 根据后端状态快照刷新 UI。 */
   function applyStatus(next: BackendStatus): void {
     status = next
-    rerenderAuth(next)
-    allowToggle.checked = next.allowInterconnect
-    devModeToggle.checked = next.devMode === true
-    // 配置同步出现完全冲突 → 弹 toast 提示用户选择「拉取远端 / 强制上传」。
-    if (next.configConflicts && next.configConflicts.length > 0) {
-      showConflictToast(next.configConflicts)
+    if (!tunnelOnInit) {
+      tunnelOn = next.mode === 'tunnel' || next.mode === 'managed'
+      tunnelOnInit = true
     }
-    // 状态栏：连接态 > 已登录就绪 > 未登录。
-    if (next.sessions > 0) {
-      renderConnection(next.sessions)
-    } else if (next.loggedIn) {
-      stopElapsed()
-      disconnectBtn.style.display = 'none'
-      if (next.error === 'quota-exceeded') {
-        showQuotaExceeded()
-      } else if (!next.allowInterconnect) {
-        setStatus('互联已关闭', '')
-      } else {
-        setStatus('多端直连就绪', 'on')
-      }
-    } else if (next.error === 'quota-exceeded') {
-      showQuotaExceeded()
-    } else {
-      stopElapsed()
-      disconnectBtn.style.display = 'none'
-      setStatus(next.error === 'login-timeout' ? '登录超时' : '未连接', '')
+    renderHead()
+    renderTiers()
+    renderTotp()
+    renderAddresses()
+    if (typeof next.devMode === 'boolean' && devModeInput.checked !== next.devMode) {
+      devModeInput.checked = next.devMode
     }
   }
 
-  /** 拉取后端状态并刷新 UI（带 diff：关键字段无变化的轮询调用不再重渲染）。 */
+  /** 拉取后端状态并刷新 UI。 */
   async function refreshStatus(): Promise<void> {
     const s = await deepcCall<BackendStatus>('status')
     if (!s) return
-    // diff guard：只有登录状态/会话数/错误/开关/冲突变化才应用，避免每次轮询重建 DOM。
-    const prev = status
-    const changed =
-      prev.loggedIn !== s.loggedIn ||
-      prev.sessions !== s.sessions ||
-      prev.error !== s.error ||
-      prev.allowInterconnect !== s.allowInterconnect ||
-      prev.devMode !== s.devMode ||
-      (prev.configConflicts?.length ?? 0) !== (s.configConflicts?.length ?? 0)
-    if (changed) {
-      applyStatus(s)
+    applyStatus(s)
+  }
+
+  // ── 本地共享开关 ──
+  localSwitch.addEventListener('change', () => {
+    void (async () => {
+      const r = await deepcCall<{ ok?: boolean }>('local', { on: localSwitch.checked })
+      if (r && !r.ok) {
+        localSwitch.checked = !localSwitch.checked
+      }
+      await refreshStatus()
+    })()
+  })
+
+  // ── 隧道映射开关 ──
+  tunnelSwitch.addEventListener('change', () => {
+    if (status.loggedIn) {
+      // 登录后锁定为开（纳管需要隧道）。
+      tunnelSwitch.checked = true
+      return
     }
-  }
+    tunnelOn = tunnelSwitch.checked
+    void (async () => {
+      await deepcCall('mode', { mode: effectiveMode() })
+      if (status.connected) await deepcCall('connect')
+      await refreshStatus()
+    })()
+  })
 
-  // ── 已连接状态：计时 + 断开按钮（多端直连会话建立/断开时切换）────────
-  let connectedSince: number | null = null
-  let elapsedTimer: ReturnType<typeof setInterval> | null = null
-
-  function stopElapsed(): void {
-    if (elapsedTimer) {
-      clearInterval(elapsedTimer)
-      elapsedTimer = null
+  // ── 登录 / 登出（头部）──
+  headLogin.addEventListener('click', () => {
+    void (async () => {
+      await deepcCall('mode', { mode: 'managed' })
+      const r = await deepcCall<{ url?: string }>('login')
+      if (r?.url) window.open(r.url, '_blank')
+      await refreshStatus()
+    })()
+  })
+  headUser.addEventListener('click', () => {
+    // 点头像登出（二次确认）
+    const name = status.profile?.name?.trim() || status.profile?.login || '当前账号'
+    if (window.confirm(`登出 ${name} 并断开互联？`)) {
+      void (async () => {
+        await deepcCall('logout')
+        await deepcCall('mode', { mode: tunnelOn ? 'tunnel' : 'local' })
+        await refreshStatus()
+      })()
     }
-  }
+  })
 
-  /** 根据当前已建会话数切换状态栏：>0 已连接+计时+断开按钮；0 就绪态。 */
-  function renderConnection(count: number): void {
-    if (count > 0) {
-      if (connectedSince === null) connectedSince = Date.now()
-      stopElapsed()
-      elapsedTimer = setInterval(() => {
-        if (connectedSince !== null) {
-          statusText.textContent = `已连接 · ${formatElapsed(Date.now() - connectedSince)}`
-        }
-      }, 1000)
-      dot.className = 'dcb-dot on'
-      statusText.textContent = `已连接 · ${formatElapsed(Date.now() - connectedSince)}`
-      disconnectBtn.style.display = ''
-    } else {
-      connectedSince = null
-      stopElapsed()
-      disconnectBtn.style.display = 'none'
-      setStatus('多端直连就绪', 'on')
-    }
+  // ── 二维码整卡切换（安全码卡片 ↔ 绑定二维码卡片）──
+  function showQr(show: boolean): void {
+    otpPanel.style.display = show ? 'none' : ''
+    qrPanel.style.display = show ? '' : 'none'
   }
+  qrToggle.addEventListener('click', () => {
+    showQr(true)
+  })
+  qrClose.addEventListener('click', () => {
+    showQr(false)
+  })
 
-  /** 超出节点纳管限制：状态栏提示 + 前往管理链接（不启动信令/心跳）。 */
-  function showQuotaExceeded(): void {
-    dot.className = 'dcb-dot error'
-    statusText.innerHTML = `已超出3个dsh节点纳管限制 <a class="dcb-manage-link" href="${escapeAttr(
-      '/links'
-    )}" target="_blank" rel="noopener noreferrer">前往管理</a>`
-  }
+  // ── 复制 ──
+  totpCopy.addEventListener('click', () => {
+    copyText(status.totpSecret ?? '', totpCopy)
+  })
+  tunnelUrlCopy.addEventListener('click', () => {
+    copyText(status.url ?? '', tunnelUrlCopy)
+  })
 
-  // ── 展开/收起动画（animejs：图标「变形成」sheet）─────────────────────
+  // ── 重新生成安全码 ──
+  totpRotate.addEventListener('click', () => {
+    void deepcCall('totp-rotate').then(() => refreshStatus())
+  })
+
+  // ── 开发模式开关 ──
+  devModeInput.addEventListener('change', () => {
+    void deepcCall('devmode', { enabled: devModeInput.checked }).then(() => refreshStatus())
+  })
+
+  // ── 展开/收起动画（animejs）─────────────────────
   function openSheet(): void {
     if (isOpen) return
     isOpen = true
-    cancelHide() // 打开状态不自动隐藏
-    // 图标缩小淡出，sheet 从右下角向上「生长」+ 弹性
-    animate(fab, {
-      scale: 0.3,
-      opacity: 0,
-      duration: 120,
-      easing: 'outQuad',
-    })
+    cancelHide()
+    animate(fab, { scale: 0.3, opacity: 0, duration: 120, ease: 'outQuad' })
     sheet.style.visibility = 'visible'
     sheet.style.pointerEvents = 'auto'
     animate(sheet, {
@@ -518,22 +657,21 @@ export function bootstrapHostUi(): HostUi {
       opacity: [0, 1],
       translateY: [16, 0],
       duration: 240,
-      easing: 'spring(1, 80, 12, 0)',
+      ease: 'outBack(1.7)',
     })
   }
 
   function closeSheet(): void {
     if (!isOpen) return
     isOpen = false
-    cancelLogoutConfirm() // 点击外侧收起时，取消「确认登出」态
     sheet.style.pointerEvents = 'none'
     animate(sheet, {
       scale: [1, 0.5],
       opacity: [1, 0],
       translateY: [0, 12],
       duration: 150,
-      easing: 'inQuad',
-      complete: () => {
+      ease: 'inQuad',
+      onComplete: () => {
         sheet.style.visibility = 'hidden'
       },
     })
@@ -541,12 +679,11 @@ export function bootstrapHostUi(): HostUi {
       scale: [0.3, 1],
       opacity: [0, 1],
       duration: 150,
-      easing: 'outBack(1.6)',
+      ease: 'outBack(1.6)',
     })
-    scheduleHide() // 收起回图标后重新计时
+    scheduleHide()
   }
 
-  // ── 自动隐藏 / 触角唤出（仅「最小化且未 hover」时无操作 1s 右滑藏起）──
   function cancelHide(): void {
     if (hideTimer) {
       clearTimeout(hideTimer)
@@ -562,57 +699,30 @@ export function bootstrapHostUi(): HostUi {
   }
 
   function hideFab(): void {
-    animate(fab, {
-      translateX: 64,
-      opacity: 0.35,
-      duration: 240,
-      easing: 'outQuad',
-    })
+    animate(fab, { translateX: 64, opacity: 0.35, duration: 240, ease: 'outQuad' })
   }
 
   function showFab(): void {
     if (isOpen) return
     cancelHide()
-    animate(fab, {
-      translateX: 0,
-      opacity: 1,
-      duration: 200,
-      easing: 'outBack(1.7)',
-    })
+    animate(fab, { translateX: 0, opacity: 1, duration: 200, ease: 'outBack(1.7)' })
   }
 
-  // 前端只做展示：登录/登出/开关/同步/断开都经 /deepc 调后端。
-  const { cancel: cancelLogoutConfirm, rerender: rerenderAuth } = renderAuth(brandEl, authEl, {
-    status,
-    onLogin: async () => {
-      const r = await deepcCall<{ url?: string; ok: boolean; reason?: string }>('login')
-      if (r?.url) window.open(r.url, '_blank')
-      void refreshStatus()
-    },
-    onLogout: async () => {
-      await deepcCall('logout')
-      await refreshStatus()
-    },
-  })
-
-  // 图标点击：变形展开
   fab.addEventListener('click', (e) => {
     e.stopPropagation()
     if (isOpen) closeSheet()
-    else openSheet()
+    else {
+      void refreshStatus()
+      openSheet()
+    }
   })
 
-  // Sheet 内部点击不冒泡到 document（避免误关闭）
-  sheet.addEventListener('click', (e) => {
-    e.stopPropagation()
-  })
+  sheet.addEventListener('click', (e) => e.stopPropagation())
 
-  // 点击外部 → 收起
   document.addEventListener('click', () => {
     if (isOpen) closeSheet()
   })
 
-  // hover 状态：鼠标在图标上时不自动隐藏
   fab.addEventListener('mouseenter', () => {
     isHovering = true
     cancelHide()
@@ -621,8 +731,6 @@ export function bootstrapHostUi(): HostUi {
     isHovering = false
     if (!isOpen) scheduleHide()
   })
-
-  // 触发热区：鼠标靠近右下角 → 图标滑回；离开后无操作 1s 再隐藏
   trigger.addEventListener('mouseenter', () => {
     isHovering = true
     showFab()
@@ -632,64 +740,15 @@ export function bootstrapHostUi(): HostUi {
     if (!isOpen) scheduleHide()
   })
 
-  // 初始（最小化状态）即开始计时
   scheduleHide()
 
-  // ── 插件端主动断开所有多端直连（经 /deepc/disconnect）──────────────
-  disconnectBtn.addEventListener('click', () => {
-    void deepcCall('disconnect').then(() => refreshStatus())
-  })
-
-  // ── 开发模式开关（需求 3）：开启以后端 127.0.0.1:5174 为调试后端。────────
-  devModeToggle.addEventListener('change', () => {
-    void deepcCall('dev-mode', { enabled: devModeToggle.checked }).then(() => {
-      return refreshStatus()
-    })
-  })
-
-  // ── 配置冲突 toast（需求 2）：自动同步遇完全冲突时提示「拉取远端/强制上传」。──
-  let conflictToastShown = false
-  function showConflictToast(keys: string[]): void {
-    if (conflictToastShown) return
-    conflictToastShown = true
-    const toast = document.createElement('div')
-    toast.className = 'dcb-toast'
-    toast.innerHTML = `
-      <div class="dcb-toast-title">配置同步冲突</div>
-      <p class="dcb-note">部分配置在多台设备上同时修改，请选择处置方式（${keys.length} 项）。</p>
-      <div class="dcb-backup-row">
-        <button class="dcb-btn dcb-btn-ghost" data-choice="pull">拉取远端</button>
-        <button class="dcb-btn dcb-btn-amber" data-choice="upload">强制上传</button>
-      </div>
-    `
-    document.body.appendChild(toast)
-    // 下一帧加 .show 触发滑入动画。
-    requestAnimationFrame(() => toast.classList.add('show'))
-    const resolve = (choice: 'pull' | 'upload'): void => {
-      toast.remove()
-      conflictToastShown = false
-      void Promise.all(keys.map((key) => deepcCall('conflict-resolve', { key, choice }))).then(
-        () => refreshStatus()
-      )
-    }
-    toast.querySelector<HTMLElement>('[data-choice="pull"]')?.addEventListener('click', () => resolve('pull'))
-    toast.querySelector<HTMLElement>('[data-choice="upload"]')?.addEventListener('click', () => resolve('upload'))
-    // 5s 未处置自动消失（冲突仍留在后端，下次触发再提示）。
-    setTimeout(() => {
-      if (toast.isConnected) {
-        toast.remove()
-        conflictToastShown = false
-      }
-    }, 5000)
-  }
-
-  // 初始拉取一次后端状态。
   void refreshStatus()
-  // 实时跟随连接状态：每 3s 轮询一次（diff guard 里已做无变化短路，开销极小）。
-  // 修复「插件端未连接只有刷新后才变动」——会话建立/断开时状态栏自动更新。
-  setInterval(() => {
+  const pollTimer = setInterval(() => {
     void refreshStatus()
   }, 3000)
+  const totpTimer = setInterval(() => {
+    void tickTotp()
+  }, 1000)
 
   return {
     get state() {
@@ -697,7 +756,8 @@ export function bootstrapHostUi(): HostUi {
     },
     dispose(): void {
       if (hideTimer) clearTimeout(hideTimer)
-      stopElapsed()
+      clearInterval(pollTimer)
+      clearInterval(totpTimer)
       fab.remove()
       sheet.remove()
       trigger.remove()

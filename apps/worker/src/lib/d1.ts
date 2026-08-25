@@ -1,14 +1,16 @@
 // ---------------------------------------------------------------------------
-// D1 数据访问层 —— 用户 / 会话 / 互联日志 / 设备
+// D1 数据访问层 —— 用户 / 会话 / 互联日志 / 设备令牌 / 隧道节点
 //
 // 职责边界：D1 存「关系型用户数据」（users / sessions / interconnect_log /
-// deepc_nodes / deepc_device_tokens）；账户档案（profile）直接用 GitHub 的，不在此重复。
-// 信箱信令（nodeSignal）与 OAuth state 仍在 KV（一次性 + 短 TTL 语义）。
-// 配置（deepc_config）已迁回 D1（WS+DO 方案：D1 存储 + DO 推送 config-changed 通知）。
+// deepc_device_tokens / deepc_tunnels）；账户档案（profile）直接用 GitHub 的。
+// OAuth state 仍在 KV（一次性 + 短 TTL 语义）。
 // 用户 id 统一绑定 GitHub 数字 id（users.github_id 主键），所有数据以其关联。
 //
 // 敏感数据（token）一律 AES-GCM 加密落库，解密仅在需要时进行。
 // 时间戳统一毫秒（Date.now()），与现有 KV 口径一致。
+//
+// 注：deepc_nodes（设备注册表）/ deepc_config（配置同步）已随旧 P2P 架构退役删除。
+// 新架构（TOTP 2FA + 匿名 Quick Tunnel）只纳管 URL，见 docs/deepsea-tunnel-bridge-proposal.md。
 // ---------------------------------------------------------------------------
 
 import type { Env } from "../index"
@@ -71,22 +73,11 @@ export interface InterconnectLogRow {
   description?: string | null
 }
 
-/** 审计事件码（与 migrations/0007_audit_events.sql 字典一致）。 */
+/** 审计事件码（与 migrations 字典一致）。 */
 export type AuditEventCode =
   | "device_grant"
-  | "device_register"
-  | "device_revoke"
-  | "config_put"
-
-/** deepc 设备 node 行（多端互联设备注册表）。 */
-export interface DeepcNodeRow {
-  node_id: string
-  github_id: number
-  name: string
-  last_seen: number | null
-  created_at: number
-  updated_at: number
-}
+  | "tunnel_report"
+  | "tunnel_delete"
 
 /** deepc 设备授权令牌行（只存 token 哈希）。 */
 export interface DeepcDeviceTokenRow {
@@ -96,18 +87,6 @@ export interface DeepcDeviceTokenRow {
   created_at: number
   expires_at: number
 }
-
-/** deepc 配置行（账号级 key-value，跨端配置同步）。 */
-export interface DeepcConfigRow {
-  github_id: number
-  key: string
-  value: string
-  node_id: string | null
-  updated_at: number
-}
-
-/** 配置键名校验：字母数字开头，后续可含 . _ -，长度 1-64。 */
-export const CONFIG_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 // ---------------------------------------------------------------------------
 // users
@@ -296,86 +275,6 @@ export async function purgeLogs(
 }
 
 // ---------------------------------------------------------------------------
-// deepc_nodes（多端设备注册表）
-// ---------------------------------------------------------------------------
-
-/** upsert 设备（注册 / 心跳 / 改名统一入口）。 */
-export async function upsertNode(
-  env: Env,
-  input: {
-    nodeId: string
-    githubId: number
-    name: string
-  }
-): Promise<void> {
-  const now = Date.now()
-  await env.DEEPSEA_D1.prepare(
-    `INSERT INTO deepc_nodes (node_id, github_id, name, last_seen, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(node_id) DO UPDATE SET
-       name = excluded.name,
-       last_seen = excluded.last_seen,
-       updated_at = excluded.updated_at`
-  )
-    .bind(input.nodeId, input.githubId, input.name, now, now, now)
-    .run()
-}
-
-/** 读单个设备（归属校验：node_id + github_id 同时匹配）。 */
-export async function getNode(
-  env: Env,
-  nodeId: string,
-  githubId: number
-): Promise<DeepcNodeRow | null> {
-  return env.DEEPSEA_D1.prepare(
-    "SELECT * FROM deepc_nodes WHERE node_id = ? AND github_id = ?"
-  )
-    .bind(nodeId, githubId)
-    .first<DeepcNodeRow>()
-}
-
-/** 列出某账号全部设备（按 last_seen 倒序，在线的靠前）。 */
-export async function listNodes(
-  env: Env,
-  githubId: number
-): Promise<DeepcNodeRow[]> {
-  const result = await env.DEEPSEA_D1.prepare(
-    `SELECT * FROM deepc_nodes WHERE github_id = ?
-     ORDER BY last_seen DESC`
-  )
-    .bind(githubId)
-    .all<DeepcNodeRow>()
-  return result.results ?? []
-}
-
-/** 统计某账号已登记的节点数（配额校验用）。 */
-export async function countNodesByGithub(
-  env: Env,
-  githubId: number
-): Promise<number> {
-  const row = await env.DEEPSEA_D1.prepare(
-    "SELECT COUNT(*) AS cnt FROM deepc_nodes WHERE github_id = ?"
-  )
-    .bind(githubId)
-    .first<{ cnt: number }>()
-  return row?.cnt ?? 0
-}
-
-/** 删除设备（吊销，下线）。 */
-export async function removeNode(
-  env: Env,
-  nodeId: string,
-  githubId: number
-): Promise<boolean> {
-  const result = await env.DEEPSEA_D1.prepare(
-    "DELETE FROM deepc_nodes WHERE node_id = ? AND github_id = ?"
-  )
-    .bind(nodeId, githubId)
-    .run()
-  return result.meta.changes > 0
-}
-
-// ---------------------------------------------------------------------------
 // deepc_device_tokens（设备授权令牌，只存 SHA-256 哈希）
 // ---------------------------------------------------------------------------
 
@@ -422,71 +321,6 @@ export async function revokeDeviceTokensByNode(
   )
     .bind(nodeId)
     .run()
-}
-
-// ---------------------------------------------------------------------------
-// deepc_config（账号级配置同步）
-// ---------------------------------------------------------------------------
-
-/** 读单条配置（无返回 null）。 */
-export async function getConfig(
-  env: Env,
-  githubId: number,
-  key: string
-): Promise<DeepcConfigRow | null> {
-  return env.DEEPSEA_D1.prepare(
-    "SELECT * FROM deepc_config WHERE github_id = ? AND key = ?"
-  )
-    .bind(githubId, key)
-    .first<DeepcConfigRow>()
-}
-
-/** 增量列出配置（updated_at > since，走 idx_config_github 索引，无变更读 0 行）。 */
-export async function listConfig(
-  env: Env,
-  githubId: number,
-  since = 0
-): Promise<DeepcConfigRow[]> {
-  const result = await env.DEEPSEA_D1.prepare(
-    `SELECT * FROM deepc_config WHERE github_id = ? AND updated_at > ?
-     ORDER BY updated_at ASC`
-  )
-    .bind(githubId, since)
-    .all<DeepcConfigRow>()
-  return result.results ?? []
-}
-
-/**
- * 写配置（LWW + 单调递增时间戳）：updated_at = max(now, 现有 + 1)。
- * 返回最终写入的 updated_at。
- */
-export async function putConfig(
-  env: Env,
-  input: {
-    githubId: number
-    key: string
-    value: string
-    nodeId: string | null
-  }
-): Promise<number> {
-  const now = Date.now()
-  const existing = await env.DEEPSEA_D1.prepare(
-    "SELECT updated_at FROM deepc_config WHERE github_id = ? AND key = ?"
-  )
-    .bind(input.githubId, input.key)
-    .first<{ updated_at: number }>()
-  const updatedAt = Math.max(now, (existing?.updated_at ?? 0) + 1)
-  await env.DEEPSEA_D1.prepare(
-    `INSERT INTO deepc_config (github_id, key, value, node_id, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(github_id, key) DO UPDATE SET
-       value = excluded.value,
-       node_id = excluded.node_id,
-       updated_at = excluded.updated_at`
-  )
-    .bind(input.githubId, input.key, input.value, input.nodeId, updatedAt)
-    .run()
-  return updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -557,4 +391,99 @@ export async function resolveActorUserId(
   const sessionId = await resolveSessionUserId(request, env)
   if (sessionId !== null) return sessionId
   return resolveDeviceUserId(request, env)
+}
+
+// ---------------------------------------------------------------------------
+// deepc_tunnels（远端互联节点，上报式）
+// ---------------------------------------------------------------------------
+
+export interface DeepcTunnelRow {
+  node_id: string
+  github_id: number
+  node_name: string
+  url: string | null
+  status: string
+  created_at: number
+  modified_at: number
+}
+
+/**
+ * 上报节点（upsert，直接修改条目）：插件本地隧道启动后上报最新 URL。
+ * 主站只纳管 URL，不存任何 secret（TOTP secret 由用户本地 2FA 管理）。
+ * 节点不存在则创建（nodeId 由插件 hostname 派生，同主机 = 同 ID）；
+ * 已存在则原地更新（node_id PK，防膨胀——不新增行）。
+ */
+export async function reportTunnel(
+  env: Env,
+  input: {
+    nodeId: string
+    githubId: number
+    nodeName: string
+    url: string
+    /** 节点在线状态：connected（默认，上报即在线）/ offline（断链上报离线）。 */
+    status?: "connected" | "offline"
+  }
+): Promise<void> {
+  const now = Date.now()
+  const status = input.status ?? "connected"
+  await env.DEEPSEA_D1.prepare(
+    `INSERT INTO deepc_tunnels
+       (node_id, github_id, node_name, url, status, created_at, modified_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(node_id) DO UPDATE SET
+       node_name = excluded.node_name,
+       url = excluded.url,
+       status = excluded.status,
+       modified_at = excluded.modified_at`
+  )
+    .bind(
+      input.nodeId,
+      input.githubId,
+      input.nodeName,
+      input.url,
+      status,
+      now,
+      now,
+    )
+    .run()
+}
+
+/** 读节点行（归属校验：githubId 过滤；行存在即在线，无软删概念）。 */
+export async function getTunnel(
+  env: Env,
+  nodeId: string,
+  githubId: number
+): Promise<DeepcTunnelRow | null> {
+  return env.DEEPSEA_D1.prepare(
+    "SELECT * FROM deepc_tunnels WHERE node_id = ? AND github_id = ?"
+  )
+    .bind(nodeId, githubId)
+    .first<DeepcTunnelRow>()
+}
+
+/** 列出账号全部节点（前端 /link）。 */
+export async function listTunnels(
+  env: Env,
+  githubId: number
+): Promise<DeepcTunnelRow[]> {
+  const res = await env.DEEPSEA_D1.prepare(
+    `SELECT * FROM deepc_tunnels WHERE github_id = ?
+     ORDER BY modified_at DESC`
+  )
+    .bind(githubId)
+    .all<DeepcTunnelRow>()
+  return res.results ?? []
+}
+
+/** 硬删节点（DELETE 行；防膨胀——不留软删残行）。 */
+export async function deleteTunnel(
+  env: Env,
+  nodeId: string,
+  githubId: number
+): Promise<void> {
+  await env.DEEPSEA_D1.prepare(
+    "DELETE FROM deepc_tunnels WHERE node_id = ? AND github_id = ?"
+  )
+    .bind(nodeId, githubId)
+    .run()
 }
