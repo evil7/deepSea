@@ -1,3 +1,4 @@
 # deepc-link 生成产物（不提交）
 dist/
+.pack/
 poc/verify-e2e.mjs

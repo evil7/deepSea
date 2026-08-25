@@ -1,3 +1,4 @@
-# npm publish 打包排除：pack.mjs 的 pack:tgz 会把本地 tgz 生成到 dist/，
-# 但发布时应排除，避免把旧版 tgz 打进 npm tarball。
+# tgz 已改到独立 .pack/ 目录（见 scripts/pack.mjs），不进 dist → 不进 npm tarball。
+# 此文件兜底排除，防止历史遗留 tgz 混入。
 dist/*.tgz
+.pack/
