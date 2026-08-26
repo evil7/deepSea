@@ -45,5 +45,48 @@ export default defineConfig({
   build: {
     // three.js 海面视觉让主包偏大，属预期
     chunkSizeWarningLimit: 900,
+    rolldownOptions: {
+      output: {
+        // 手动分块：把体积大 / 使用频繁的依赖拆成独立 chunk，改善缓存与首屏加载。
+        // 优先级高的 group 先匹配，模块命中后从低优先级 group 中移除。
+        // pnpm 下真实路径形如 `node_modules/.pnpm/pkg@x/node_modules/pkg/...`，
+        // 故用 `node_modules[\\/]pkg[\\/]` 匹配（兼容 `/` 与 `\` 分隔符）。
+        codeSplitting: {
+          groups: [
+            {
+              name: "react",
+              test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: "three",
+              test: /node_modules[\\/]three[\\/]/,
+              priority: 25,
+            },
+            {
+              name: "charts",
+              test: /node_modules[\\/](recharts|victory-vendor|d3-)[\\/]/,
+              priority: 20,
+            },
+            {
+              name: "markdown",
+              test: /node_modules[\\/](react-markdown|remark-|rehype-|unified|micromark|mdast-|hast-|unist-|vfile)[\\/]/,
+              priority: 15,
+            },
+            {
+              name: "swiper",
+              test: /node_modules[\\/]swiper[\\/]/,
+              priority: 10,
+            },
+            {
+              // 其余第三方依赖兜底合并
+              name: "vendor",
+              test: /node_modules/,
+              priority: 1,
+            },
+          ],
+        },
+      },
+    },
   },
 })
