@@ -26,7 +26,7 @@
     "build": "node scripts/build.mjs",
     "pack:tgz": "node scripts/pack.mjs",
     "prepublishOnly": "node scripts/build.mjs",
-    "release": "pnpm publish"
+    "release": "npm publish"
   },
   "publishConfig": {
     "access": "public"
