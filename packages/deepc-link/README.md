@@ -53,7 +53,7 @@ packages/deepc-link/
 ## 安装
 
 ```bash
-dsh plugin --profile web add deepc-link
+dsh plugin --profile web add deepc-link@latest
 ```
 
 ## 开发

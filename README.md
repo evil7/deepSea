@@ -96,7 +96,7 @@ deepc-link 是 DSH 的多端互联插件，经 WebRTC 加密通道实现远程�
 **一键安装**：
 
 ```bash
-dsh plugin --profile web add deepc-link
+dsh plugin --profile web add deepc-link@latest
 ```
 
 **本地联调**：
