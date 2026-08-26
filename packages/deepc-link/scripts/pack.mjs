@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readdirSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -21,6 +21,18 @@ const packDir = join(root, '.pack')
 // npm pack --pack-destination 要求目标目录已存在（不存在会 ENOENT）。
 // .pack/ 是 gitignore 的本地产物目录，须先确保创建。
 mkdirSync(packDir, { recursive: true })
+
+// 清理 .pack/ 下过时的 tgz：版本号递增后残留的旧产物会在每次 pack 前移除，
+// 避免误发布 / 误安装到旧版本。
+try {
+  for (const entry of readdirSync(packDir)) {
+    if (/^deepc-link-.*\.tgz$/.test(entry)) {
+      rmSync(join(packDir, entry), { force: true })
+    }
+  }
+} catch {
+  /* .pack 尚不存在时忽略 */
+}
 
 // 用 node 直跑 npm-cli.js（与 node.exe 同目录捆绑）：
 // 避免 spawn npm.cmd（Windows 需 shell:true → Node DEP0190 警告），
