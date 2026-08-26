@@ -97,6 +97,8 @@ interface BackendStatus {
   devMode?: boolean
   allowBypass?: boolean
   connectedAt?: number | null
+  /** 隧道映射状态机（off/待下载/下载中/已下载/启动中/已启动/已纳管）。 */
+  tunnelState?: 'off' | 'download-pending' | 'downloading' | 'downloaded' | 'starting' | 'running' | 'managed'
   profile?: { login: string; avatar_url: string; name: string | null }
   error?: string
 }
@@ -217,6 +219,7 @@ const CSS = `
 .dcb-row-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .dcb-row-label { font-size: 13px; font-weight: 600; color: var(--dc-fg); }
 .dcb-row-sub { font-size: 11px; color: var(--dc-fg-dim); line-height: 1.4; display: flex; align-items: center; }
+.dcb-row-sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dcb-sub-copy { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; padding: 0; border: none; background: transparent; color: var(--dc-fg-dim); cursor: pointer; transition: color .15s ease; flex-shrink: 0; }
 .dcb-sub-copy:hover { color: var(--dc-primary); }
 .dcb-sub-copy.copied { color: #34d399; }
@@ -412,7 +415,10 @@ export function bootstrapHostUi(): HostUi {
         <div class="dcb-row">
           <div class="dcb-row-main">
             <div class="dcb-row-label">本地共享</div>
-            <div class="dcb-row-sub" id="dcb-local-sub">局域网可访问本机 3081 端口</div>
+            <div class="dcb-row-sub">
+              <span id="dcb-local-sub">局域网可访问本机 3081 端口</span>
+              <button class="dcb-sub-copy" id="dcb-local-url-copy" title="复制完整地址" style="display:none">${COPY_ICON}</button>
+            </div>
           </div>
           <label class="dcb-switch">
             <input type="checkbox" id="dcb-local-switch" />
@@ -489,6 +495,7 @@ export function bootstrapHostUi(): HostUi {
   const totpRotate = sheet.querySelector<HTMLElement>('#dcb-totp-rotate')!
   const localSwitch = sheet.querySelector<HTMLInputElement>('#dcb-local-switch')!
   const localSub = sheet.querySelector<HTMLElement>('#dcb-local-sub')!
+  const localUrlCopy = sheet.querySelector<HTMLElement>('#dcb-local-url-copy')!
   const tunnelSwitch = sheet.querySelector<HTMLInputElement>('#dcb-tunnel-switch')!
   const tunnelSub = sheet.querySelector<HTMLElement>('#dcb-tunnel-sub')!
   const tunnelUrlCopy = sheet.querySelector<HTMLElement>('#dcb-tunnel-url-copy')!
@@ -564,29 +571,62 @@ export function bootstrapHostUi(): HostUi {
   function renderTiers(): void {
     // 本地共享开关（默认开）。
     localSwitch.checked = status.localOn !== false
-    // 本地共享开启后：直接显示局域网访问地址；未取到本机 IP 时回退占位描述。
+    // 本地共享开启后：直接显示局域网访问地址 + 复制按钮；未取到本机 IP 时回退占位描述。
     if (status.localOn !== false) {
-      localSub.textContent = status.localUrl ?? '局域网可访问本机 3081 端口'
-      localSub.title = status.localUrl ?? ''
+      if (status.localUrl) {
+        localSub.textContent = status.localUrl
+        localSub.title = status.localUrl
+        localUrlCopy.style.display = ''
+      } else {
+        localSub.textContent = '局域网可访问本机 3081 端口'
+        localSub.title = ''
+        localUrlCopy.style.display = 'none'
+      }
     } else {
       localSub.textContent = '已关闭，仅本机可访问'
       localSub.title = ''
+      localUrlCopy.style.display = 'none'
     }
     // 隧道映射：mode 非 local 即隧道开（tunnel/managed）。始终可开可关（不因登录锁定）。
     const tunnelActive = status.mode !== 'local'
     tunnelSwitch.checked = tunnelActive
     tunnelSwitch.disabled = false
-    // 隧道开启后：仅显示前方二级域字段；复制按钮复制完整 URL。
-    if (status.url) {
-      tunnelSub.textContent = prettySubdomain(status.url)
-      tunnelSub.title = status.url
-      tunnelUrlCopy.style.display = ''
-    } else if (tunnelActive) {
-      tunnelSub.textContent = status.loggedIn ? '已随云端纳管启用' : '隧道连接中…'
+    // 隧道状态机文案：待下载 → 下载中 → 已下载 → 启动中 → 已启动/已纳管（+ 二级域名）。
+    const st = status.tunnelState ?? 'off'
+    if (st === 'off') {
+      tunnelSub.textContent = '通过 Cloudflare 暴露到公网'
       tunnelSub.title = ''
       tunnelUrlCopy.style.display = 'none'
+    } else if (st === 'download-pending') {
+      tunnelSub.textContent = 'cloudflared 待下载'
+      tunnelSub.title = ''
+      tunnelUrlCopy.style.display = 'none'
+    } else if (st === 'downloading') {
+      tunnelSub.textContent = 'cloudflared 下载中…'
+      tunnelSub.title = ''
+      tunnelUrlCopy.style.display = 'none'
+    } else if (st === 'downloaded') {
+      tunnelSub.textContent = 'cloudflared 已下载'
+      tunnelSub.title = ''
+      tunnelUrlCopy.style.display = 'none'
+    } else if (st === 'starting') {
+      tunnelSub.textContent = '隧道连接中…'
+      tunnelSub.title = ''
+      tunnelUrlCopy.style.display = 'none'
+    } else if (st === 'running' || st === 'managed') {
+      // 已启动 / 已纳管：状态词后方显示二级域名 + 复制按钮（复制完整 URL）。
+      const label = st === 'managed' ? '已纳管' : '已启动'
+      if (status.url) {
+        tunnelSub.textContent = `${label} · ${prettySubdomain(status.url)}`
+        tunnelSub.title = status.url
+        tunnelUrlCopy.style.display = ''
+      } else {
+        tunnelSub.textContent = label
+        tunnelSub.title = ''
+        tunnelUrlCopy.style.display = 'none'
+      }
     } else {
-      tunnelSub.textContent = '通过 Cloudflare 暴露到公网'
+      tunnelSub.textContent = '隧道连接中…'
       tunnelSub.title = ''
       tunnelUrlCopy.style.display = 'none'
     }
@@ -722,6 +762,9 @@ export function bootstrapHostUi(): HostUi {
   // ── 复制 ──
   totpCopy.addEventListener('click', () => {
     copyText(status.totpSecret ?? '', totpCopy)
+  })
+  localUrlCopy.addEventListener('click', () => {
+    copyIconText(status.localUrl ?? '', localUrlCopy)
   })
   tunnelUrlCopy.addEventListener('click', () => {
     copyIconText(status.url ?? '', tunnelUrlCopy)

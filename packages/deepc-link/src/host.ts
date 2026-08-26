@@ -24,6 +24,7 @@ import {
   localLanIp,
   type LinkMode,
   type TunnelManager,
+  type TunnelState,
 } from './tunnel'
 import { createTunnelEventsClient, type TunnelEventsClient } from './events'
 import { generateTotpSecret, otpauthUri } from './totp'
@@ -99,6 +100,8 @@ export interface DeepcHostStatus {
   allowBypass: boolean
   /** 互联建立时间戳（前端「时长」显示用；null = 未连接）。 */
   connectedAt: number | null
+  /** 隧道映射状态机（off/待下载/下载中/已下载/启动中/已启动/已纳管）。 */
+  tunnelState: TunnelState
   profile?: { login: string; avatar_url: string; name: string | null }
   error?: string
 }
@@ -349,30 +352,35 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     return r
   }
 
+  /**
+   * 启动当前模式互联层；非 local 模式启动失败（cloudflared 下载失败 / 启动失败 / URL 超时）
+   * → 自动回退 local（隧道映射开关自动关闭，用户可重试）。
+   */
+  async function connectOrFallback(): Promise<{ ok: boolean; url?: string; error?: string }> {
+    const r = await connect()
+    if (!r.ok && mode !== 'local') {
+      log(`互联启动失败（${r.error ?? 'unknown'}）→ 已回退本地模式`)
+      mode = 'local'
+      await persistState()
+      await stopConnections()
+      setupConnections()
+      if (totpSecret) return await connect()
+    }
+    return r
+  }
+
   return {
     async login() {
       if (token) {
-        // 已登录：确保 managed 模式 + 上报（token 可能持久化自上次会话）
-        if (mode !== 'managed') {
-          await stopConnections()
-          mode = 'managed'
-          await persistState()
-        }
-        setupConnections()
-        await connect()
+        // 已登录：仅补拉档案；不切模式、不自动开启隧道。
+        // 隧道映射开关始终由用户手动启动，登录只决定「开启时是否上报纳管」（managed vs tunnel）。
         if (!profile) {
           const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
           if (p) profile = p.profile
         }
         return { ok: true }
       }
-      // 未登录：切到 managed 模式（先不 connect，等授权拿到 token 后自动 connect 上报）
-      if (mode !== 'managed') {
-        await stopConnections()
-        mode = 'managed'
-        await persistState()
-        setupConnections()
-      }
+      // 未登录：发起 Device Grant 授权，仅保存凭证；不切模式、不自动开启隧道。
       const state = generateConnectId()
       const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}`
       const gen = ++pollGeneration
@@ -382,8 +390,6 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         token = t
         await persistFile('device-token', t)
         log('Device Grant 完成，已获取 device_token')
-        setupConnections()
-        await connect()
         const p = await fetchDeviceProfile(t, { signalBase: resolveSignalBase() })
         if (p) profile = p.profile
       })()
@@ -399,10 +405,11 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
         if (p) profile = p.profile
       }
-      // 有 secret 就真正启动互联层（local 模式也启动 3081 鉴权代理）
+      // 有 secret 就真正启动互联层（local 模式也启动 3081 鉴权代理；
+      // tunnel/managed 启动失败（下载/启动/超时）自动回退 local）。
       if (totpSecret) {
         setupConnections()
-        await connect()
+        await connectOrFallback()
       }
       lastError = undefined
     },
@@ -423,7 +430,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         await persistState()
       }
       setupConnections()
-      if (totpSecret) await connect()
+      if (totpSecret) await connectOrFallback()
     },
     status() {
       return {
@@ -433,6 +440,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         connected: tunnel?.status().connected ?? false,
         connectedAt,
         url: tunnel?.url() ?? null,
+        tunnelState: tunnel?.status().tunnelState ?? 'off',
         localUrl: localOn && localLanIp() ? `http://${localLanIp()}:${resolveProxyPort()}` : null,
         localOn,
         totpSecret,
@@ -464,7 +472,8 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         if (p) profile = p.profile
       }
       setupConnections()
-      if (totpSecret) await connect()
+      // 启动失败（下载/启动/超时）→ connectOrFallback 自动回退 local（开关自动关闭）。
+      if (totpSecret) await connectOrFallback()
     },
     async setLocal(on: boolean) {
       if (localOn === on) return
@@ -486,7 +495,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       log('TOTP secret 已重新生成（需重新绑定 2FA 应用）')
       await stopConnections()
       setupConnections()
-      if (totpSecret) await connect()
+      if (totpSecret) await connectOrFallback()
       return totpSecret
     },
     /** 切换开发模式（基址在 production 与本地 127.0.0.1:5174 间切换）。 */
@@ -497,7 +506,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       log(`开发模式 ${enabled ? '开启' : '关闭'}（基址 → ${resolveSignalBase()}）`)
       await stopConnections()
       setupConnections()
-      if (totpSecret) await connect()
+      if (totpSecret) await connectOrFallback()
     },
     /** 切换主站免密（bypass：report 附 sha512(secret) + 3081 ticket 端点）。 */
     async setBypass(enabled: boolean) {
@@ -508,7 +517,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       // 重建连接：让 tunnel 重新上报（附/不附 secretHash）并刷新 3081 ticket 端点注册。
       await stopConnections()
       setupConnections()
-      if (totpSecret) await connect()
+      if (totpSecret) await connectOrFallback()
     },
     async handleControl(req, res) {
       try {

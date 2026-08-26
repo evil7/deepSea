@@ -27,6 +27,25 @@ import { sha512Hex } from './totp'
 /** 互联模式。 */
 export type LinkMode = 'local' | 'tunnel' | 'managed'
 
+/**
+ * 隧道映射状态机（隧道开关开启后按序推进；供 UI 状态文案 + 二级域名展示）。
+ *   off             未开启（local 模式）
+ *   download-pending cloudflared 待下载
+ *   downloading     cloudflared 下载中
+ *   downloaded      cloudflared 已下载（进程未启动 / 已退出待重连）
+ *   starting        启动中（进程存活，URL 未出）
+ *   running         已启动（URL 已出；tunnel 模式 / managed 未上报前）
+ *   managed         已纳管（managed 模式上报成功）
+ */
+export type TunnelState =
+  | 'off'
+  | 'download-pending'
+  | 'downloading'
+  | 'downloaded'
+  | 'starting'
+  | 'running'
+  | 'managed'
+
 export interface TunnelManagerOptions {
   /** Worker/信令基址（managed 模式上报用）。 */
   signalBase?: string
@@ -71,6 +90,7 @@ export interface TunnelManager {
     url: string | null
     cloudflaredAlive: boolean
     mode: LinkMode
+    tunnelState: TunnelState
   }
 }
 
@@ -110,6 +130,8 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
   let currentUrl: string | null = null
   let connected = false
   let pendingUrl: Promise<string> | null = null
+  /** managed 模式是否已成功上报（true → tunnelState 显示「已纳管」）。 */
+  let reported = false
 
   /** 上报 URL 到主站纳管（managed 模式；仅 URL，不带任何 secret）。 */
   async function reportApi(
@@ -178,6 +200,8 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
 
   return {
     async connect() {
+      // 每次连接都重置上报标记（断链重连后需重新上报才回到「已纳管」）。
+      reported = false
       // 1. 注入 TOTP secret + 启动 3081 鉴权代理
       proxy.setSecret(opts.totpSecret)
       // 免密直连：开启时注入 nodeId（3081 注册 ticket 端点；关闭时 null）。
@@ -238,6 +262,7 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
           await cf.stop()
           return { ok: false, error: r.error }
         }
+        reported = true
         log(`已上报 URL 到主站纳管：${url}`)
       }
 
@@ -252,6 +277,7 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
       connected = false
       currentUrl = null
       pendingUrl = null
+      reported = false
     },
     /** 断链时上报离线（managed 模式）：主站标记节点离线，前端实时反映。 */
     async reportOffline() {
@@ -264,11 +290,27 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
       return currentUrl
     },
     status() {
+      // 隧道状态机：local → off；其余按 cloudflared 二进制/进程/URL/上报逐步推进。
+      const st: TunnelState =
+        mode === 'local'
+          ? 'off'
+          : cf.binaryState() === 'downloading'
+            ? 'downloading'
+            : cf.binaryState() === 'missing'
+              ? 'download-pending'
+              : !cf.alive()
+                ? 'downloaded'
+                : !currentUrl
+                  ? 'starting'
+                  : mode === 'managed' && reported
+                    ? 'managed'
+                    : 'running'
       return {
         connected,
         url: currentUrl,
         cloudflaredAlive: cf.alive(),
         mode,
+        tunnelState: st,
       }
     },
   }

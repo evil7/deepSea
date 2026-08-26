@@ -56,7 +56,12 @@ export interface CloudflaredManager {
   alive: () => boolean
   /** 子进程退出码（供状态展示）。 */
   exitCode: () => number | null
+  /** cloudflared 二进制状态（missing=待下载 / downloading=下载中 / ready=已下载）。 */
+  binaryState: () => CloudflaredBinaryState
 }
+
+/** cloudflared 二进制状态（隧道映射 UI 状态文案用）。 */
+export type CloudflaredBinaryState = 'missing' | 'ready' | 'downloading'
 
 /** trycloudflare URL 正则（Quick Tunnel stdout 输出）。 */
 const QUICK_URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i
@@ -89,6 +94,8 @@ export function createCloudflaredManager(opts: CloudflaredOptions = {}): Cloudfl
   let reportedUrl: string | null = null
   /** 主动 stop 标志：stop() 主动 kill 时不触发 onExit（避免「断开」被误判为断链自动重连）。 */
   let stopping = false
+  /** 二进制状态：missing=待下载 / downloading=下载中 / ready=已下载就绪。 */
+  let binaryState: CloudflaredBinaryState = 'missing'
 
   /** 已存在的二进制是否可执行且非空。 */
   async function existingUsable(): Promise<boolean> {
@@ -133,6 +140,7 @@ export function createCloudflaredManager(opts: CloudflaredOptions = {}): Cloudfl
   return {
     async ensureBinary() {
       if (await existingUsable()) {
+        binaryState = 'ready'
         log(`使用已有二进制 ${binPath}`)
         return { path: binPath, fromCache: true }
       }
@@ -140,18 +148,21 @@ export function createCloudflaredManager(opts: CloudflaredOptions = {}): Cloudfl
       const url =
         opts.downloadUrl?.(PINNED_VERSION, asset) ??
         `https://github.com/cloudflare/cloudflared/releases/download/${PINNED_VERSION}/${asset}`
+      binaryState = 'downloading'
       try {
         const tmp = await download(url, binPath)
         await writeFile(binPath, await readFile(tmp))
         await chmod(binPath, 0o755)
+        binaryState = 'ready'
         log(`已下载并安装 ${binPath}`)
         return { path: binPath, fromCache: false }
       } catch (err) {
+        binaryState = 'missing'
         log(
           `下载失败：${err instanceof Error ? err.message : String(err)}。` +
             `请检查网络后重试，或手动下载 ${asset} 放置到 ${binPath}（检测到即跳过下载）。`,
         )
-        throw new Error('cloudflared-download-failed')
+        throw new Error('cloudflared-download-failed', { cause: err })
       }
     },
     start(args) {
@@ -226,6 +237,9 @@ export function createCloudflaredManager(opts: CloudflaredOptions = {}): Cloudfl
     },
     exitCode() {
       return lastExit
+    },
+    binaryState() {
+      return binaryState
     },
   }
 }

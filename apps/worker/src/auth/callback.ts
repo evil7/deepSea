@@ -11,7 +11,7 @@ import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys, sessionTtl } from "../lib/kv"
 import { createSession, upsertUser } from "../lib/d1"
 import { getClientIp } from "../lib/ratelimit"
-import { serializeCookie } from "../lib/cookies"
+import { expireCookie, serializeCookie } from "../lib/cookies"
 import { encryptToken } from "../lib/crypto"
 import { exchangeCode, fetchGitHubUser } from "../lib/github"
 
@@ -30,8 +30,17 @@ export async function handleCallback(
   const state = url.searchParams.get("state")
   const error = url.searchParams.get("error")
 
+  // 失败回跳时一并强制过期旧会话 cookie：OAuth 失败（GitHub 拒绝/取消/state 过期）
+  // 后若残留旧 cookie，前端 useAuth 命中缓存会显示假登录态，再点登录又被 /auth/login
+  // 短路 → 反复失败。清 cookie 让下次登录从干净的未登录态重新走 OAuth。
   const fail = (reason: string) =>
-    Response.redirect(backTo(env, "/", `error:${reason}`), 302)
+    new Response(null, {
+      status: 302,
+      headers: {
+        Location: backTo(env, "/", `error:${reason}`),
+        "Set-Cookie": expireCookie(SESSION_COOKIE),
+      },
+    })
 
   if (error) return fail(error)
   if (!code || !state) return fail("missing_params")

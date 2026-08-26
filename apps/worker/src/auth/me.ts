@@ -7,7 +7,7 @@
 
 import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys } from "../lib/kv"
-import { parseCookies } from "../lib/cookies"
+import { expireCookie, parseCookies } from "../lib/cookies"
 import { decryptToken } from "../lib/crypto"
 import { verifyToken } from "../lib/github"
 import {
@@ -152,7 +152,13 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
     await deleteUserSessions(env, githubId)
     await env.DEEPSEA_KV.delete(kvKeys.user(String(githubId)))
     await env.DEEPSEA_KV.delete(kvKeys.session(sessionId))
-    return json({ authed: false, tokenExpired: true })
+    // 同步强制过期浏览器 cookie：否则下次 /auth/login 仍会先被失效 cookie 短路判断。
+    const headers = new Headers(json({ authed: false, tokenExpired: true }).headers)
+    headers.set("Set-Cookie", expireCookie(SESSION_COOKIE))
+    return new Response(
+      JSON.stringify({ authed: false, tokenExpired: true }),
+      { status: 200, headers }
+    )
   }
 
   return json({

@@ -38,3 +38,18 @@ export function serializeCookie(
   if (options.sameSite) parts.push(`SameSite=${options.sameSite}`)
   return parts.join("; ")
 }
+
+/**
+ * 强制过期 cookie 的 Set-Cookie 值（Max-Age=0）。
+ * 用于「旧凭据失效 / 重新授权 / OAuth 失败」时清掉浏览器残留的失效会话 cookie，
+ * 避免失效 ds_session 持续触发 /auth/login 短路造成假登录态循环。
+ */
+export function expireCookie(name: string): string {
+  return serializeCookie(name, "", {
+    maxAge: 0,
+    path: "/",
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+  })
+}
