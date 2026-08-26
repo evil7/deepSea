@@ -28,6 +28,7 @@ import {
 } from './tunnel'
 import { createTunnelEventsClient, type TunnelEventsClient } from './events'
 import { generateTotpSecret, otpauthUri } from './totp'
+import { createDirectory, listDirectory, listWindowsRoots } from './directory'
 
 /** 后端控制路由路径段（webServer 前缀注册用）。 */
 export const NODE_CTRL_PATH = '/deepc'
@@ -371,16 +372,30 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
 
   return {
     async login() {
-      if (token) {
-        // 已登录：仅补拉档案；不切模式、不自动开启隧道。
-        // 隧道映射开关始终由用户手动启动，登录只决定「开启时是否上报纳管」（managed vs tunnel）。
-        if (!profile) {
-          const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
-          if (p) profile = p.profile
+      // 已有 token 但无 profile（token 可能是旧会话残留、或基址切换后失效）：
+      // 先校验有效性（拉 profile）。失败 = token 失效 → 清 token，视为未登录
+      // 重新走 Device Grant。否则会死锁：loggedIn=true 但 profile=null，前端显示
+      // 「登录」按钮，点登录却返回 {ok:true} 无 url → 永远无法重新授权。
+      if (token && !profile) {
+        const p = await fetchDeviceProfile(token, { signalBase: resolveSignalBase() })
+        if (p) {
+          profile = p.profile
+        } else {
+          token = null
+          try {
+            const { unlink } = await import('node:fs/promises')
+            await unlink(join(DEEPC_DIR, 'device-token')).catch(() => {})
+          } catch {
+            /* ignore */
+          }
         }
+      }
+      if (token) {
+        // 已登录且档案就绪：无需再走授权。
         return { ok: true }
       }
       // 未登录：发起 Device Grant 授权，仅保存凭证；不切模式、不自动开启隧道。
+      // 隧道映射开关始终由用户手动启动，登录只决定「开启时是否上报纳管」（managed vs tunnel）。
       const state = generateConnectId()
       const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}`
       const gen = ++pollGeneration
@@ -545,6 +560,45 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/disconnect`) {
           await this.disconnect()
           sendJson(res, 200, { ok: true })
+          return
+        }
+        // 目录枚举（工作区目录选择浏览器 UI 的数据源）：本地 + 远端统一走此端点。
+        // 远端经 3081 反代时已过 dc_site 2FA 校验，允许；本地 3080 同源无鉴权
+        //（与其它 /deepc/* 控制端点一致）。放在 remote 拒绝判断之前，使远端可用。
+        if (req.method === 'GET' && pathname === `${NODE_CTRL_PATH}/list-dir`) {
+          try {
+            const u = new URL(req.url ?? '/', 'http://x')
+            sendJson(res, 200, await listDirectory(u.searchParams.get('path') ?? undefined))
+          } catch (e) {
+            sendJson(res, 400, { ok: false, error: e instanceof Error ? e.message : 'list-failed' })
+          }
+          return
+        }
+        // Windows 盘符枚举（点击盘符根 crumb 切换盘符用）。
+        if (req.method === 'GET' && pathname === `${NODE_CTRL_PATH}/list-roots`) {
+          try {
+            sendJson(res, 200, { ok: true, roots: await listWindowsRoots() })
+          } catch {
+            sendJson(res, 200, { ok: true, roots: [] })
+          }
+          return
+        }
+        if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/create-dir`) {
+          const raw = await new Promise<string>((resolve) => {
+            let d = ''
+            req.on('data', (c) => (d += c))
+            req.on('end', () => resolve(d))
+          })
+          let path = ''
+          let name = ''
+          try {
+            const parsed = JSON.parse(raw || '{}') as { path?: unknown; name?: unknown }
+            path = typeof parsed.path === 'string' ? parsed.path : ''
+            name = typeof parsed.name === 'string' ? parsed.name : ''
+          } catch {
+            /* 非法 body → 空值，createDirectory 会拒绝 */
+          }
+          sendJson(res, 200, await createDirectory(path, name))
           return
         }
         // 其余敏感控制端点：远端拒绝（只允许本地面板操作）。

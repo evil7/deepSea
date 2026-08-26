@@ -10,6 +10,7 @@ const targets = [
   { entry: 'src/totp.ts', out: 'test/.totp.bundle.mjs' },
   { entry: 'src/auth-proxy.ts', out: 'test/.auth-proxy.bundle.mjs' },
   { entry: 'src/cloudflared.ts', out: 'test/.cloudflared.bundle.mjs' },
+  { entry: 'src/directory.ts', out: 'test/.directory.bundle.mjs' },
 ]
 
 for (const t of targets) {

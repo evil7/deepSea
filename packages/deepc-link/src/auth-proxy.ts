@@ -21,9 +21,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { type Duplex } from 'node:stream'
-import { mkdir, opendir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
 import httpProxy from 'http-proxy'
 import { hmacSha256Hex, sha512Hex, verifyTotp } from './totp'
 
@@ -38,9 +35,6 @@ const PROBE_PATH = '/__deepc_probe'
 
 /** 主站 bypass 登录端点（免鉴权，但需一次性 ticket 验签）。 */
 const TICKET_PATH = '/__deepc_ticket'
-
-/** 鉴权代理自定义 API 前缀（需 dc_site cookie；本地目录枚举，供远端路径选择 UI 用）。 */
-const API_PATH = '/__deepc_api'
 
 /**
  * 免鉴权的公开静态资源路径（浏览器自动请求、无敏感信息：PWA manifest / 站点图标 / robots）。
@@ -233,131 +227,6 @@ function handleProbeWs(req: IncomingMessage, socket: Duplex, head: Buffer): void
   socket.on('error', () => socket.destroy())
 }
 
-// ---------------------------------------------------------------------------
-// /__deepc_api/* —— 本地目录枚举（需 dc_site 鉴权；远端路径选择 UI 的数据源）
-// ---------------------------------------------------------------------------
-
-/** 目录枚举上限（防大目录拖垮；与 dsh browse 后端一致取 1000）。 */
-const DIR_MAX_ENTRIES = 1000
-
-interface DirCrumb {
-  name: string
-  path: string
-  hidden: boolean
-}
-
-interface DirEntry {
-  name: string
-  path: string
-  hidden: boolean
-}
-
-/** 从根到 target 的祖先链（面包屑行）。 */
-function ancestryCrumbs(target: string): DirCrumb[] {
-  const crumbs: DirCrumb[] = []
-  let current = target
-  for (;;) {
-    const parent = dirname(current)
-    crumbs.unshift({
-      name: parent === current ? current : basename(current),
-      path: current,
-      hidden: false,
-    })
-    if (parent === current) return crumbs
-    current = parent
-  }
-}
-
-/** 枚举单层子目录（符号链接跟随判定，断链/循环跳过）。 */
-async function listDirectory(
-  path: string | undefined,
-): Promise<{
-  ok: true
-  path: string
-  home: string
-  crumbs: DirCrumb[]
-  entries: DirEntry[]
-  truncated: boolean
-}> {
-  const home = homedir()
-  const target = resolve(path && path.trim() ? path : home)
-  const raw: DirEntry[] = []
-  const dir = await opendir(target)
-  for await (const dirent of dir) {
-    let enterable = dirent.isDirectory()
-    if (!enterable && dirent.isSymbolicLink()) {
-      try {
-        enterable = (await stat(join(target, dirent.name))).isDirectory()
-      } catch {
-        /* 断链/循环链接跳过 */
-      }
-    }
-    if (!enterable) continue
-    raw.push({
-      name: dirent.name,
-      path: join(target, dirent.name),
-      hidden: dirent.name.startsWith('.'),
-    })
-    if (raw.length > DIR_MAX_ENTRIES) break
-  }
-  raw.sort((a, b) => a.name.localeCompare(b.name))
-  return {
-    ok: true,
-    path: target,
-    home,
-    crumbs: ancestryCrumbs(target),
-    entries: raw.slice(0, DIR_MAX_ENTRIES),
-    truncated: raw.length > DIR_MAX_ENTRIES,
-  }
-}
-
-/** 在 parent 下创建单层子目录（名称为单段路径）。 */
-async function createDirectory(
-  path: string,
-  name: string,
-): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
-  if (!name || name === '.' || name === '..' || /[/\\]/.test(name)) {
-    return { ok: false, error: 'invalid-name' }
-  }
-  const parent = resolve(path)
-  const target = join(parent, name)
-  try {
-    await mkdir(target)
-    return { ok: true, path: target }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'mkdir-failed' }
-  }
-}
-
-/** 处理 /__deepc_api/*（已通过 dc_site 鉴权）。 */
-async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const u = new URL(req.url ?? '/', 'http://x')
-  const pathname = u.pathname
-  if (req.method === 'GET' && pathname === `${API_PATH}/list-dir`) {
-    try {
-      sendJson(res, 200, await listDirectory(u.searchParams.get('path') ?? undefined))
-    } catch (e) {
-      sendJson(res, 400, { ok: false, error: e instanceof Error ? e.message : 'list-failed' })
-    }
-    return
-  }
-  if (req.method === 'POST' && pathname === `${API_PATH}/create-dir`) {
-    const raw = await readBody(req)
-    let path = ''
-    let name = ''
-    try {
-      const parsed = JSON.parse(raw) as { path?: string; name?: string }
-      path = parsed.path ?? ''
-      name = parsed.name ?? ''
-    } catch {
-      /* ignore */
-    }
-    sendJson(res, 200, await createDirectory(path, name))
-    return
-  }
-  sendJson(res, 404, { ok: false, error: 'unknown-api' })
-}
-
 /** 简单 JSON 响应。 */
 function sendJson(res: ServerResponse, code: number, data: unknown): void {
   const body = JSON.stringify(data)
@@ -401,75 +270,207 @@ function parseCookies(req: IncomingMessage): Record<string, string> {
 }
 
 /** 内置鉴权页（极简，无外部依赖；6 位 2FA 码分组输入 `[][][] [][][]`）。 */
-function authPage(): string {
+function authPage(lockedUntil = 0): string {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>deepc-link 安全验证</title>
 <style>
-  body{font-family:system-ui,sans-serif;background:#0f1115;color:#e6e6e6;
-       display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
-  .card{background:#1a1d24;border:1px solid #2a2e38;border-radius:12px;
-        padding:28px 32px;max-width:360px;width:100%;box-sizing:border-box}
-  h1{font-size:16px;margin:0 0 6px}
-  .sub{color:#8a8f98;font-size:12px;margin:0 0 18px}
-  .code{display:flex;gap:8px;justify-content:center}
-  .code input{width:40px;height:48px;box-sizing:border-box;text-align:center;
-        border-radius:8px;border:1px solid #2a2e38;background:#0f1115;color:#e6e6e6;
-        font-size:20px;font-family:ui-monospace,monospace;outline:none}
-  .code input:focus{border-color:#4f6ef7}
-  .code .sep{display:flex;align-items:center;color:#8a8f98;font-size:20px}
-  button{margin-top:16px;width:100%;padding:11px;border:0;border-radius:8px;
-         background:#4f6ef7;color:#fff;font-size:14px;cursor:pointer}
-  button:disabled{opacity:.5;cursor:default}
-  .err{color:#ff6b6b;font-size:12px;min-height:16px;margin-top:10px;text-align:center}
-  .hint{color:#8a8f98;font-size:12px;margin-top:14px;text-align:center}
-</style></head><body>
+  :root{color-scheme:light dark;
+        --font-sans:"Inter","SF Pro Display","SF Pro Text",-apple-system,"Segoe UI",
+          "HarmonyOS Sans SC","MiSans","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+        --font-mono:"JetBrains Mono","SF Mono","Fira Code","Cascadia Code","Roboto Mono",
+          ui-monospace,Menlo,Consolas,monospace}
+  body{font-family:var(--font-sans);
+       background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;
+       min-height:100vh;margin:0;transition:background .2s ease,color .2s ease}
+  :root{--bg:#f3f4f7;--card:#fff;--border:#e5e7eb;--fg:#0f1115;--fg-soft:#61666b;
+        --input-bg:#fff;--brand:#16b3eb;--brand-fg:#02080f;--danger:#ec1313;
+        --danger-soft:rgba(236,19,19,.08)}
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0f1115;--card:#1a1d24;--border:#2a2e38;--fg:#e6e6e6;--fg-soft:#8a8f98;
+          --input-bg:#0f1115;--brand:#16b3eb;--brand-fg:#02080f;--danger:#ff6b6b;
+          --danger-soft:rgba(255,107,107,.14)}
+  }
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+        padding:28px 32px;max-width:360px;width:100%;box-sizing:border-box;
+        box-shadow:0 8px 32px rgba(0,0,0,.08);transition:background .2s ease,border-color .2s ease}
+  h1{font-size:18px;font-weight:700;letter-spacing:.01em;margin:0 0 6px}
+  .sub{color:var(--fg-soft);font-size:12px;margin:0 0 18px}
+  .code{display:flex;gap:8px;justify-content:center;position:relative}
+  .code .cell{width:40px;height:48px;box-sizing:border-box;text-align:center;line-height:48px;
+        border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--fg);
+        font-size:20px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+        transition:border-color .15s ease,box-shadow .15s ease}
+  .code .cell.active{border-color:var(--brand);box-shadow:0 0 0 3px rgba(22,179,235,.18)}
+  .code .sep{display:flex;align-items:center;color:var(--fg-soft);font-size:20px;font-family:var(--font-mono)}
+  .code.error .cell{border-color:var(--danger)}
+  .code.shake{animation:shake .4s ease}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+  .ghost{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;background:none;
+         color:transparent;caret-color:transparent;outline:none}
+  .err{color:var(--danger);font-size:12px;min-height:16px;margin-top:12px;text-align:center}
+  .hint{color:var(--fg-soft);font-size:12px;margin-top:14px;text-align:center;letter-spacing:.01em}
+  .banned{display:flex;flex-direction:column;align-items:center;gap:14px;padding:16px 4px 8px}
+  .banned-head{display:flex;align-items:center;gap:10px}
+  .banned-icon{width:28px;height:28px;border-radius:8px;background:var(--danger-soft);color:var(--danger);
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        animation:breathe 2.2s ease-in-out infinite}
+  .banned-icon svg{width:16px;height:16px}
+  .banned-title{font-size:15px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fg)}
+  .banned-remain{font-family:var(--font-mono);font-size:34px;font-weight:600;line-height:1;
+        color:var(--fg);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  .banned-msg{color:var(--fg-soft);font-size:13px;text-align:center;line-height:1.6}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+</style></head><body data-locked-until="${lockedUntil}">
 <div class="card">
-  <h1>deepc-link 安全验证</h1>
-  <p class="sub">请输入 2FA 应用中的 6 位动态码</p>
-  <form method="post" action="${AUTH_PATH}" id="f">
-    <input type="hidden" name="code" id="code">
-    <div class="code">
-      <input type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" id="c0" autofocus>
-      <input type="text" inputmode="numeric" maxlength="1" id="c1">
-      <input type="text" inputmode="numeric" maxlength="1" id="c2">
-      <span class="sep">-</span>
-      <input type="text" inputmode="numeric" maxlength="1" id="c3">
-      <input type="text" inputmode="numeric" maxlength="1" id="c4">
-      <input type="text" inputmode="numeric" maxlength="1" id="c5">
+  <h1 id="title">deepc-link 安全验证</h1>
+  <p class="sub" id="sub">请输入 2FA 应用中的 6 位动态码</p>
+  <div class="code" id="codebox">
+    <div class="cell"></div>
+    <div class="cell"></div>
+    <div class="cell"></div>
+    <span class="sep">-</span>
+    <div class="cell"></div>
+    <div class="cell"></div>
+    <div class="cell"></div>
+    <input class="ghost" id="ghost" inputmode="numeric" autocomplete="one-time-code">
+  </div>
+  <div class="banned" id="banned" style="display:none">
+    <div class="banned-head">
+      <div class="banned-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      <div class="banned-title">access denied</div>
     </div>
-    <button type="submit" id="btn" disabled>进入</button>
-    <div class="err" id="err"></div>
-  </form>
-  <div class="hint">动态码 30s 轮换，由你本地 2FA 应用生成</div>
+    <div class="banned-remain" id="banned-remain"></div>
+    <div class="banned-msg">连续失败次数过多，已锁定访问</div>
+  </div>
+  <div class="err" id="err"></div>
+  <div class="hint" id="hint">动态码 30s 轮换，由本地 2FA 应用生成</div>
 </div>
 <script>
   (function () {
-    var inputs = ['c0','c1','c2','c3','c4','c5'].map(function (id) { return document.getElementById(id) })
-    var hidden = document.getElementById('code')
-    var btn = document.getElementById('btn')
-    function sync() {
-      var v = inputs.map(function (i) { return i.value }).join('')
-      hidden.value = v
-      btn.disabled = v.length !== 6
+    var cells = Array.prototype.slice.call(document.querySelectorAll('.cell'))
+    var codebox = document.getElementById('codebox')
+    var ghost = document.getElementById('ghost')
+    var err = document.getElementById('err')
+    var title = document.getElementById('title')
+    var sub = document.getElementById('sub')
+    var hint = document.getElementById('hint')
+    var banned = document.getElementById('banned')
+    var bannedRemain = document.getElementById('banned-remain')
+    var value = ''
+    var submitting = false
+
+    function fmt(ms) {
+      var total = Math.max(0, ms)
+      var m = Math.floor(total / 60000)
+      var s = Math.floor((total % 60000) / 1000)
+      var cs = Math.floor((total % 1000) / 10)
+      function pad(n, w) { var str = String(n); while (str.length < w) str = '0' + str; return str }
+      return pad(m, 2) + ':' + pad(s, 2) + ':' + pad(cs, 2)
     }
-    inputs.forEach(function (inp, idx) {
-      inp.addEventListener('input', function () {
-        inp.value = inp.value.replace(/\\D/g, '')
-        sync()
-        if (inp.value && idx < 5) inputs[idx + 1].focus()
+
+    function ban(ms) {
+      var end = Date.now() + ms
+      title.style.display = 'none'
+      sub.style.display = 'none'
+      codebox.style.display = 'none'
+      hint.style.display = 'none'
+      err.textContent = ''
+      banned.style.display = ''
+      function tick() {
+        var left = end - Date.now()
+        if (left <= 0) { window.location.reload(); return }
+        bannedRemain.textContent = fmt(left)
+        setTimeout(tick, 33)
+      }
+      tick()
+    }
+
+    function render() {
+      for (var i = 0; i < cells.length; i++) {
+        cells[i].textContent = value[i] || ''
+        cells[i].classList.toggle('active', i === value.length && value.length < 6)
+      }
+    }
+
+    function fail(msg) {
+      err.textContent = msg
+      codebox.classList.remove('shake')
+      void codebox.offsetWidth
+      codebox.classList.add('shake', 'error')
+      setTimeout(function () {
+        value = ''
+        codebox.classList.remove('shake', 'error')
+        render()
+        ghost.focus()
+      }, 500)
+    }
+
+    function submit() {
+      if (value.length !== 6 || submitting) return
+      submitting = true
+      err.textContent = ''
+      fetch('${AUTH_PATH}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'code=' + encodeURIComponent(value),
+        redirect: 'follow'
+      }).then(function (res) {
+        if (res.redirected || res.ok) {
+          window.location.reload()
+          return null
+        }
+        return res.json().catch(function () { return {} })
+      }).then(function (data) {
+        if (data === null) return
+        if (data && data.error === 'locked') {
+          ban(Math.max(0, (data.lockedUntil || Date.now() + 3600000) - Date.now()))
+          return
+        }
+        fail('动态码错误，可重试 ' + (data && data.remaining > 0 ? data.remaining : 0) + ' 次')
+      }).catch(function () {
+        fail('网络错误，请重试')
+      }).then(function () {
+        submitting = false
       })
-      inp.addEventListener('keydown', function (e) {
-        if (e.key === 'Backspace' && !inp.value && idx > 0) inputs[idx - 1].focus()
-      })
-      inp.addEventListener('paste', function (e) {
-        e.preventDefault()
-        var t = (e.clipboardData || window.clipboardData).getData('text').replace(/\\D/g, '').slice(0, 6)
-        t.split('').forEach(function (c, i) { if (inputs[i]) inputs[i].value = c })
-        sync()
-      })
+    }
+
+    ghost.addEventListener('input', function () {
+      var digits = ghost.value.replace(/\\D/g, '')
+      ghost.value = ''
+      if (digits && value.length < 6) {
+        value = (value + digits).slice(0, 6)
+        render()
+        if (value.length === 6) submit()
+      }
     })
+
+    ghost.addEventListener('keydown', function (e) {
+      if (e.key === 'Backspace') {
+        e.preventDefault()
+        value = value.slice(0, -1)
+        render()
+      }
+    })
+
+    ghost.addEventListener('paste', function (e) {
+      e.preventDefault()
+      var t = (e.clipboardData || window.clipboardData).getData('text').replace(/\\D/g, '').slice(0, 6)
+      value = t
+      render()
+      if (value.length === 6) submit()
+    })
+
+    codebox.addEventListener('click', function () { ghost.focus() })
+
+    var initialLock = Number(document.body.getAttribute('data-locked-until') || '0')
+    if (initialLock > Date.now()) {
+      ban(initialLock - Date.now())
+    } else {
+      render()
+      ghost.focus()
+    }
   })()
 </script>
 </body></html>`
@@ -635,17 +636,18 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
 
     if (isLocked(now)) {
       auditLog(ip, false)
-      sendJson(res, 429, { ok: false, error: 'locked' })
+      sendJson(res, 429, { ok: false, error: 'locked', lockedUntil })
       return
     }
 
     if (!verifyCode(input)) {
       auditLog(ip, false)
-      if (recordFailure()) {
-        sendJson(res, 429, { ok: false, error: 'locked' })
+      const locked = recordFailure()
+      if (locked) {
+        sendJson(res, 429, { ok: false, error: 'locked', lockedUntil })
         return
       }
-      sendJson(res, 401, { ok: false, error: 'bad-code' })
+      sendJson(res, 401, { ok: false, error: 'bad-code', remaining: LOCK_THRESHOLD - failCount })
       return
     }
 
@@ -717,14 +719,9 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
     const cookies = parseCookies(req)
     const dc = cookies[COOKIE_NAME]
     if (!dc || !verifyCookie(dc)) {
+      const locked = isLocked()
       res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' })
-      res.end(authPage())
-      return
-    }
-
-    // 已鉴权的自定义 API（本地目录枚举，供远端路径选择 UI）
-    if (pathname.startsWith(`${API_PATH}/`)) {
-      void handleApi(req, res)
+      res.end(authPage(locked ? lockedUntil : 0))
       return
     }
 

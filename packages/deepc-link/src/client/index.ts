@@ -14,17 +14,15 @@
  */
 
 import { bootstrapHostUi } from '../host-ui'
+import { registerBrowseDirectoryPicker, type SlotsCtx } from './directory-picker'
 
 export const name = 'deepc-link'
 
-export const inject: string[] = []
+/** 依赖 slots 服务（目录流 shadow 用）；ui-workspace 的加载顺序由 package.json dsh.client.inject 保证。 */
+export const inject: string[] = ['slots']
 
-// 注意：远端目录选择器的浏览器内 UI（src/client/directory-picker.ts）暂未启用。
-// 它 register 进 dsh 的 conversation.hero.workspace.directoryFlow 单席位 slot 时，
-// 会与官方 dsh-client-ui-directory-picker-native 在同一 priority 0 冲突，触发
-// "single slot already has a registration" → 前端 "Failed to load plugins"。
-// 根因与后续方案见 docs/deepsea-deepc-directory-picker-slot-conflict.md。
-
-export function apply(_ctx: unknown): void {
+export function apply(ctx: SlotsCtx): void {
   bootstrapHostUi()
+  // 全面替换 dsh 原生 OS 目录选择器：本地 + 远端统一浏览器内目录浏览（priority -1 shadow native）。
+  registerBrowseDirectoryPicker(ctx)
 }

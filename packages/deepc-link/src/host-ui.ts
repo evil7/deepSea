@@ -129,19 +129,29 @@ const CHECK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" 
 
 /** 现代简约设计 token（移植 shadcn 语义到 vanilla DOM，插件端不依赖 React/Tailwind）。 */
 const CSS = `
-:root {
-  --dc-bg: rgba(12, 16, 28, .98);
-  --dc-bg-soft: rgba(20, 26, 42, .75);
-  --dc-card: rgba(255, 255, 255, .025);
-  --dc-card-hover: rgba(255, 255, 255, .05);
-  --dc-border: rgba(148, 163, 184, .14);
-  --dc-border-strong: rgba(148, 163, 184, .26);
-  --dc-fg: #e6ebf2;
-  --dc-fg-soft: #9aa6b8;
-  --dc-fg-dim: #6b7688;
-  --dc-primary: #3fb2f0;
-  --dc-primary-soft: rgba(63, 178, 240, .13);
-  --dc-danger: #fb7185;
+/* dsh 的 --dsw-alias-* 变量挂在 body 上（html 上为空），故中转变量也需定义在 body，
+   否则 :root(html) 引用不到 body 的变量会退回 fallback。fab/sheet 均为 body 直接子节点，可继承。 */
+body {
+  /* 背景层级：跟随本地 dsh 明暗主题（body[data-ds-dark-theme] 自动切换）。 */
+  --dc-bg: var(--dsw-alias-bg-layer-2, rgba(12, 16, 28, .98));
+  --dc-bg-soft: var(--dsw-alias-bg-layer-1, rgba(20, 26, 42, .75));
+  --dc-card: var(--dsw-alias-bg-base, rgba(255, 255, 255, .025));
+  --dc-card-hover: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, .05));
+  /* 边框：跟随 dsh。 */
+  --dc-border: var(--dsw-alias-border-l2, rgba(148, 163, 184, .14));
+  --dc-border-strong: var(--dsw-alias-border-l3, rgba(148, 163, 184, .26));
+  /* 文字：跟随 dsh。 */
+  --dc-fg: var(--dsw-alias-label-primary, #e6ebf2);
+  --dc-fg-soft: var(--dsw-alias-label-secondary, #9aa6b8);
+  --dc-fg-dim: var(--dsw-alias-label-tertiary, #6b7688);
+  /* 品牌强调色：deepSea 蓝（明暗一致，与悬浮球 logo 一致，不随主题翻转）。 */
+  --dc-primary: #16b3eb;
+  --dc-primary-soft: rgba(22, 179, 235, .14);
+  --dc-danger: var(--dsw-alias-state-error-primary, #fb7185);
+  /* 正文字体：风格化无衬线栈（与鉴权页一致），悬浮球/卡片各板块统一使用。 */
+  --dc-font-sans: "Inter", "SF Pro Display", "SF Pro Text", -apple-system, "Segoe UI", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  /* 等宽字体：风格化代码字体（与鉴权页一致），用于 TOTP 数字与密钥。 */
+  --dc-font-mono: "JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
   --dc-radius: 14px;
   --dc-radius-sm: 9px;
   --dc-gap: 12px;
@@ -168,8 +178,8 @@ const CSS = `
   transform-origin: 100% 100%;
   display: flex; flex-direction: column;
   color: var(--dc-fg);
-  /* 字体沿用主站（dsh 前端注入 --dsw-font-family；无则 fallback），保证字体一致性。 */
-  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif);
+  /* 字体统一使用风格化无衬线栈（--dc-font-sans），各板块保持一致。 */
+  font-family: var(--dc-font-sans);
   overflow: hidden;
   opacity: 0; pointer-events: none; visibility: hidden;
   backdrop-filter: blur(18px) saturate(1.2);
@@ -192,7 +202,7 @@ const CSS = `
 .dcb-head-user .dcb-user-avatar { width: 28px; height: 28px; }
 .dcb-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: var(--dc-gap); max-height: 74vh; overflow-y: auto; }
 .dcb-body::-webkit-scrollbar { width: 6px; }
-.dcb-body::-webkit-scrollbar-thumb { background: rgba(148,163,184,.2); border-radius: 8px; }
+.dcb-body::-webkit-scrollbar-thumb { background: var(--dsw-alias-scrollbar-bg-l2, rgba(148,163,184,.2)); border-radius: 8px; }
 
 /* ····· 核心卡：2FA 验证码 ····· */
 .dcb-card { border: 1px solid var(--dc-border); border-radius: var(--dc-radius); background: var(--dc-card); padding: 14px; }
@@ -203,14 +213,24 @@ const CSS = `
 .dcb-otp-qr-trigger { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 4px; border-radius: 7px; border: 1px solid var(--dc-border-strong); background: var(--dc-bg-soft); color: var(--dc-fg-soft); cursor: pointer; transition: all .15s ease; vertical-align: middle; }
 .dcb-otp-qr-trigger:hover { color: var(--dc-primary); border-color: var(--dc-primary); background: var(--dc-primary-soft); }
 .dcb-totp-remain { font-size: 12px; color: var(--dc-fg-dim); font-variant-numeric: tabular-nums; }
-.dcb-otp-code { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', monospace; font-size: 38px; font-weight: 700; letter-spacing: .1em; color: var(--dc-fg); line-height: 1; text-align: center; }
+.dcb-otp-code { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.dcb-otp-digit { width: 40px; height: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--dc-border); background: var(--dc-bg-soft); font-family: var(--dc-font-mono); font-size: 28px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: var(--dc-fg); }
+.dcb-otp-digit:nth-child(4) { margin-left: 7px; }
 .dcb-otp-count { height: 4px; border-radius: 999px; background: rgba(148,163,184,.14); overflow: hidden; }
 .dcb-totp-bar { display: block; height: 100%; background: var(--dc-primary); border-radius: 999px; width: 100%; transition: width 1s linear; }
 .dcb-qr-wrap { display: flex; flex-direction: column; gap: 10px; animation: dcbFadeIn .2s ease; }
-.dcb-qr { display: block; margin: 0 auto; width: 128px; height: 128px; image-rendering: pixelated; border-radius: 10px; background: #fff; padding: 6px; }
-.dcb-qr-hint { font-size: 10.5px; color: var(--dc-fg-dim); line-height: 1.5; text-align: center; margin: 0; }
-.dcb-copyrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--dc-radius-sm); background: var(--dc-bg-soft); border: 1px solid var(--dc-border); }
-.dcb-copyrow code { flex: 1; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: var(--dc-fg-soft); word-break: break-all; line-height: 1.5; }
+/* 二维码 + 密钥叠层卡片：默认重叠 90% 居中，hover 展开左右平铺 */
+.dcb-qr-deck { position: relative; height: 150px; }
+.dcb-qr-card { position: absolute; top: 4px; width: 142px; height: 142px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--dc-border); border-radius: var(--dc-radius-sm); background: var(--dc-bg-soft); box-shadow: 0 4px 16px rgba(2,8,24,.14); transition: left .32s cubic-bezier(.22,1,.36,1), transform .32s cubic-bezier(.22,1,.36,1); }
+.dcb-qr-card--front { left: calc(50% - 78px); z-index: 2; }
+.dcb-qr-card--back { left: calc(50% - 64px); z-index: 1; }
+.dcb-qr-deck:hover .dcb-qr-card--front { left: 0; }
+.dcb-qr-deck:hover .dcb-qr-card--back { left: calc(100% - 142px); }
+.dcb-qr { display: block; width: 118px; height: 118px; image-rendering: pixelated; border-radius: 8px; background: #fff; padding: 5px; }
+.dcb-qr-secret { display: flex; flex-wrap: wrap; align-content: center; justify-content: center; gap: 8px 6px; width: 100%; height: 100%; padding: 10px; box-sizing: border-box; }
+.dcb-secret-group { flex: 0 0 calc(50% - 3px); font-family: var(--dc-font-mono); font-size: 13px; color: var(--dc-fg); text-align: center; letter-spacing: .04em; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.dcb-qr-actions { display: flex; gap: 8px; }
+.dcb-qr-actions .dcb-iconbtn { flex: 1; padding: 7px 9px; text-align: center; }
 .dcb-iconbtn { flex-shrink: 0; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--dc-border); background: transparent; color: var(--dc-fg-dim); cursor: pointer; font-size: 11px; transition: all .15s ease; }
 .dcb-iconbtn:hover { color: var(--dc-primary); border-color: var(--dc-primary); }
 .dcb-iconbtn.danger:hover { color: var(--dc-danger); border-color: rgba(251,113,133,.4); }
@@ -225,7 +245,7 @@ const CSS = `
 .dcb-row-sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dcb-sub-copy { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 6px; padding: 0; border: none; background: transparent; color: var(--dc-fg-dim); cursor: pointer; transition: color .15s ease; flex-shrink: 0; }
 .dcb-sub-copy:hover { color: var(--dc-primary); }
-.dcb-sub-copy.copied { color: #34d399; }
+.dcb-sub-copy.copied { color: var(--dsw-alias-state-success-primary, #34d399); }
 .dcb-user { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 4px; }
 .dcb-user-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; background: var(--dc-bg-soft); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--dc-primary); overflow: hidden; border: 1px solid var(--dc-border-strong); }
 .dcb-user-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -235,7 +255,7 @@ const CSS = `
 /* 开关（shadcn Switch 语义） */
 .dcb-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
 .dcb-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
-.dcb-switch .dcb-track { position: absolute; inset: 0; border-radius: 999px; background: rgba(100,116,139,.4); transition: background .18s ease; pointer-events: none; }
+.dcb-switch .dcb-track { position: absolute; inset: 0; border-radius: 999px; background: var(--dsw-alias-label-caption, rgba(100,116,139,.4)); transition: background .18s ease; pointer-events: none; }
 .dcb-switch .dcb-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s ease, box-shadow .18s ease; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
 .dcb-switch input:checked + .dcb-track { background: var(--dc-primary); }
 .dcb-switch input:checked + .dcb-track::after { transform: translateX(18px); }
@@ -243,9 +263,9 @@ const CSS = `
 .dcb-switch input:disabled + .dcb-track { opacity: .45; }
 
 /* ····· 主操作按钮 ····· */
-.dcb-primary { width: 100%; padding: 11px; border-radius: var(--dc-radius-sm); border: none; cursor: pointer; font-size: 13px; font-weight: 600; letter-spacing: .01em; background: var(--dc-primary); color: #031018; transition: all .15s ease; }
+.dcb-primary { width: 100%; padding: 11px; border-radius: var(--dc-radius-sm); border: none; cursor: pointer; font-size: 13px; font-weight: 600; letter-spacing: .01em; background: var(--dc-primary); color: #02080f; transition: all .15s ease; }
 .dcb-primary:hover { filter: brightness(1.08); }
-.dcb-primary.danger { background: var(--dc-danger); color: #2a060b; }
+.dcb-primary.danger { background: var(--dc-danger); color: #fff; }
 .dcb-primary:disabled { opacity: .5; cursor: not-allowed; }
 .dcb-btn-row { display: flex; gap: 8px; }
 .dcb-btn-row .dcb-primary { flex: 1; }
@@ -310,9 +330,10 @@ function copyIconText(text: string, btn: HTMLElement): void {
   }, 1200)
 }
 
-/** TOTP secret 分组显示（每 4 字符一空格）。 */
-function formatSecret(secret: string): string {
-  return secret.replace(/(.{4})/g, '$1 ').trim()
+/** TOTP secret 分组渲染（每 4 字符一组，flex 换行，每行 2 组）。 */
+function renderSecretGroups(secret: string): string {
+  const groups = secret.replace(/\s/g, '').match(/.{1,4}/g) ?? []
+  return groups.map((g) => `<span class="dcb-secret-group">${g}</span>`).join('')
 }
 
 /** 判断是否已注入（幂等守卫）。 */
@@ -405,13 +426,18 @@ export function bootstrapHostUi(): HostUi {
           <span class="dcb-otp-label">绑定 2FA</span>
           <button class="dcb-qr-close" id="dcb-qr-close">×</button>
         </div>
-        <img class="dcb-qr" id="dcb-qr" alt="2FA 二维码" />
-        <div class="dcb-copyrow">
-          <code id="dcb-totp-secret"></code>
+        <div class="dcb-qr-deck">
+          <div class="dcb-qr-card dcb-qr-card--front">
+            <img class="dcb-qr" id="dcb-qr" alt="2FA 二维码" />
+          </div>
+          <div class="dcb-qr-card dcb-qr-card--back">
+            <code class="dcb-qr-secret" id="dcb-totp-secret"></code>
+          </div>
+        </div>
+        <div class="dcb-qr-actions">
           <button class="dcb-iconbtn" id="dcb-totp-copy">复制</button>
           <button class="dcb-iconbtn danger" id="dcb-totp-rotate">重置</button>
         </div>
-        <p class="dcb-qr-hint">用 2FA 应用（Google Authenticator 等）扫码绑定；也可手动输入上方密钥。完成绑定后返回。</p>
       </div>
 
       <div class="dcb-group">
@@ -443,21 +469,21 @@ export function bootstrapHostUi(): HostUi {
         </div>
         <div class="dcb-row">
           <div class="dcb-row-main">
-            <div class="dcb-row-label">开发模式</div>
-            <div class="dcb-row-sub">使用本地 127.0.0.1:5174 基址</div>
-          </div>
-          <label class="dcb-switch">
-            <input type="checkbox" id="dcb-devmode" />
-            <span class="dcb-track"></span>
-          </label>
-        </div>
-        <div class="dcb-row">
-          <div class="dcb-row-main">
             <div class="dcb-row-label">主站免密</div>
             <div class="dcb-row-sub">从 deepc 后台打开节点时免输 2FA</div>
           </div>
           <label class="dcb-switch">
             <input type="checkbox" id="dcb-bypass" />
+            <span class="dcb-track"></span>
+          </label>
+        </div>
+        <div class="dcb-row">
+          <div class="dcb-row-main">
+            <div class="dcb-row-label">开发模式</div>
+            <div class="dcb-row-sub">使用本地 127.0.0.1:5174 基址</div>
+          </div>
+          <label class="dcb-switch">
+            <input type="checkbox" id="dcb-devmode" />
             <span class="dcb-track"></span>
           </label>
         </div>
@@ -638,18 +664,27 @@ export function bootstrapHostUi(): HostUi {
   function renderTotp(): void {
     if (status.otpauthUri) {
       qrImg.src = qrDataUrl(status.otpauthUri)
-      totpSecretEl.textContent = formatSecret(status.totpSecret ?? '')
+      totpSecretEl.innerHTML = renderSecretGroups(status.totpSecret ?? '')
     } else {
       qrImg.removeAttribute('src')
-      totpSecretEl.textContent = ''
+      totpSecretEl.innerHTML = ''
     }
     void tickTotp()
   }
 
+  /** 将 6 位 TOTP 码渲染为等宽数字格子（3+3 分组，中间留白）。 */
+  function renderOtp(value: string): void {
+    const chars = value.replace(/\s/g, '').split('')
+    totpCodeEl.innerHTML = chars
+      .map((c) => `<span class="dcb-otp-digit">${c}</span>`)
+      .join('')
+  }
+  renderOtp('------')
+
   /** 刷新 6 位 TOTP 动态码 + 30s 倒计时（本地即 2FA 客户端）。 */
   async function tickTotp(): Promise<void> {
     if (!status.totpSecret) {
-      totpCodeEl.textContent = '------'
+      renderOtp('------')
       totpRemain.textContent = ''
       totpBar.style.width = '0%'
       return
@@ -659,7 +694,7 @@ export function bootstrapHostUi(): HostUi {
     const remainingMs = stepMs - (now % stepMs)
     const remainSec = Math.ceil(remainingMs / 1000)
     const code = await browserTotpCode(status.totpSecret, now)
-    totpCodeEl.textContent = `${code.slice(0, 3)} ${code.slice(3)}`
+    renderOtp(code)
     totpRemain.textContent = `${remainSec}s`
     // 剩余 ≤ 5s 时倒计时/进度条转红，提示动态码即将轮换（参考主流 TOTP 应用）。
     const expiring = remainSec <= 5

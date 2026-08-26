@@ -286,6 +286,7 @@ function TunnelCard({
   }, [node.url])
 
   const online = live === "online"
+  const isOffline = live === "offline"
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(node.url)
@@ -333,23 +334,32 @@ function TunnelCard({
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2">
           <Globe className="size-3.5 shrink-0 text-muted-foreground" />
-          <code className="min-w-0 flex-1 truncate font-mono text-xs">{host}</code>
-          <button
-            type="button"
-            title="复制完整地址"
-            onClick={handleCopy}
-            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {copied ? (
-              <Check className="size-3.5 text-emerald-500" />
-            ) : (
-              <Copy className="size-3.5" />
+          <code
+            className={cn(
+              "min-w-0 flex-1 truncate font-mono text-xs",
+              isOffline && "text-muted-foreground/60",
             )}
-          </button>
+          >
+            {isOffline ? "—" : host}
+          </code>
+          {!isOffline && (
+            <button
+              type="button"
+              title="复制完整地址"
+              onClick={handleCopy}
+              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {copied ? (
+                <Check className="size-3.5 text-emerald-500" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="sm" className="flex-1 gap-1.5" onClick={() => void handleOpen()} disabled={opening}>
+          <Button size="sm" className="flex-1 gap-1.5" onClick={() => void handleOpen()} disabled={opening || isOffline}>
             {opening ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />}
             打开节点
           </Button>
