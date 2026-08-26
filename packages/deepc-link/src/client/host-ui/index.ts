@@ -9,12 +9,13 @@ import * as React from 'react'
 import { createRoot } from 'react-dom/client'
 import { animate } from 'animejs'
 
-import { deepcCall, prettySubdomain, copyToClipboard } from './api'
-import { HOST_ZONE_ID, HOST_UI_STYLE_ID, SHEET_ID, TRIGGER_ID, isLoopbackHost, isRemoteContext } from './constants'
+import { deepcCall, prettySubdomain, prettyHost, copyToClipboard } from './api'
+import { HOST_ZONE_ID, HOST_UI_STYLE_ID, SHEET_ID, TRIGGER_ID, isOfficialLocalOrigin, isRemoteContext } from './constants'
 import { HOST_UI_CSS } from './styles'
-import { DEEPSEA_LOGO, QR_ICON, USER_ICON } from './icons'
+import { DEEPSEA_LOGO, QR_ICON, USER_ICON, BACK_ICON, CHECK_ICON } from './icons'
 import { Avatar, Fab, Icon, TierRow } from './components'
 import { useConnectedDuration, useQrDataUrl, useTotpCode } from './hooks'
+import { applyRemoteChrome } from '../remote-chrome'
 import type { BackendStatus, HostUi, LinkMode } from './types'
 
 const h = React.createElement
@@ -47,10 +48,10 @@ function tunnelSubText(status: BackendStatus): { text: string; url: string | nul
       return { text: '隧道连接中…', url: null }
     case 'running':
     case 'managed': {
-      const label = st === 'managed' ? '已纳管' : '已启动'
+      // 最终态：去掉「已纳管/已启动」前缀，只显示二级域字段；无 url 时兑底显示状态文案。
       return status.url
-        ? { text: `${label} · ${prettySubdomain(status.url)}`, url: status.url }
-        : { text: label, url: null }
+        ? { text: prettySubdomain(status.url), url: status.url }
+        : { text: st === 'managed' ? '已纳管' : '已启动', url: null }
     }
     default:
       return { text: '隧道连接中…', url: null }
@@ -91,8 +92,8 @@ function Head({
         h(
           'div',
           { className: 'dcb-head-user', title: '点击登出', onClick: onLogout },
-          h(Avatar, { login: p.login, avatarUrl: p.avatar_url }),
           h('span', { className: 'dcb-user-name' }, name),
+          h(Avatar, { login: p.login, avatarUrl: p.avatar_url }),
         ),
       ),
     )
@@ -169,6 +170,7 @@ function QrPanel({
   onRotate: () => void
 }): React.ReactElement {
   const qrUrl = useQrDataUrl(status.otpauthUri)
+  const [copied, setCopied] = React.useState(false)
   return h(
     'div',
     { className: 'dcb-card dcb-qr-panel' },
@@ -176,7 +178,12 @@ function QrPanel({
       'div',
       { className: 'dcb-otp-head' },
       h('span', { className: 'dcb-otp-label' }, '绑定 2FA'),
-      h('button', { className: 'dcb-qr-close', onClick: onClose }, '×'),
+      h(
+        'button',
+        { className: 'dcb-iconbtn dcb-qr-back', title: '返回', onClick: onClose },
+        h(Icon, { svg: BACK_ICON, className: 'dcb-qr-back-icon' }),
+        '返回',
+      ),
     ),
     h(
       'div',
@@ -186,7 +193,7 @@ function QrPanel({
         { className: 'dcb-qr-card dcb-qr-card--front' },
         qrUrl
           ? h('img', { className: 'dcb-qr', alt: '2FA 二维码', src: qrUrl })
-          : null,
+          : h('div', { className: 'dcb-qr-placeholder' }, status.otpauthUri ? '二维码生成中…' : '无法生成二维码'),
       ),
       h(
         'div',
@@ -207,10 +214,15 @@ function QrPanel({
       h(
         'button',
         {
-          className: 'dcb-iconbtn',
-          onClick: () => void copyToClipboard(status.totpSecret ?? ''),
+          className: 'dcb-iconbtn' + (copied ? ' copied' : ''),
+          onClick: () => {
+            void copyToClipboard(status.totpSecret ?? '').then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1200)
+            })
+          },
         },
-        '复制',
+        copied ? h(Icon, { svg: CHECK_ICON, className: 'dcb-qr-copy-check' }) : '复制',
       ),
       h('button', { className: 'dcb-iconbtn danger', onClick: onRotate }, '重置'),
     ),
@@ -222,26 +234,26 @@ function Group({
   status,
   onLocal,
   onTunnel,
-  onBypass,
   onDevMode,
 }: {
   status: BackendStatus
   onLocal: (on: boolean) => void
   onTunnel: (on: boolean) => void
-  onBypass: (on: boolean) => void
   onDevMode: (on: boolean) => void
 }): React.ReactElement {
   const localOn = status.localOn !== false
+  // 地址只显示 ip:port（去 http:// 前缀）；复制仍复制完整 URL（可直接粘贴到浏览器访问）。
   const localSub = localOn
-    ? (status.localUrl ?? '局域网可访问本机 3081 端口')
+    ? (status.localUrl ? prettyHost(status.localUrl) : '局域网可访问本机 3081 端口')
     : '已关闭，仅本机可访问'
   const tunnel = tunnelSubText(status)
   return h(
     'div',
     { className: 'dcb-group' },
     h(TierRow, {
-      label: '本地共享',
+      label: '局域共享',
       sub: localSub,
+      subTitle: status.localUrl ?? undefined,
       copyText: localOn ? (status.localUrl ?? undefined) : undefined,
       checked: localOn,
       onChange: onLocal,
@@ -253,12 +265,6 @@ function Group({
       copyText: tunnel.url ?? undefined,
       checked: status.mode !== 'local',
       onChange: onTunnel,
-    }),
-    h(TierRow, {
-      label: '主站免密',
-      sub: '从 deepc 后台打开节点时免输 2FA',
-      checked: status.allowBypass ?? false,
-      onChange: onBypass,
     }),
     h(TierRow, {
       label: '开发模式',
@@ -281,13 +287,8 @@ function RemoteRow({
   return h(
     'div',
     { className: 'dcb-remote-row' },
-    h(
-      'div',
-      { className: 'dcb-row-main' },
-      h('div', { className: 'dcb-remote-duration' }, duration),
-      h('div', { className: 'dcb-remote-status' }, '远程控制 · 本机配置不可见'),
-    ),
-    h('button', { className: 'dcb-iconbtn danger', onClick: onDisconnect }, '断开'),
+    h('span', { className: 'dcb-remote-duration' }, duration),
+    h('button', { className: 'dcb-iconbtn danger', title: '断开连接', onClick: onDisconnect }, '断开'),
   )
 }
 
@@ -301,6 +302,8 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
   const isOpenRef = React.useRef(false)
   const isHoveringRef = React.useRef(false)
   const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 隧道切换中标记：乐观更新期间抑制轮询覆盖，避免后端 stopConnections 窗口内轮询拉回旧 mode 导致闪回。
+  const tunnelSwitchingRef = React.useRef(false)
 
   const refreshStatus = React.useCallback(async (): Promise<void> => {
     const s = await deepcCall<BackendStatus>('status', undefined, remoteMode)
@@ -311,9 +314,16 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
   React.useEffect(() => {
     void refreshStatus()
     if (remoteMode) return
-    const poll = setInterval(() => void refreshStatus(), 3000)
+    const poll = setInterval(() => {
+      if (!tunnelSwitchingRef.current) void refreshStatus()
+    }, 3000)
     return () => clearInterval(poll)
   }, [refreshStatus, remoteMode])
+
+  // 远端 chrome：sidebar 品牌名 → 设备名 + title/favicon 动态化。
+  React.useEffect(() => {
+    if (remoteMode) applyRemoteChrome(status)
+  }, [remoteMode, status])
 
   // 动画（animejs 直接操作 DOM style，不触发重渲染）。
   const cancelHide = React.useCallback((): void => {
@@ -426,11 +436,20 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
 
   const onTunnel = (on: boolean): void => {
     const target: LinkMode = on ? (status.loggedIn ? 'managed' : 'tunnel') : 'local'
-    void deepcCall('mode', { mode: target }).then(() => refreshStatus())
-  }
-
-  const onBypass = (on: boolean): void => {
-    void deepcCall('bypass', { enabled: on }).then(() => refreshStatus())
+    // 乐观更新：立即把开关/文案切到目标态，避免 cloudflared 下载/启动/上报的等待
+    // （后端 connectOrFallback 最长 30s）让用户误以为点击失效。
+    tunnelSwitchingRef.current = true
+    setStatus((s) => ({
+      ...s,
+      mode: target,
+      tunnelState: on ? 'starting' : 'off',
+      url: on ? s.url : null,
+    }))
+    void deepcCall('mode', { mode: target }).finally(() => {
+      tunnelSwitchingRef.current = false
+      // 拿到真实状态覆盖：开启失败（下载/启动/超时）后端已自动回退 local → 开关变回关闭。
+      void refreshStatus()
+    })
   }
 
   const onDevMode = (on: boolean): void => {
@@ -464,18 +483,18 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
     }),
     h(
       'div',
-      { id: SHEET_ID, ref: sheetRef, onClick: (e: React.MouseEvent) => e.stopPropagation() },
-      h(Head, { status, onLogin, onLogout }),
+      { id: SHEET_ID, ref: sheetRef, className: remoteMode ? 'dcb-remote-sheet' : undefined, onClick: (e: React.MouseEvent) => e.stopPropagation() },
+      remoteMode ? null : h(Head, { status, onLogin, onLogout }),
       h(
         'div',
-        { className: 'dcb-body' },
+        { className: remoteMode ? 'dcb-body dcb-remote-body' : 'dcb-body' },
         remoteMode
           ? h(RemoteRow, { status, onDisconnect })
           : h(
               React.Fragment,
               null,
               showQr ? h(QrPanel, { status, onClose: () => setShowQr(false), onRotate }) : h(OtpPanel, { status, onShowQr: () => setShowQr(true) }),
-              h(Group, { status, onLocal, onTunnel, onBypass, onDevMode }),
+              h(Group, { status, onLocal, onTunnel, onDevMode }),
             ),
       ),
     ),
@@ -501,7 +520,7 @@ export function bootstrapHostUi(): HostUi {
     return { state: 'idle', dispose: () => {} }
   }
   bootstrapped = true
-  const remoteMode = !isLoopbackHost(window.location.hostname)
+  const remoteMode = !isOfficialLocalOrigin()
 
   const style = document.createElement('style')
   style.id = HOST_UI_STYLE_ID

@@ -82,9 +82,13 @@ export async function qrDataUrl(otpauthUri: string): Promise<string> {
   try {
     const svg = await qrToSvg(otpauthUri, {
       type: 'svg',
-      width: 132,
-      margin: 1,
+      // 静区（quiet zone）提至 4 模块宽（二维码标准要求 ≥4，扫描器据此定位边界）；
+      // 用 scale（每模块像素）而非 width 生成，避免 width 推导出小数 scale 导致模块模糊密集；
+      // 明确黑白两色，保证对比度。
+      margin: 4,
+      scale: 8,
       errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#ffffff' },
     })
     const bytes = new TextEncoder().encode(svg)
     let bin = ''

@@ -20,8 +20,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { type Duplex } from 'node:stream'
-import httpProxy from 'http-proxy'
 import { hmacSha256Hex, sha512Hex, verifyTotp } from './totp'
 
 /** 反代目标：dsh 官方 3080。 */
@@ -483,6 +483,9 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   const log = opts.log ?? ((m: string) => console.log(`[deepc:3081] ${m}`))
 
   // 反代实例（HTTP + WS 一体；changeOrigin 让 Host 改写为上游，等价旧 fetch 反代行为）。
+  // 运行时 require：确保在 patch-util 替换 util._extend 之后才加载 http-proxy，
+  // 使其捕获到的 `extend = require('util')._extend` 已是 Object.assign，消除 DEP0060。
+  const httpProxy = createRequire(import.meta.url)('http-proxy') as typeof import('http-proxy')
   const proxy = httpProxy.createProxyServer({ target: upstream, changeOrigin: true, ws: true })
   proxy.on('error', (err: Error, _req, res) => {
     // 反代错误兜底：防止 error 冒泡成进程级 unhandledRejection（触发 dsh fail-loud 退出）。
@@ -741,6 +744,17 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
     // 其余 → 反代到 dsh
     proxy.web(req, res)
   })
+
+  // —— 关键修复：对齐 cloudflared 的 origin 连接复用周期 ——
+  // node http server 默认 keepAliveTimeout=5s，远小于 cloudflared 到 origin 的
+  // IdleConnTimeout（默认 90s）。cloudflared 会在 90s 内复用连接，但 node 5s 后就把
+  // 空闲 keep-alive 连接关闭；cloudflared 复用「半死」连接时，POST 请求（如
+  // /api/agentPreset.list 这类 RPC）RoundTrip 失败，而 Go http.Transport 对非幂等 POST
+  // 不自动重试 → 直接向浏览器返回 HTTP 530（"Unable to reach the origin service"）。
+  // 把 node 的 keepAliveTimeout 提升到 >90s，避免 node 在 cloudflared 复用前主动关连接。
+  // headersTimeout 必须 ≥ keepAliveTimeout（否则 node 告警且行为异常）。
+  server.keepAliveTimeout = 120_000
+  server.headersTimeout = 125_000
 
   // WebSocket upgrade：探活端点免鉴权（纯 ping/pong）；其余鉴权通过才 hijack
   server.on('upgrade', (req, socket, head) => {

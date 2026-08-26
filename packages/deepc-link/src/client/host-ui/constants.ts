@@ -22,6 +22,18 @@ export function isLoopbackHost(hostname: string): boolean {
   )
 }
 
+/** dsh 官方前端监听端口（origin port）。 */
+export const DSH_ORIGIN_PORT = '3080'
+
+/**
+ * 官方本地直连判定：仅当 loopback 且端口为官方 origin（3080）才算「本地面板」。
+ * 经 3081 鉴权代理 / 隧道域名访问一律视为远端（只显示 connect_time + 断开单行）。
+ */
+export function isOfficialLocalOrigin(): boolean {
+  const { hostname, port } = window.location
+  return isLoopbackHost(hostname) && port === DSH_ORIGIN_PORT
+}
+
 /** 域守卫：远端快照/非本地 dsh 上下文不注入（防双角色死循环）。 */
 export function isRemoteContext(): boolean {
   const { hostname, port } = window.location

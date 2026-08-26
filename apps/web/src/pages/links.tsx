@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -45,7 +44,6 @@ import {
   Laptop,
   Loader2,
   RefreshCw,
-  ShieldCheck,
   Trash2,
 } from "lucide-react"
 
@@ -381,11 +379,6 @@ function TunnelCard({
           </Button>
         </div>
       </CardContent>
-
-      <CardFooter className="gap-1.5 text-xs text-muted-foreground">
-        <ShieldCheck className="size-3.5 shrink-0" />
-        除开启主站免密可直接互联，其他请通过2FA安全码连接
-      </CardFooter>
     </Card>
   )
 }

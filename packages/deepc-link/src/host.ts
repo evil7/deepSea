@@ -201,8 +201,8 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
   let profile: DeepcHostStatus['profile']
   // 本地共享开关（3081 局域网暴露）。默认开；关 → 3081 仅绑 127.0.0.1（隧道仍可用）。
   let localOn = true
-  // 主站免密（bypass）。默认关；开 → report 附 sha512(secret) + 3081 注册 ticket 端点。
-  let allowBypass = false
+  // 主站免密（bypass）：默认行为，恒开 —— report 附 sha512(secret) + 3081 注册 ticket 端点。
+  let allowBypass = true
   /** 互联建立时间戳（前端「时长」显示用；null = 未连接）。 */
   let connectedAt: number | null = null
 
@@ -314,7 +314,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     if (st.mode === 'local' || st.mode === 'tunnel' || st.mode === 'managed') mode = st.mode
     if (typeof st.localOn === 'boolean') localOn = st.localOn
     if (typeof st.devMode === 'boolean') devMode = st.devMode
-    if (typeof st.allowBypass === 'boolean') allowBypass = st.allowBypass
+    // allowBypass 已改为默认行为（恒 true），不再从 state 读回。
     // 恢复 device_token
     if (!token) {
       token = await readFileIfExists('device-token')

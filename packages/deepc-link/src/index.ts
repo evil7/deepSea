@@ -1,5 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 
+// 必须在所有业务模块之前加载：提前替换 util._extend，消除 http-proxy 的 DEP0060 告警。
+import './patch-util'
+
 import { createDeepcHost, type DeepcHost, NODE_CTRL_PATH } from './host'
 
 /**
