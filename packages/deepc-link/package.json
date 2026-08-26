@@ -1,8 +1,9 @@
 {
   "name": "deepc-link",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
-  "description": "deepc-link — deepc 多端互联隧道插件",
+  "description": "deepc-link — deepSea 多端互联插件",
+  "homepage": "https://deepc.cn",
   "main": "dist/index.js",
   "files": [
     "dist",

@@ -5,8 +5,8 @@
 **[deepc.cn](https://deepc.cn)** 聚合全 GitHub 的 DSH 插件生态，提供搜索、精选、安装指引、
 社区讨论，以及 **deepc-link** 多端互联能力（WebRTC 加密通道远程控制本地 DSH host）。
 
-- 官方库：<https://github.com/deepseek-ai/deepseek-harness>（"Everything is a Plugin"）
-- 互联插件：<https://www.npmjs.com/package/deepc-link>
+- 官方库：<https://github.com/deepseek-ai/deepseek-harness> ("Everything is a Plugin")
+- 互联插件：<https://www.npmjs.com/package/deepc-link> (Cloudflare Tunnel + 2FA 安全共享)
 
 ## 核心功能
 
@@ -55,6 +55,7 @@ deepSea/
 ```bash
 pnpm install          # 安装依赖
 pnpm dev:all          # 同时启动 worker (8787) + web (5174)
+pnpm plugin:pack      # 构建 deepc-link 插件(tgz)
 ```
 
 > `pnpm dev` 单起前端（需 worker 已运行），`pnpm dev:worker` 单起 worker。
@@ -71,6 +72,7 @@ pnpm dev:all          # 同时启动 worker (8787) + web (5174)
 pnpm build            # 全量构建（web + worker）
 pnpm typecheck        # 全量类型检查
 pnpm deploy           # typegen → build → 发布 Worker 到 Cloudflare
+pnpm plugin:release   # 发布 deepc-link 到 npm（需 NPM_TOKEN）
 ```
 
 **Secret 管理**（wrangler secret，交互式输入）：
@@ -91,7 +93,7 @@ pnpm secret:del -- GITHUB_CLIENT_SECRET     # 删除
 
 ## deepc-link 互联插件
 
-deepc-link 是 DSH 的多端互联插件，经 WebRTC 加密通道实现远程控制本地 DSH host。
+deepc-link 是 DSH 的多端互联插件，通过 Cloudflare Tunnel 实现安全的远程控制和数据同步，插件端对原生 3080 端口做鉴权代理，增加 2FA 连接码登陆后安全共享。实现真正的**本地域内分享**，以及安全可靠匿名的**公网映射互联**的丝滑体验。
 
 **一键安装**：
 
@@ -103,8 +105,8 @@ dsh plugin --profile web add deepc-link@latest
 
 ```bash
 pnpm plugin:pack      # 构建 + 打 tgz
-dsh plugin --profile web add ./packages/deepc-link/deepc-link-0.0.1.tgz
-# 安装后在插件 Sheet 打开「开发模式」→ 自动连本地 http://127.0.0.1:5174
+dsh plugin --profile web add ./packages/deepc-link/deepc-link-<version>.tgz
+# 安装后在插件 Sheet 打开底部「开发模式」→ 自动连本地 http://127.0.0.1:5174
 ```
 
 详见 [`packages/deepc-link/README.md`](packages/deepc-link/README.md)。
