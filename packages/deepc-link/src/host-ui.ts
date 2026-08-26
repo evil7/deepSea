@@ -68,12 +68,15 @@ async function browserTotpCode(secret: string, time = Date.now()): Promise<strin
 /** 后端控制路由基址（与 host.ts 的 NODE_CTRL_PATH 一致；同源 3080）。 */
 const DEEPC_CTRL_BASE = '/deepc'
 
-/** 调用插件后端控制端点。 */
-async function deepcCall<T>(action: string, body?: unknown): Promise<T | null> {
+/** 调用插件后端控制端点。remote=true 声明远端上下文（后端据此裁剪敏感字段，不下发 TOTP secret）。 */
+async function deepcCall<T>(action: string, body?: unknown, remote = false): Promise<T | null> {
   try {
     const res = await fetch(`${DEEPC_CTRL_BASE}/${action}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(remote ? { 'X-Deepc-Remote': '1' } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
     if (!res.ok) return null
@@ -517,9 +520,9 @@ export function bootstrapHostUi(): HostUi {
         remoteDuration.textContent = formatDuration(Date.now() - status.connectedAt)
       }
     }, 1000)
-    // 断开按钮：断开隧道（远端访问随之失效）
+    // 断开按钮：断开隧道（远端访问随之失效；隧道断开后页面即失效，无需再刷新）
     remoteDisconnect.addEventListener('click', () => {
-      void deepcCall('disconnect').then(() => refreshStatus())
+      void deepcCall('disconnect')
     })
   }
 
@@ -692,9 +695,9 @@ export function bootstrapHostUi(): HostUi {
     }
   }
 
-  /** 拉取后端状态并刷新 UI。 */
+  /** 拉取后端状态并刷新 UI（远端访问时带 X-Deepc-Remote 头，后端裁剪敏感字段）。 */
   async function refreshStatus(): Promise<void> {
-    const s = await deepcCall<BackendStatus>('status')
+    const s = await deepcCall<BackendStatus>('status', undefined, remoteMode)
     if (!s) return
     applyStatus(s)
     debugLog(
@@ -885,13 +888,20 @@ export function bootstrapHostUi(): HostUi {
 
   scheduleHide()
 
+  // 仅本地（127.0.0.1:3080 同源）轮询：远端访问（隧道域名）只在打开 sheet 时拉一次
+  // 裁剪后的状态，避免持续向隧道域名发 /deepc/status（每 3s 经 CF 隧道的浪费请求 +
+  // TOTP secret 等敏感字段持续下发到远端浏览器内存的风险）。
   void refreshStatus()
-  const pollTimer = setInterval(() => {
-    void refreshStatus()
-  }, 3000)
-  const totpTimer = setInterval(() => {
-    void tickTotp()
-  }, 1000)
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+  let totpTimer: ReturnType<typeof setInterval> | null = null
+  if (!remoteMode) {
+    pollTimer = setInterval(() => {
+      void refreshStatus()
+    }, 3000)
+    totpTimer = setInterval(() => {
+      void tickTotp()
+    }, 1000)
+  }
 
   return {
     get state() {
@@ -899,8 +909,8 @@ export function bootstrapHostUi(): HostUi {
     },
     dispose(): void {
       if (hideTimer) clearTimeout(hideTimer)
-      clearInterval(pollTimer)
-      clearInterval(totpTimer)
+      if (pollTimer) clearInterval(pollTimer)
+      if (totpTimer) clearInterval(totpTimer)
       fab.remove()
       sheet.remove()
       trigger.remove()

@@ -11,14 +11,16 @@
 //
 // 运行：先 node test/build-tests.mjs，再 node test/auth-proxy.test.mjs
 
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { createAuthProxy } from './.auth-proxy.bundle.mjs'
 import { generateTotpSecret, totpCode } from './.totp.bundle.mjs'
 
 // ── mock 3080 上游（dsh 官方；用 3090 避免与真实 dsh 3080 冲突）────────
 const upstream = createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-  res.end('HELLO FROM DSH 3080')
+  // 回显远端来源标记头（测试 remote 注入：loopback 无、非 loopback 有）。
+  const remote = req.headers['x-deepc-remote'] ?? ''
+  res.end(`HELLO FROM DSH 3080 remote=${remote}`)
 })
 await new Promise((r) => upstream.listen(3090, '127.0.0.1', r))
 console.log('✓ mock 上游已启动 :3090')
@@ -37,9 +39,10 @@ console.log('✓ 3081 鉴权代理已启动，TOTP secret 已注入')
 
 const base = 'http://127.0.0.1:3081'
 
-async function req(path, { method = 'GET', cookie, body, form } = {}) {
+async function req(path, { method = 'GET', cookie, body, form, host } = {}) {
   const headers = {}
   if (cookie) headers.cookie = cookie
+  if (host) headers.host = host
   let payload
   if (form) {
     headers['content-type'] = 'application/x-www-form-urlencoded'
@@ -71,6 +74,31 @@ let r = await req('/')
 check('无 cookie → 401', r.status === 401)
 check('响应为鉴权页', r.text.includes('deepc-link 安全验证'))
 check('鉴权页含 6 位 2FA 输入', r.text.includes('6 位动态码') || r.text.includes('2FA'))
+
+// ── 1b. 公开静态资源（manifest.webmanifest）→ 免鉴权 200 ─────────────
+r = await req('/manifest.webmanifest')
+check('manifest.webmanifest 免鉴权 → 200', r.status === 200 && r.text.includes('HELLO FROM DSH 3080'))
+
+// ── 1c. 远端来源标记：loopback Host 无 remote；非 loopback Host 注入 remote=1 ──
+// undici fetch 会忽略自定义 Host 头，故用 node:http request 显式设置 Host 模拟隧道域名。
+function rawGet(host) {
+  return new Promise((resolve) => {
+    const r = httpRequest(
+      { host: '127.0.0.1', port: 3081, path: '/manifest.webmanifest', method: 'GET', headers: { host } },
+      (res) => {
+        let body = ''
+        res.on('data', (c) => (body += c))
+        res.on('end', () => resolve(body))
+      },
+    )
+    r.on('error', () => resolve(''))
+    r.end()
+  })
+}
+r = await req('/manifest.webmanifest', { host: '127.0.0.1:3081' })
+check('loopback Host 无 remote 标记', r.text.includes('remote=') && !r.text.includes('remote=1'))
+const remoteBody = await rawGet('ala-motherboard-cdna-fence.trycloudflare.com')
+check('非 loopback Host 注入 remote=1', remoteBody.includes('remote=1'))
 
 // ── 2. 错误动态码 → 401 ───────────────────────────────────────────────
 r = await req('/__deepc_auth', { method: 'POST', form: 'code=000000' })

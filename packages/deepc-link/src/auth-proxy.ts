@@ -42,6 +42,28 @@ const TICKET_PATH = '/__deepc_ticket'
 /** 鉴权代理自定义 API 前缀（需 dc_site cookie；本地目录枚举，供远端路径选择 UI 用）。 */
 const API_PATH = '/__deepc_api'
 
+/**
+ * 免鉴权的公开静态资源路径（浏览器自动请求、无敏感信息：PWA manifest / 站点图标 / robots）。
+ * 仅精确路径白名单，不放开通配——避免误放开 /api/*、/deepc/* 等敏感路径。
+ */
+const PUBLIC_PATHS = new Set([
+  '/manifest.webmanifest',
+  '/manifest.json',
+  '/site.webmanifest',
+  '/favicon.ico',
+  '/favicon.svg',
+  '/favicon.png',
+  '/robots.txt',
+  '/apple-touch-icon.png',
+  '/apple-touch-icon-precomposed.png',
+])
+
+/**
+ * 远端来源标记头：3081 反代时按真实 Host 注入（非 loopback → '1'），供 dsh 后端
+ * /deepc/* handleControl 识别「远端访问」并拒绝敏感控制端点（登录/切模式/重生成 TOTP 等）。
+ */
+const REMOTE_HEADER = 'x-deepc-remote'
+
 /** ticket 时效（毫秒）：主站签发后 30s 内有效。 */
 const TICKET_TTL_MS = 30_000
 
@@ -96,6 +118,12 @@ function constantEqual(a: string, b: string): boolean {
 /** 反代出站请求前剥离 Origin（dsh 对非本地 Origin 做 CSRF 校验返回 403）。 */
 function stripOrigin(proxyReq: import('node:http').ClientRequest): void {
   proxyReq.removeHeader('Origin')
+}
+
+/** 判断 hostname 是否 loopback（本机 127.0.0.1 / localhost / ::1）。 */
+function isLoopbackHostname(host: string): boolean {
+  const h = host.toLowerCase()
+  return h === '127.0.0.1' || h === 'localhost' || h === '::1' || h === '[::1]'
 }
 
 // ---------------------------------------------------------------------------
@@ -471,7 +499,18 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   // 剥离 Origin：dsh 对非本地 Origin（trycloudflare 隧道域名 / 局域网 IP 等）做 CSRF
   // 校验返回 403。反代时去掉 Origin，上游视为非浏览器请求（无 Origin 已验证 200/101 通过）。
   // 浏览器经隧道访问时页面与请求同域，不依赖 CORS，剥离 Origin 无副作用。
-  proxy.on('proxyReq', stripOrigin)
+  proxy.on('proxyReq', (proxyReq, req) => {
+    stripOrigin(proxyReq)
+    // 远端来源标记：Host 非 loopback（隧道域名 / 局域网 IP）→ 强制注入 x-deepc-remote，
+    // 供 dsh 后端 /deepc/* handleControl 拒绝敏感控制端点（登录/切模式/重生成 TOTP 等
+    // 只允许本地面板）。服务端按真实 Host 注入，前端无法伪造（伪造会被 remove/set 覆盖）。
+    const hostname = (req.headers.host ?? '').split(':')[0] ?? ''
+    if (isLoopbackHostname(hostname)) {
+      proxyReq.removeHeader(REMOTE_HEADER)
+    } else {
+      proxyReq.setHeader(REMOTE_HEADER, '1')
+    }
+  })
   proxy.on('proxyReqWs', stripOrigin)
 
   /** TOTP secret（仅内存，由 host.ts 从 ~/.deepc 载入注入）。 */
@@ -664,6 +703,13 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
     // 鉴权端点本身免鉴权（否则死循环）
     if (req.method === 'POST' && pathname === AUTH_PATH) {
       void handleAuth(req, res)
+      return
+    }
+
+    // 公开静态资源（PWA manifest / 图标 / robots 等浏览器自动请求的无敏感资源）：
+    // 免鉴权直接反代，避免浏览器自动请求 manifest.webmanifest 被 401 拦截。
+    if (req.method === 'GET' && PUBLIC_PATHS.has(pathname)) {
+      proxy.web(req, res)
       return
     }
 

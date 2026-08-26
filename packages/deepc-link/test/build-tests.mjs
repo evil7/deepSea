@@ -18,6 +18,10 @@ for (const t of targets) {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    // http-proxy 内部含 CommonJS dynamic require('util')，打包进 ESM 后 Node 24 会抛
+    // "Dynamic require is not supported"。external 让第三方依赖运行时从 node_modules
+    // 解析（保留 CJS 上下文），dynamic require 正常工作。
+    packages: 'external',
     define: {
       __DEEPC_SITE_BASE__: '"https://deepc.cn"',
       __DEEPC_SIGNAL_BASE__: '"https://deepc.cn"',

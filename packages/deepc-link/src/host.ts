@@ -522,8 +522,34 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     async handleControl(req, res) {
       try {
         const pathname = new URL(req.url ?? '/', 'http://x').pathname
+        // 远端来源（经 3081 反代，auth-proxy 按 Host 非 loopback 注入 x-deepc-remote）：
+        // 仅允许只读 status（裁剪敏感字段）+ disconnect（远端「断开」按钮）。
+        // 其余敏感控制端点（登录/登出/连接/切模式/本地共享/重生成 TOTP/开发模式/免密）
+        // 只允许本地面板操作 —— 纵深防御，即便远端前端有遗漏也拒绝。
+        const remote = String(req.headers['x-deepc-remote'] ?? '') === '1'
         if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/status`) {
-          sendJson(res, 200, this.status())
+          const s = this.status()
+          // 远端访问：TOTP secret / 本地地址等敏感字段不下发——secret 只在本地浏览器
+          // （127.0.0.1:3080 同源）展示动态码与二维码时需要。纵深防御：
+          // 即使前端有遗漏，secret 也绝不经隧道下发到远端浏览器内存。
+          if (remote) {
+            s.totpSecret = null
+            s.otpauthUri = null
+            s.localUrl = null
+            s.localOn = false
+          }
+          sendJson(res, 200, s)
+          return
+        }
+        // 远端「断开」按钮：允许（断开后隧道失效，页面即不可用，无越权面）。
+        if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/disconnect`) {
+          await this.disconnect()
+          sendJson(res, 200, { ok: true })
+          return
+        }
+        // 其余敏感控制端点：远端拒绝（只允许本地面板操作）。
+        if (remote) {
+          sendJson(res, 403, { ok: false, error: 'remote-forbidden' })
           return
         }
         if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/login`) {
@@ -539,11 +565,6 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/connect`) {
           const r = await this.connect()
           sendJson(res, 200, r)
-          return
-        }
-        if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/disconnect`) {
-          await this.disconnect()
-          sendJson(res, 200, { ok: true })
           return
         }
         if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/mode`) {
