@@ -91,8 +91,6 @@ function bundleClient(esbuildExe) {
     '--external:react/jsx-runtime',
     '--external:react-dom',
     '--external:react-dom/client',
-    // favicon 用主站同款 deepsea.svg（拷贝自 apps/web/public）：以 text 内联进 bundle。
-    '--loader:.svg=text',
     `--outfile=${outfile}`,
   ]
   for (const [name, value] of Object.entries(DEFINE)) {

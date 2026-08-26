@@ -457,7 +457,18 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
   }
 
   const onDisconnect = (): void => {
-    void deepcCall('disconnect')
+    // 远端「断开」= 结束本次远端会话：仅关闭本页面窗口，不影响宿主机
+    // （cloudflared / 3081 鉴权代理保持运行，本机配置与互联层不受影响）。
+    window.close()
+    // 兜底：window.close() 对非脚本打开的窗口会被浏览器静默拒绝；若页面仍在，
+    // 替换为提示页，明确告知会话已结束、可安全关闭标签。
+    setTimeout(() => {
+      if (window.closed) return
+      document.body.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100vh;' +
+        'font-family:system-ui,sans-serif;font-size:14px;color:#9aa6b8;background:#0f1115;">' +
+        '已断开远端会话，可安全关闭此标签页</div>'
+    }, 300)
   }
 
   const onRotate = (): void => {

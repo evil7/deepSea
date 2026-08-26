@@ -2,8 +2,8 @@
  * host-ui 内联 SVG 图标。
  */
 
-/** deepSea 品牌图标（内联 SVG，蓝色圆角底 + 三波浪线，与主站 deepsea.svg 一致）。 */
-export const DEEPSEA_LOGO = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="#16b3eb"/><g transform="translate(4 4) scale(0.6667)" stroke="#02080f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 q2.5 2 5 0 t5 0 t5 0 t5 0"/><path d="M2 19 q2.5 2 5 0 t5 0 t5 0 t5 0"/><path d="M2 5 q2.5 2 5 0 t5 0 t5 0 t5 0"/></g></svg>`
+// deepSea 品牌 logo 收敛到公共资源（见 src/deepsea-logo.ts），这里 re-export 保持旧导入路径兼容。
+export { DEEPSEA_LOGO } from '../../deepsea-logo'
 
 /** 二维码 icon（内联 SVG；front-end token 一致的主站深度蓝）。 */
 export const QR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM21 14v7M14 21h3M18.5 18H21"/></svg>`

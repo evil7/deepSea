@@ -61,8 +61,6 @@ export interface DeepcHost {
   status: () => DeepcHostStatus
   /** 启动当前模式互联层。 */
   connect: () => Promise<{ ok: boolean; url?: string; error?: string }>
-  /** 断开互联（停 cloudflared；3081 保留）。 */
-  disconnect: () => Promise<void>
   /** 切换互联模式（local/tunnel/managed）。 */
   setMode: (mode: LinkMode) => Promise<void>
   /** 切换本地共享开关（3081 局域网暴露）。 */
@@ -467,10 +465,6 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       }
     },
     connect,
-    async disconnect() {
-      await tunnel?.disconnect()
-      connectedAt = null
-    },
     async setMode(next) {
       if (mode === next) return
       await stopConnections()
@@ -538,7 +532,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       try {
         const pathname = new URL(req.url ?? '/', 'http://x').pathname
         // 远端来源（经 3081 反代，auth-proxy 按 Host 非 loopback 注入 x-deepc-remote）：
-        // 仅允许只读 status（裁剪敏感字段）+ disconnect（远端「断开」按钮）。
+        // 仅允许只读 status（裁剪敏感字段）。
         // 其余敏感控制端点（登录/登出/连接/切模式/本地共享/重生成 TOTP/开发模式/免密）
         // 只允许本地面板操作 —— 纵深防御，即便远端前端有遗漏也拒绝。
         const remote = String(req.headers['x-deepc-remote'] ?? '') === '1'
@@ -554,12 +548,6 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
             s.localOn = false
           }
           sendJson(res, 200, s)
-          return
-        }
-        // 远端「断开」按钮：允许（断开后隧道失效，页面即不可用，无越权面）。
-        if (req.method === 'POST' && pathname === `${NODE_CTRL_PATH}/disconnect`) {
-          await this.disconnect()
-          sendJson(res, 200, { ok: true })
           return
         }
         // 目录枚举（工作区目录选择浏览器 UI 的数据源）：本地 + 远端统一走此端点。

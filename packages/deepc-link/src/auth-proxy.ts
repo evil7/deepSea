@@ -23,6 +23,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { type Duplex } from 'node:stream'
 import { hmacSha256Hex, sha512Hex, verifyTotp } from './totp'
+import { DEEPSEA_LOGO } from './deepsea-logo'
 
 /** 反代目标：dsh 官方 3080。 */
 const UPSTREAM = 'http://127.0.0.1:3080'
@@ -271,10 +272,12 @@ function parseCookies(req: IncomingMessage): Record<string, string> {
 
 /** 内置鉴权页（极简，无外部依赖；6 位 2FA 码分组输入 `[][][] [][][]`）。 */
 function authPage(lockedUntil = 0): string {
+  const faviconHref = 'data:image/svg+xml;base64,' + Buffer.from(DEEPSEA_LOGO).toString('base64')
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>deepc-link 安全验证</title>
+<link rel="icon" type="image/svg+xml" href="${faviconHref}">
 <style>
   :root{color-scheme:light dark;
         --font-sans:"Inter","SF Pro Display","SF Pro Text",-apple-system,"Segoe UI",
@@ -297,13 +300,13 @@ function authPage(lockedUntil = 0): string {
         box-shadow:0 8px 32px rgba(0,0,0,.08);transition:background .2s ease,border-color .2s ease}
   h1{font-size:18px;font-weight:700;letter-spacing:.01em;margin:0 0 6px}
   .sub{color:var(--fg-soft);font-size:12px;margin:0 0 18px}
-  .code{display:flex;gap:8px;justify-content:center;position:relative}
+  .code{display:flex;gap:7px;justify-content:center;position:relative}
   .code .cell{width:40px;height:48px;box-sizing:border-box;text-align:center;line-height:48px;
         border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--fg);
         font-size:20px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;
         transition:border-color .15s ease,box-shadow .15s ease}
   .code .cell.active{border-color:var(--brand);box-shadow:0 0 0 3px rgba(22,179,235,.18)}
-  .code .sep{display:flex;align-items:center;color:var(--fg-soft);font-size:20px;font-family:var(--font-mono)}
+  .code .cell:nth-child(4){margin-left:7px}
   .code.error .cell{border-color:var(--danger)}
   .code.shake{animation:shake .4s ease}
   @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
@@ -330,7 +333,6 @@ function authPage(lockedUntil = 0): string {
     <div class="cell"></div>
     <div class="cell"></div>
     <div class="cell"></div>
-    <span class="sep">-</span>
     <div class="cell"></div>
     <div class="cell"></div>
     <div class="cell"></div>
@@ -360,6 +362,7 @@ function authPage(lockedUntil = 0): string {
     var bannedRemain = document.getElementById('banned-remain')
     var value = ''
     var submitting = false
+    var locked = false
 
     function fmt(ms) {
       var total = Math.max(0, ms)
@@ -371,6 +374,7 @@ function authPage(lockedUntil = 0): string {
     }
 
     function ban(ms) {
+      locked = true
       var end = Date.now() + ms
       title.style.display = 'none'
       sub.style.display = 'none'
@@ -463,6 +467,12 @@ function authPage(lockedUntil = 0): string {
     })
 
     codebox.addEventListener('click', function () { ghost.focus() })
+
+    // 防失焦：输入未完成且未提交/锁定时，失焦立即重新聚焦，保证连续按键始终有响应。
+    ghost.addEventListener('blur', function () {
+      if (submitting || locked) return
+      setTimeout(function () { ghost.focus() }, 0)
+    })
 
     var initialLock = Number(document.body.getAttribute('data-locked-until') || '0')
     if (initialLock > Date.now()) {

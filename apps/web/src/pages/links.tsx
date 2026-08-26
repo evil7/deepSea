@@ -44,6 +44,7 @@ import {
   Laptop,
   Loader2,
   RefreshCw,
+  ShieldCheck,
   Trash2,
 } from "lucide-react"
 

@@ -9,7 +9,7 @@
  * 全部幂等 + DOM 缺失兜底（MutationObserver 等待 React 渲染出 sidebar）。
  */
 
-import deepseaSvg from './host-ui/deepsea.svg'
+import { DEEPSEA_LOGO } from '../deepsea-logo'
 import { formatDuration } from './host-ui/api'
 import type { BackendStatus } from './host-ui/types'
 
@@ -57,11 +57,11 @@ function replaceBrandName(deviceName: string): void {
   window.setTimeout(() => observer.disconnect(), 10_000)
 }
 
-/** 替换 favicon 为 deepSea logo（主站同款 deepsea.svg；幂等）。 */
+/** 替换 favicon 为 deepSea logo（主站同款；幂等）。 */
 function installFavicon(): void {
   if (faviconInstalled || typeof document === 'undefined') return
   faviconInstalled = true
-  const bytes = new TextEncoder().encode(deepseaSvg)
+  const bytes = new TextEncoder().encode(DEEPSEA_LOGO)
   let bin = ''
   for (const b of bytes) bin += String.fromCharCode(b)
   const href = 'data:image/svg+xml;base64,' + btoa(bin)
