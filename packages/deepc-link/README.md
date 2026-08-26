@@ -8,11 +8,11 @@ deepc-link 是「深海套装」的本地执行器与互联底座。它把本地
 
 ## 三种互联模式（用户自选，递进）
 
-| 模式 | 能力 | 登录 | CF |
-|------|------|------|----|
-| **local** 本地共享 | 仅 3081 鉴权代理，局域网访问 `http://<本机IP>:3081` | 否 | 否 |
-| **tunnel** 暴露 | + cloudflared（匿名 Quick Tunnel / 自定义域） | 否 | 是 |
-| **managed** 纳管 | + 登录上报 URL，断链自动重连上报 | 是 | 是 |
+| 模式               | 能力                                                | 登录 | CF  |
+| ------------------ | --------------------------------------------------- | ---- | --- |
+| **local** 本地共享 | 仅 3081 鉴权代理，局域网访问 `http://<本机IP>:3081` | 否   | 否  |
+| **tunnel** 暴露    | + cloudflared（匿名 Quick Tunnel / 自定义域）       | 否   | 是  |
+| **managed** 纳管   | + 登录上报 URL，断链自动重连上报                    | 是   | 是  |
 
 ## 核心原则
 
@@ -68,4 +68,4 @@ node test/auth-proxy.test.mjs        # 鉴权代理测试
 
 本地联调：插件 Sheet 打开「开发模式」开关 → 基址切到 `http://127.0.0.1:5174`（vite 代理本地 worker）。
 
-详见：`docs/deepsea-tunnel-bridge-proposal.md`。
+开发测试、自定义隧道 Zone 等，详见：`docs/deepsea-tunnel-bridge-proposal.md`。

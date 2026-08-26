@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { spawnSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { mkdirSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -18,9 +18,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 const packDir = join(root, '.pack')
 
-// Windows 上 pnpm/npm 是 .cmd，spawnSync 需 shell:true；统一用 node 跑 build 更稳。
+// npm pack --pack-destination 要求目标目录已存在（不存在会 ENOENT）。
+// .pack/ 是 gitignore 的本地产物目录，须先确保创建。
+mkdirSync(packDir, { recursive: true })
+
+// 用 node 直跑 npm-cli.js（与 node.exe 同目录捆绑）：
+// 避免 spawn npm.cmd（Windows 需 shell:true → Node DEP0190 警告），
+// 也避免 pnpm/npm .cmd 在 spawnSync 下的兼容性问题。
+const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+
 function run(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, { cwd: root, stdio: ['ignore', 'inherit', 'inherit'], ...opts })
+  // 清除 pnpm 注入的 npm_config_manage_package_manager_versions：
+  // pnpm 11 检测到根 package.json 的 packageManager 字段就注入该 env config，
+  // npm 不识别这个键（无论值真假）→ 每次打包都打 "Unknown env config" 警告。
+  const env = { ...process.env }
+  delete env.npm_config_manage_package_manager_versions
+  const r = spawnSync(cmd, args, { cwd: root, stdio: ['ignore', 'inherit', 'inherit'], env, ...opts })
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
@@ -28,8 +41,7 @@ function run(cmd, args, opts = {}) {
 run(process.execPath, ['scripts/build.mjs'])
 
 // 2) npm pack：在子包 cwd 运行，--pack-destination 指向 .pack/（不进 dist → 不进 tarball）。
-//    用 shell:true 处理 npm.cmd。
-run('npm.cmd', ['pack', '--pack-destination', packDir], { shell: true })
+run(process.execPath, [npmCli, 'pack', '--pack-destination', packDir])
 
 // 3) 列出 .pack/ 产物确认。
 try {
