@@ -12,10 +12,10 @@
  *   · createDirectory 名称强制单段（无 / 或 \），防路径注入。
  */
 
-import { access, mkdir, opendir, stat } from 'node:fs/promises'
+import { access, mkdir, opendir, readFile, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 
 /** 目录枚举上限（防大目录拖垮；与 dsh browse 后端一致取 1000）。 */
 export const DIR_MAX_ENTRIES = 1000
@@ -139,5 +139,64 @@ export async function createDirectory(
     return { ok: true, path: target }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'mkdir-failed' }
+  }
+}
+
+/** 文本预览上限（超过按二进制处理，避免拖垮远端浏览器）。 */
+export const FILE_PREVIEW_MAX_BYTES = 1024 * 1024
+
+/** 文件预览结果（供远端「打开文件」浏览器内查看）。 */
+export interface FilePreview {
+  ok: true
+  kind: 'text' | 'binary' | 'directory'
+  path: string
+  name: string
+  size: number
+  ext?: string
+  text?: string
+  listing?: DirectoryListing
+}
+
+/**
+ * 读取文件用于远端浏览器内预览。目录返回单层列表；文本返回内容；二进制/超限返回标记。
+ * 与 listDirectory 同安全边界：本机操作者浏览本机文件，等价于 dsh 官方 host.openPath，
+ * 远端经 3081 反代已过 TOTP 2FA。不做路径白名单（否则无法打开任意交付物文件）。
+ */
+export async function readFilePreview(
+  path?: string,
+): Promise<FilePreview | { ok: false; error: string }> {
+  if (!path || !path.trim()) return { ok: false, error: 'empty-path' }
+  const target = resolve(path.trim())
+  let st
+  try {
+    st = await stat(target)
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'stat-failed' }
+  }
+  if (st.isDirectory()) {
+    const listing = await listDirectory(target)
+    return { ok: true, kind: 'directory', path: target, name: basename(target), size: 0, listing }
+  }
+  const ext = extname(target).slice(1).toLowerCase()
+  if (st.size > FILE_PREVIEW_MAX_BYTES) {
+    return { ok: true, kind: 'binary', path: target, name: basename(target), size: st.size, ext }
+  }
+  try {
+    const buf = await readFile(target)
+    // 含 NUL 字节视为二进制（UTF-8 文本不含 NUL），避免乱码渲染。
+    if (buf.includes(0)) {
+      return { ok: true, kind: 'binary', path: target, name: basename(target), size: st.size, ext }
+    }
+    return {
+      ok: true,
+      kind: 'text',
+      path: target,
+      name: basename(target),
+      size: st.size,
+      ext,
+      text: buf.toString('utf8'),
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'read-failed' }
   }
 }

@@ -28,7 +28,7 @@ import {
 } from './tunnel'
 import { createTunnelEventsClient, type TunnelEventsClient } from './events'
 import { generateTotpSecret, otpauthUri } from './totp'
-import { createDirectory, listDirectory, listWindowsRoots } from './directory'
+import { createDirectory, listDirectory, listWindowsRoots, readFilePreview } from './directory'
 
 /** 后端控制路由路径段（webServer 前缀注册用）。 */
 export const NODE_CTRL_PATH = '/deepc'
@@ -580,6 +580,17 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
             sendJson(res, 200, { ok: true, roots: await listWindowsRoots() })
           } catch {
             sendJson(res, 200, { ok: true, roots: [] })
+          }
+          return
+        }
+        // 文件预览（远端「打开文件」浏览器内查看）：目录返回列表，文本返回内容，二进制返回标记。
+        // 与 list-dir 同安全边界（远端已过 dc_site 2FA），放在 remote 拒绝判断之前使远端可用。
+        if (req.method === 'GET' && pathname === `${NODE_CTRL_PATH}/read-file`) {
+          try {
+            const u = new URL(req.url ?? '/', 'http://x')
+            sendJson(res, 200, await readFilePreview(u.searchParams.get('path') ?? undefined))
+          } catch (e) {
+            sendJson(res, 400, { ok: false, error: e instanceof Error ? e.message : 'read-failed' })
           }
           return
         }

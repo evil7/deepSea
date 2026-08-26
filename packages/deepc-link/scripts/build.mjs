@@ -84,9 +84,13 @@ function bundleClient(esbuildExe) {
     '--format=cjs',
     '--platform=browser',
     '--target=es2022',
-    // react 由 dsh 前端运行时提供（require("react")），不打包进产物。
+    // react / react-dom 由 dsh 前端运行时提供（require("react")/require("react-dom/client")），
+    // 不打包进产物（dsh 前端 seed 含 react-dom、react-dom/client，见 dsh-web-frontend 的
+    // Jd() seed 函数）。
     '--external:react',
     '--external:react/jsx-runtime',
+    '--external:react-dom',
+    '--external:react-dom/client',
     `--outfile=${outfile}`,
   ]
   for (const [name, value] of Object.entries(DEFINE)) {

@@ -43,11 +43,14 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@types/http-proxy": "^1.17.17",
     "@types/node": "^24.13.3",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "typescript": "~6.0.3"
   },
   "dependencies": {
     "animejs": "^4.5.0",
-    "http-proxy": "^1.18.1"
+    "http-proxy": "^1.18.1",
+    "qrcode": "^1.5.4"
   }
 }

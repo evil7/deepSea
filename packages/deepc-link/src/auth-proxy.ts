@@ -500,7 +500,7 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   // 剥离 Origin：dsh 对非本地 Origin（trycloudflare 隧道域名 / 局域网 IP 等）做 CSRF
   // 校验返回 403。反代时去掉 Origin，上游视为非浏览器请求（无 Origin 已验证 200/101 通过）。
   // 浏览器经隧道访问时页面与请求同域，不依赖 CORS，剥离 Origin 无副作用。
-  proxy.on('proxyReq', (proxyReq, req) => {
+  proxy.on('proxyReq', (proxyReq, req, res) => {
     stripOrigin(proxyReq)
     // 远端来源标记：Host 非 loopback（隧道域名 / 局域网 IP）→ 强制注入 x-deepc-remote，
     // 供 dsh 后端 /deepc/* handleControl 拒绝敏感控制端点（登录/切模式/重生成 TOTP 等
@@ -510,6 +510,19 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
       proxyReq.removeHeader(REMOTE_HEADER)
     } else {
       proxyReq.setHeader(REMOTE_HEADER, '1')
+    }
+
+    // SSE/长连接响应：客户端在响应完成前断开（浏览器关 EventSource、cloudflared 取消流）
+    // 时主动终止上游请求，避免上游 3080 的 SSE 流因半开连接而悬挂泄漏。
+    // http-proxy 内部仅处理 req 'aborted' 与 ECONNRESET 两种情形，优雅关闭（FIN 或其它
+    // 错误码，如日志中 cloudflared 报的 "stream canceled by remote with error code 0"）可能
+    // 漏掉上游清理，这里按 res 'close' 兜底。仅当响应尚未写完时才 destroy，不影响正常请求。
+    if (res && typeof res.once === 'function') {
+      res.once('close', () => {
+        if (!res.writableEnded && !proxyReq.destroyed) {
+          proxyReq.destroy()
+        }
+      })
     }
   })
   proxy.on('proxyReqWs', stripOrigin)
