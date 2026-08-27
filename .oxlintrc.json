@@ -19,8 +19,38 @@
     // Worker.postMessage 仅接受 (message, transfer)，无 targetOrigin 参数；
     // 该规则对 Web Worker 是误报（targetOrigin 是 window.postMessage 专属）
     "unicorn/require-post-message-target-origin": "off",
+    // 双下划线符号是刻意的（非疏漏）：
+    //   · __DEEPC_SITE_BASE__ / __DEEPC_SIGNAL_BASE__ —— esbuild --define 注入的
+    //     构建期常量（插件打包时替换，见 packages/deepc-link/scripts/build.mjs）
+    //   · _extend —— util._extend（Node DEP0060 兼容 shim）的目标属性名
+    //   · __dirname —— ESM 下 CommonJS 惯例（CJS shim 提供）
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": [
+          "__DEEPC_SITE_BASE__",
+          "__DEEPC_SIGNAL_BASE__",
+          "_extend",
+          "__dirname"
+        ]
+      }
+    ],
+    // .d.ts 的 `export {}`（如 web-server.d.ts）是合法模块标记（使文件成为模块），
+    // 非"空导出"——unicorn 规则对声明文件是误报
+    "unicorn/require-module-specifiers": "off",
     "no-console": "off"
   },
-  "ignorePatterns": ["dist", "node_modules", "apps/web/src/components/ui/**"]
+  "ignorePatterns": ["dist", "node_modules", "apps/web/src/components/ui/**"],
+  "overrides": [
+    {
+      // host-ui 用 h()（React.createElement）渲染而非 JSX，oxlint 的 react/refs
+      // 无法把 onXxx 对象属性识别为事件处理器 → 对事件回调内的 ref 访问误报。
+      // 该文件所有 ref.current 访问都在事件处理器/回调内（语义正确），豁免。
+      "files": ["packages/deepc-link/src/client/host-ui/index.ts"],
+      "rules": {
+        "react/refs": "off"
+      }
+    }
+  ]
 }
 

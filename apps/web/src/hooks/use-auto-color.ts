@@ -21,43 +21,50 @@ export interface AutoColorResult {
 }
 
 export function useImageThemeColor(src?: string | null): AutoColorResult {
+  // 初始状态由 src 派生（无图即 ready）；effect 内 setState 均放宏任务
+  // （React Compiler set-state-in-effect lint）。
   const [result, setResult] = useState<AutoColorResult>({
     colors: null,
     status: src ? "loading" : "ready",
   })
 
   useEffect(() => {
-    if (!src) {
-      setResult({ colors: null, status: "ready" })
-      return
-    }
     let alive = true
-    setResult({ colors: null, status: "loading" })
-
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    img.src = src
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas")
-        canvas.width = SAMPLE_SIZE
-        canvas.height = SAMPLE_SIZE
-        const ctx = canvas.getContext("2d")
-        if (!ctx) throw new Error("no 2d context")
-        ctx.drawImage(img, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE)
-        const data = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data
-        const colors = extractThemeColors(data, SAMPLE_SIZE, SAMPLE_SIZE)
-        if (alive) setResult({ colors, status: "ready" })
-      } catch {
-        // 画布污染（跨域）或解码失败 → 回退默认配色
-        if (alive) setResult({ colors: null, status: "error" })
+    // setTimeout 宏任务：避免 effect 同步路径 setState。首次挂载 state 已是
+    // 初始值，宏任务延迟一拍无感；清理时连带取消，避免已卸载后 setState。
+    const id = window.setTimeout(() => {
+      if (!src) {
+        setResult({ colors: null, status: "ready" })
+        return
       }
-    }
-    img.onerror = () => {
-      if (alive) setResult({ colors: null, status: "error" })
-    }
+      setResult({ colors: null, status: "loading" })
+
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+      img.src = src
+      img.addEventListener("load", () => {
+        try {
+          const canvas = document.createElement("canvas")
+          canvas.width = SAMPLE_SIZE
+          canvas.height = SAMPLE_SIZE
+          const ctx = canvas.getContext("2d")
+          if (!ctx) throw new Error("no 2d context")
+          ctx.drawImage(img, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE)
+          const data = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data
+          const colors = extractThemeColors(data, SAMPLE_SIZE, SAMPLE_SIZE)
+          if (alive) setResult({ colors, status: "ready" })
+        } catch {
+          // 画布污染（跨域）或解码失败 → 回退默认配色
+          if (alive) setResult({ colors: null, status: "error" })
+        }
+      })
+      img.addEventListener("error", () => {
+        if (alive) setResult({ colors: null, status: "error" })
+      })
+    }, 0)
     return () => {
       alive = false
+      window.clearTimeout(id)
     }
   }, [src])
 

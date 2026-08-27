@@ -51,10 +51,6 @@ export function createTunnelEventsClient(opts: TunnelEventsOptions): TunnelEvent
 
   function cleanup(): void {
     if (ws) {
-      ws.onopen = null
-      ws.onmessage = null
-      ws.onclose = null
-      ws.onerror = null
       try {
         ws.close()
       } catch {
@@ -81,13 +77,13 @@ export function createTunnelEventsClient(opts: TunnelEventsOptions): TunnelEvent
       const url = `${signalBase.replace(/^http/, 'ws')}/ws/tunnel-events?token=${encodeURIComponent(opts.token)}`
       const socket = new WebSocket(url)
       ws = socket
-      socket.onopen = () => {
+      socket.addEventListener('open', () => {
         isConnected = true
         retryDelay = 1_000
         opts.onStatus?.(true)
         log('事件订阅已连接')
-      }
-      socket.onmessage = (evt) => {
+      })
+      socket.addEventListener('message', (evt) => {
         const data = evt.data
         const textPromise =
           typeof data === 'string'
@@ -106,18 +102,18 @@ export function createTunnelEventsClient(opts: TunnelEventsOptions): TunnelEvent
             /* 忽略解析失败 */
           }
         })
-      }
-      socket.onclose = () => {
+      })
+      socket.addEventListener('close', () => {
         if (ws === socket) {
           isConnected = false
           opts.onStatus?.(false)
           cleanup()
           scheduleRetry()
         }
-      }
-      socket.onerror = () => {
+      })
+      socket.addEventListener('error', () => {
         // 由 onclose 统一处理重连
-      }
+      })
     } catch {
       scheduleRetry()
     }

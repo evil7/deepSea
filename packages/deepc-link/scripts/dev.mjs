@@ -60,15 +60,16 @@ function run(cmd, args, opts = {}) {
   return r
 }
 
+/** shell 参数引号包裹（含空格/特殊字符时加双引号）。 */
+function quote(a) {
+  const s = String(a)
+  return /\s/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s
+}
+
 /** 通过 shell 运行 dsh 命令（win32 下 dsh 是 .cmd shim，必须走 shell）。 */
 function runDsh(args, { tolerate = false } = {}) {
   const env = { ...process.env }
   delete env.npm_config_manage_package_manager_versions
-  // shell 模式把整行交给 cmd 解析，含空格/特殊字符的参数必须手动加引号
-  const quote = (a) => {
-    const s = String(a)
-    return /\s/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s
-  }
   if (process.platform === 'win32') {
     const cmdLine = ['dsh', ...args.map(quote)].join(' ')
     const r = spawnSync(cmdLine, [], { cwd: repoRoot, stdio: 'inherit', env, shell: true })

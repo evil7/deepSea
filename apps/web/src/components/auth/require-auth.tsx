@@ -71,8 +71,9 @@ export function RequireAuth({ children }: { children: JSX.Element }) {
     const now = Date.now()
     const last = readGuardTimestamp()
     if (last !== null && now - last < REDIRECT_LOOP_MS) {
-      setLoopBlocked(true)
-      return
+      // 宏任务：避免 effect 同步路径 setState（React Compiler set-state-in-effect lint）
+      const id = window.setTimeout(() => setLoopBlocked(true), 0)
+      return () => window.clearTimeout(id)
     }
     try {
       sessionStorage.setItem(REDIRECT_GUARD_KEY, String(now))

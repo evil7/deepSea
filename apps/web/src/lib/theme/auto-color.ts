@@ -76,12 +76,15 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   ]
 }
 
+/** 0~255 转两位十六进制（RGB 单通道） */
+function hexByte(n: number): string {
+  return Math.max(0, Math.min(255, Math.round(n)))
+    .toString(16)
+    .padStart(2, "0")
+}
+
 function rgbToHex(r: number, g: number, b: number): string {
-  const to = (n: number) =>
-    Math.max(0, Math.min(255, Math.round(n)))
-      .toString(16)
-      .padStart(2, "0")
-  return `#${to(r)}${to(g)}${to(b)}`
+  return `#${hexByte(r)}${hexByte(g)}${hexByte(b)}`
 }
 
 /** 饱和度增强：把颜色 HSV 的 S 提升到 target（保持 H/V） */
@@ -109,6 +112,13 @@ function darken(r: number, g: number, b: number, amt: number): string {
 function hueDist(a: number, b: number): number {
   const d = Math.abs(a - b) % HUE_BUCKETS
   return Math.min(d, HUE_BUCKETS - d)
+}
+
+/** 桶内加权平均色（空桶回退中灰） */
+function bucketAvg(b: Bucket): [number, number, number] {
+  return b.weight > 0
+    ? [b.r / b.weight, b.g / b.weight, b.b / b.weight]
+    : [128, 128, 128]
 }
 
 /**
@@ -163,22 +173,17 @@ export function extractThemeColors(
     }
   }
 
-  // 彩色桶按权重降序
+  // 彩色桶按权重降序（toSorted 不修改原数组；Object.assign 避免 map 展开拷贝）
   const ranked = colorBuckets
-    .map((bucket, i) => ({ i, ...bucket }))
+    .map((bucket, i) => Object.assign({ i }, bucket))
     .filter((bucket) => bucket.count > 0)
-    .sort((a, b) => b.weight - a.weight)
-
-  const avgOf = (b: Bucket): [number, number, number] =>
-    b.weight > 0
-      ? [b.r / b.weight, b.g / b.weight, b.b / b.weight]
-      : [128, 128, 128]
+    .toSorted((a, b) => b.weight - a.weight)
 
   // 兜底：无任何彩色桶 → 用明度中段灰
   if (ranked.length === 0) {
     const mid =
       grayBuckets[2].count > 0 ? grayBuckets[2] : grayBuckets[1]
-    const [r, g, b] = avgOf(mid)
+    const [r, g, b] = bucketAvg(mid)
     return {
       primary: rgbToHex(r, g, b),
       secondary: lighten(r, g, b, 0.25),
@@ -188,7 +193,7 @@ export function extractThemeColors(
 
   // primary = 得分最高（最鲜艳）彩色桶，饱和度增强
   const pBucket = ranked[0]
-  const [pr, pg, pb] = avgOf(pBucket)
+  const [pr, pg, pb] = bucketAvg(pBucket)
   const primary = saturate(pr, pg, pb, TARGET_SATURATION)
 
   // secondary = 与 primary 色相分散（>=2 桶）的得分最高彩色桶
@@ -198,7 +203,7 @@ export function extractThemeColors(
   let secondary: string
   let accent: string
   if (sCandidate) {
-    const [sr, sg, sb] = avgOf(sCandidate)
+    const [sr, sg, sb] = bucketAvg(sCandidate)
     secondary = saturate(sr, sg, sb, TARGET_SATURATION)
     // accent = 剩余彩色桶中得分最高，且与 primary/secondary 都尽量分散
     const aCandidate = ranked.find(
@@ -209,7 +214,7 @@ export function extractThemeColors(
         hueDist(b.i, sCandidate.i) >= 1
     )
     if (aCandidate) {
-      const [ar, ag, ab] = avgOf(aCandidate)
+      const [ar, ag, ab] = bucketAvg(aCandidate)
       accent = saturate(ar, ag, ab, TARGET_SATURATION)
     } else {
       // 无第三对比色 → 用 primary 深变体

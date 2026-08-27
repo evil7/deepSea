@@ -161,6 +161,11 @@ function icon(svg: string): React.ReactElement {
   })
 }
 
+/** 盘符 crumb 判定（如 "C:"）。 */
+function isRootCrumb(name: string): boolean {
+  return /^[A-Za-z]:$/.test(name)
+}
+
 /** 目录浏览对话框（远端路径选择 UI）。 */
 export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactElement | null {
   const { t } = useTranslation()
@@ -229,9 +234,6 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
       })
       .catch(() => setError(t('directory.rootsFailed')))
   }
-
-  /** 判断面包屑名是否为 Windows 盘符根（C:/D:/…）。 */
-  const isRootCrumb = (name: string): boolean => /^[A-Za-z]:$/.test(name)
 
   const doCreate = (): void => {
     const name = newName.trim()

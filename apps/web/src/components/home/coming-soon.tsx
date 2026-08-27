@@ -28,6 +28,8 @@ interface PlannedItem {
 
 /** 遮罩右半区域的漂浮粒子（复用社区纸屑的白/浅蓝配色）。 */
 interface ParticleSpec {
+  /** 稳定 key（粒子布局静态，生成时确定） */
+  id: number
   left: number
   top: number
   size: number
@@ -46,6 +48,7 @@ const PARTICLES: ParticleSpec[] = Array.from({ length: 20 }, (_, i) => {
   const t = (i + 0.5) / 20
   const skew = Math.sqrt(t)
   return {
+    id: i,
     left: 50 + skew * 48,
     top: 5 + ((i * 53) % 88),
     size: 1.5 + skew * 3.5,
@@ -60,9 +63,9 @@ const PARTICLES: ParticleSpec[] = Array.from({ length: 20 }, (_, i) => {
 function MaskParticles() {
   return (
     <div className="absolute inset-0" aria-hidden="true">
-      {PARTICLES.map((p, i) => (
+      {PARTICLES.map((p) => (
         <span
-          key={i}
+          key={p.id}
           className="absolute"
           style={{ left: `${p.left}%`, top: `${p.top}%`, opacity: p.amp }}
         >

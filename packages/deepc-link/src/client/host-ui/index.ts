@@ -321,13 +321,18 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
   }, [remoteMode])
 
   // 首次拉取 + 本地轮询（远端只在打开 sheet 时拉一次）。
+  // refreshStatus 内部含 setStatus，宏任务包裹避免 effect 同步路径调用
+  // （React Compiler set-state-in-effect lint）。
   React.useEffect(() => {
-    void refreshStatus()
-    if (remoteMode) return
+    const id = setTimeout(() => void refreshStatus(), 0)
+    if (remoteMode) return () => clearTimeout(id)
     const poll = setInterval(() => {
       if (!tunnelSwitchingRef.current) void refreshStatus()
     }, 3000)
-    return () => clearInterval(poll)
+    return () => {
+      clearTimeout(id)
+      clearInterval(poll)
+    }
   }, [refreshStatus, remoteMode])
 
   // 远端 chrome：sidebar 品牌名 → 设备名 + title/favicon 动态化。
@@ -487,6 +492,25 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
     void deepcCall('totp-rotate').then(() => refreshStatus())
   }
 
+  // 悬浮球/触发区 hover 处理器：提取为命名函数（h() 渲染内联箭头内的 ref
+  // 访问会被 React Compiler react(refs) 误判为渲染期访问）。
+  const handleFabMouseEnter = (): void => {
+    isHoveringRef.current = true
+    cancelHide()
+  }
+  const handleFabMouseLeave = (): void => {
+    isHoveringRef.current = false
+    if (!isOpenRef.current) scheduleHide()
+  }
+  const handleTriggerMouseEnter = (): void => {
+    isHoveringRef.current = true
+    showFab()
+  }
+  const handleTriggerMouseLeave = (): void => {
+    isHoveringRef.current = false
+    if (!isOpenRef.current) scheduleHide()
+  }
+
   return h(
     'div',
     { id: HOST_ZONE_ID },
@@ -495,14 +519,8 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
       innerHtml: DEEPSEA_LOGO,
       title: t('host.fabTitle'),
       onClick: onFabClick,
-      onMouseEnter: () => {
-        isHoveringRef.current = true
-        cancelHide()
-      },
-      onMouseLeave: () => {
-        isHoveringRef.current = false
-        if (!isOpenRef.current) scheduleHide()
-      },
+      onMouseEnter: handleFabMouseEnter,
+      onMouseLeave: handleFabMouseLeave,
     }),
     h(
       'div',
@@ -523,14 +541,8 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
     ),
     h('div', {
       id: TRIGGER_ID,
-      onMouseEnter: () => {
-        isHoveringRef.current = true
-        showFab()
-      },
-      onMouseLeave: () => {
-        isHoveringRef.current = false
-        if (!isOpenRef.current) scheduleHide()
-      },
+      onMouseEnter: handleTriggerMouseEnter,
+      onMouseLeave: handleTriggerMouseLeave,
     }),
   )
 }

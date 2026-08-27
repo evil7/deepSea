@@ -181,8 +181,12 @@ export function PluginsPage() {
   }, [filtered, page])
 
   // 过滤条件变化时回到第一页
+  // 宏任务：避免 effect 同步路径 setState（React Compiler set-state-in-effect lint）
+  // 依赖数组为触发重算条件（函数体无需读取，豁免 exhaustive-deps 误报）。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    setPage(1)
+    const id = window.setTimeout(() => setPage(1), 0)
+    return () => window.clearTimeout(id)
   }, [keyword, language, starLevel, createdWithin, mode])
 
   /** star 过滤点击：直接更新本地过滤条件 */
@@ -491,12 +495,12 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
       {/* 标签 */}
       {repo.topics.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1">
-          {repo.topics.slice(0, 3).map((t) => (
+          {repo.topics.slice(0, 3).map((topic) => (
             <span
-              key={t}
+              key={topic}
               className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
             >
-              {t}
+              {topic}
             </span>
           ))}
           {repo.topics.length > 3 && (

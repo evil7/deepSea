@@ -63,7 +63,11 @@ export function LinksPage() {
   }, [])
 
   useEffect(() => {
-    if (user) void refresh()
+    if (!user) return
+    // 宏任务：refresh 内部首段同步 setLoaded(false)，避免 effect 同步路径
+    // setState（React Compiler set-state-in-effect lint）。
+    const id = window.setTimeout(() => void refresh(), 0)
+    return () => window.clearTimeout(id)
   }, [user, refresh])
 
   // WS 订阅 TunnelHub DO：node_online / node_deleted → 刷新列表
@@ -74,7 +78,7 @@ export function LinksPage() {
       ws = new WebSocket(
         `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/tunnel-events`,
       )
-      ws.onmessage = (evt) => {
+      ws.addEventListener("message", (evt) => {
         try {
           const msg = JSON.parse(evt.data as string) as {
             type?: string
@@ -90,7 +94,7 @@ export function LinksPage() {
         } catch {
           /* ignore */
         }
-      }
+      })
     } catch {
       /* WS 不可用则依赖手动刷新 */
     }
@@ -191,8 +195,9 @@ function TunnelCard({
 
   useEffect(() => {
     if (!node.url) {
-      setLive("offline")
-      return
+      // 宏任务：避免 effect 同步路径 setState（React Compiler set-state-in-effect lint）
+      const id = window.setTimeout(() => setLive("offline"), 0)
+      return () => window.clearTimeout(id)
     }
     // 节点 URL 是 https，转 wss 连探活端点（跨域 WS 不受 CORS 限制）。
     const wsUrl =
@@ -214,11 +219,12 @@ function TunnelCard({
     try {
       ws = new WebSocket(wsUrl)
     } catch {
-      setLive("offline")
+      // 宏任务：避免 effect 同步路径 setState（React Compiler set-state-in-effect lint）
+      window.setTimeout(() => setLive("offline"), 0)
       return
     }
 
-    ws.onopen = () => {
+    ws.addEventListener("open", () => {
       if (disposed) return
       setLive("online")
       const sendPing = () => {
@@ -234,21 +240,21 @@ function TunnelCard({
       }
       sendPing() // 建连立即 ping 一次
       pingTimer = setInterval(sendPing, 10_000)
-    }
-    ws.onmessage = (evt) => {
+    })
+    ws.addEventListener("message", (evt) => {
       if (disposed) return
       if (evt.data === "pong") {
         if (pongTimer) clearTimeout(pongTimer)
         pongTimer = null
         setLive("online")
       }
-    }
-    ws.onclose = () => {
+    })
+    ws.addEventListener("close", () => {
       if (!disposed) setLive("offline")
-    }
-    ws.onerror = () => {
+    })
+    ws.addEventListener("error", () => {
       if (!disposed) setLive("offline")
-    }
+    })
 
     return () => {
       disposed = true

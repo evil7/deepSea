@@ -159,22 +159,27 @@ function FileViewer(): React.ReactElement | null {
   const path = snap.path
 
   React.useEffect(() => {
-    if (!path) {
-      setView(null)
-      return
-    }
     let cancelled = false
-    setView(null)
-    fetch(`/deepc/read-file?path=${encodeURIComponent(path)}`)
-      .then((r) => r.json() as Promise<FilePreview>)
-      .then((v) => {
-        if (!cancelled) setView(v)
-      })
-      .catch(() => {
-        if (!cancelled) setView({ ok: false, error: t('file.networkError') })
-      })
+    // 宏任务：避免 effect 同步路径 setView(null)（React Compiler set-state-in-effect）
+    const id = window.setTimeout(() => {
+      if (cancelled) return
+      if (!path) {
+        setView(null)
+        return
+      }
+      setView(null)
+      fetch(`/deepc/read-file?path=${encodeURIComponent(path)}`)
+        .then((r) => r.json() as Promise<FilePreview>)
+        .then((v) => {
+          if (!cancelled) setView(v)
+        })
+        .catch(() => {
+          if (!cancelled) setView({ ok: false, error: t('file.networkError') })
+        })
+    }, 0)
     return () => {
       cancelled = true
+      window.clearTimeout(id)
     }
   }, [path, t])
 

@@ -111,14 +111,18 @@ export function prettySubdomain(url: string | null): string {
   return prettyHost(url).split('.')[0] || ''
 }
 
+/** 两位补零（MM/SS/HH 段）。 */
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
 /** 连接时长格式化（MM:SS，超 1 小时 HH:MM:SS）。 */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const h = Math.floor(total / 3600)
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
+  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
 /** 复制到剪贴板（纯复制，无 UI 反馈；反馈由组件 state 承担）。 */

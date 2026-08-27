@@ -130,51 +130,57 @@ export function useAuth() {
 
   // 仅依赖 search 参数：登录回跳（?auth=success）强制刷新拿新 token；
   // SPA 切换页面（pathname 变化、search 不变）不触发 → 避免反复请求 /auth/me。
+  // 主体放 setTimeout 宏任务：避免 effect 同步路径 setState
+  // （React Compiler set-state-in-effect lint）；清理时连带取消。
   useEffect(() => {
     let cancelled = false
     const isAuthCallback = searchParams.get("auth") === "success"
     const cached = isAuthCallback ? null : readCached()
-    if (cached) {
-      // 命中会话缓存：直接恢复，零网络请求
-      setUser(cached.user)
-      setGitHubToken(cached.token)
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    fetchMe().then((result) => {
-      if (!cancelled) {
-        if (result) {
-          setUser(result.user)
-          // token 注入前端 octokit（仅存内存），供 GitHub API 直调
-          setGitHubToken(result.token)
-          writeCached(result)
-          // 消费 auth=success：登录/续期成功即清理 URL 参数（replace 不产生历史
-          // 记录）。否则 ?auth=success 粘滞在 URL 上，每次刷新都强制 fetchMe，
-          // 且后续 RequireAuth 拼 redirect 时叠加 auth 参数。
-          // 清理触发 search 变化 → effect 重跑 → 命中刚写入的缓存直接恢复，
-          // 不会产生第二次网络请求。失败（未登录/过期）不清理：RequireAuth
-          // 会整页跳转登录，URL 自然切换，无需在此处理。
-          if (isAuthCallback) {
-            setSearchParams(
-              (prev) => {
-                const next = new URLSearchParams(prev)
-                next.delete("auth")
-                return next
-              },
-              { replace: true }
-            )
-          }
-        } else {
-          setUser(null)
-          setGitHubToken(null)
-          writeCached(null)
-        }
+    const id = window.setTimeout(() => {
+      if (cancelled) return
+      if (cached) {
+        // 命中会话缓存：直接恢复，零网络请求
+        setUser(cached.user)
+        setGitHubToken(cached.token)
         setLoading(false)
+        return
       }
-    })
+      setLoading(true)
+      fetchMe().then((result) => {
+        if (!cancelled) {
+          if (result) {
+            setUser(result.user)
+            // token 注入前端 octokit（仅存内存），供 GitHub API 直调
+            setGitHubToken(result.token)
+            writeCached(result)
+            // 消费 auth=success：登录/续期成功即清理 URL 参数（replace 不产生历史
+            // 记录）。否则 ?auth=success 粘滞在 URL 上，每次刷新都强制 fetchMe，
+            // 且后续 RequireAuth 拼 redirect 时叠加 auth 参数。
+            // 清理触发 search 变化 → effect 重跑 → 命中刚写入的缓存直接恢复，
+            // 不会产生第二次网络请求。失败（未登录/过期）不清理：RequireAuth
+            // 会整页跳转登录，URL 自然切换，无需在此处理。
+            if (isAuthCallback) {
+              setSearchParams(
+                (prev) => {
+                  const next = new URLSearchParams(prev)
+                  next.delete("auth")
+                  return next
+                },
+                { replace: true }
+              )
+            }
+          } else {
+            setUser(null)
+            setGitHubToken(null)
+            writeCached(null)
+          }
+          setLoading(false)
+        }
+      })
+    }, 0)
     return () => {
       cancelled = true
+      window.clearTimeout(id)
     }
   }, [searchParams, setSearchParams])
 

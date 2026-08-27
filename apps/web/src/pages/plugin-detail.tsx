@@ -314,12 +314,12 @@ export function PluginDetailPage() {
               {/* 主题标签 */}
               {state.info.topics.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-1.5">
-                  {state.info.topics.slice(0, 8).map((t) => (
+                  {state.info.topics.slice(0, 8).map((topic) => (
                     <span
-                      key={t}
+                      key={topic}
                       className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
                     >
-                      {t}
+                      {topic}
                     </span>
                   ))}
                 </div>

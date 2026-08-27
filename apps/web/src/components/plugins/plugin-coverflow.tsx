@@ -379,6 +379,9 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
       {/* 卡片层：错位叠放铺满宽度，animejs 控制 transform（交互走整容器 hover/点击） */}
       {displayRepos.map((repo, i) => {
         const isActive = i === active
+        // key 用 index 是有意的：cardRefs 按 index 存 ref，key 必须与 index
+        // 对应才能保证 ref 映射正确（no-array-index-key 豁免）
+        /* eslint-disable react/no-array-index-key */
         return (
           <div
             key={`card-${i}`}
@@ -485,6 +488,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
             </div>
           </div>
         )
+        /* eslint-enable react/no-array-index-key */
       })}
 
       {/* 第 10 张 more 背面卡：扑克牌背面（CSS 矢量花纹平铺），作为牌堆最后一张

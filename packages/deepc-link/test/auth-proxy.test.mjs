@@ -16,13 +16,13 @@ import { createAuthProxy } from './.auth-proxy.bundle.mjs'
 import { generateTotpSecret, totpCode } from './.totp.bundle.mjs'
 
 // ── mock 3080 上游（dsh 官方；用 3090 避免与真实 dsh 3080 冲突）────────
-const upstream = createServer((req, res) => {
+const upstream = createServer((incoming, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
   // 回显远端来源标记头（测试 remote 注入：loopback 无、非 loopback 有）。
-  const remote = req.headers['x-deepc-remote'] ?? ''
+  const remote = incoming.headers['x-deepc-remote'] ?? ''
   res.end(`HELLO FROM DSH 3080 remote=${remote}`)
 })
-await new Promise((r) => upstream.listen(3090, '127.0.0.1', r))
+await new Promise((ok) => upstream.listen(3090, '127.0.0.1', ok))
 console.log('✓ mock 上游已启动 :3090')
 
 // ── 3081 鉴权代理（真实代码；反代到 mock 3090）──────────────────────
@@ -51,7 +51,10 @@ async function req(path, { method = 'GET', cookie, body, form, host } = {}) {
     headers['content-type'] = 'application/json'
     payload = JSON.stringify(body)
   }
-  const res = await fetch(base + path, { method, headers, body: payload, redirect: 'manual' })
+  // GET/HEAD 不允许 body（unicorn/no-invalid-fetch-options）：仅非 GET 时携带
+  const init = { method, headers, redirect: 'manual' }
+  if (payload !== undefined && method !== 'GET') init.body = payload
+  const res = await fetch(base + path, init)
   const setCookie = res.headers.get('set-cookie')
   const text = await res.text()
   return { status: res.status, text, setCookie, headers: res.headers }
@@ -70,14 +73,14 @@ function check(name, cond, extra = '') {
 }
 
 // ── 1. 无 cookie → 401 + 鉴权页 ──────────────────────────────────────
-let r = await req('/')
-check('无 cookie → 401', r.status === 401)
-check('响应为鉴权页', r.text.includes('deepc-link 安全验证'))
-check('鉴权页含 6 位 2FA 输入', r.text.includes('6 位动态码') || r.text.includes('2FA'))
+let resp = await req('/')
+check('无 cookie → 401', resp.status === 401)
+check('响应为鉴权页', resp.text.includes('deepc-link 安全验证'))
+check('鉴权页含 6 位 2FA 输入', resp.text.includes('6 位动态码') || resp.text.includes('2FA'))
 
 // ── 1b. 公开静态资源（manifest.webmanifest）→ 免鉴权 200 ─────────────
-r = await req('/manifest.webmanifest')
-check('manifest.webmanifest 免鉴权 → 200', r.status === 200 && r.text.includes('HELLO FROM DSH 3080'))
+resp = await req('/manifest.webmanifest')
+check('manifest.webmanifest 免鉴权 → 200', resp.status === 200 && resp.text.includes('HELLO FROM DSH 3080'))
 
 // ── 1c. 远端来源标记：loopback Host 无 remote；非 loopback Host 注入 remote=1 ──
 // undici fetch 会忽略自定义 Host 头，故用 node:http request 显式设置 Host 模拟隧道域名。
@@ -95,29 +98,29 @@ function rawGet(host) {
     r.end()
   })
 }
-r = await req('/manifest.webmanifest', { host: '127.0.0.1:3081' })
-check('loopback Host 无 remote 标记', r.text.includes('remote=') && !r.text.includes('remote=1'))
+resp = await req('/manifest.webmanifest', { host: '127.0.0.1:3081' })
+check('loopback Host 无 remote 标记', resp.text.includes('remote=') && !resp.text.includes('remote=1'))
 const remoteBody = await rawGet('ala-motherboard-cdna-fence.trycloudflare.com')
 check('非 loopback Host 注入 remote=1', remoteBody.includes('remote=1'))
 
 // ── 2. 错误动态码 → 401 ───────────────────────────────────────────────
-r = await req('/__deepc_auth', { method: 'POST', form: 'code=000000' })
-check('错误动态码 → 401', r.status === 401 && r.text.includes('bad-code'))
+resp = await req('/__deepc_auth', { method: 'POST', form: 'code=000000' })
+check('错误动态码 → 401', resp.status === 401 && resp.text.includes('bad-code'))
 
 // ── 3. 正确 TOTP 动态码 → Set-Cookie + 302 ───────────────────────────
 const goodCode = totpCode(SECRET)
-r = await req('/__deepc_auth', { method: 'POST', form: `code=${goodCode}` })
-check('正确动态码 → 302', r.status === 302)
+resp = await req('/__deepc_auth', { method: 'POST', form: `code=${goodCode}` })
+check('正确动态码 → 302', resp.status === 302)
 check(
   '种 dc_site cookie（Partitioned）',
-  (r.setCookie || '').includes('dc_site=') && (r.setCookie || '').includes('Partitioned'),
+  (resp.setCookie || '').includes('dc_site=') && (resp.setCookie || '').includes('Partitioned'),
 )
 
 // ── 4. 带 cookie → 反代上游 200 ───────────────────────────────────────
-const cookie = r.setCookie.split(';')[0]
-r = await req('/', { cookie })
-check('带 cookie 访问 → 200', r.status === 200)
-check('返回上游内容', r.text.includes('HELLO FROM DSH 3080'))
+const cookie = resp.setCookie.split(';')[0]
+resp = await req('/', { cookie })
+check('带 cookie 访问 → 200', resp.status === 200)
+check('返回上游内容', resp.text.includes('HELLO FROM DSH 3080'))
 
 // ── 5. 防暴力：连败 5 次 → 429 锁定（1 小时）─────────────────────────
 // 前面已成功一次（计数重置为 0），这里连发 5 次错误码触发锁定。
@@ -139,8 +142,8 @@ check('锁定期间正确码也被拒', rLocked.status === 429)
 try {
   const ws = new WebSocket('ws://127.0.0.1:3081/socket')
   await new Promise((res, rej) => {
-    ws.onopen = () => rej(new Error('unexpected-open'))
-    ws.onerror = () => res()
+    ws.addEventListener('open', () => rej(new Error('unexpected-open')))
+    ws.addEventListener('error', () => res())
     setTimeout(() => rej(new Error('timeout')), 2000)
   })
   check('WS 未鉴权 → 拒绝', true)

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import * as THREE from "three"
 
 import { createCircularGeometry } from "@/components/showcase/circular-geometry"
@@ -381,25 +381,28 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
   const autoSubMode = conf?.geometrySubdivision === undefined
   // ref 形态：tick 闭包（[] effect）读取，conf 变化时同步
   const autoSubRef = useRef(autoSubMode)
-  // 初始档位：自动模式=设备检测值；显式=用户值（仅首次计算，ref 稳定供闭包读）
-  const initSubRef = useRef(
-    autoSubMode
-      ? initialSubdivision()
-      : (conf?.geometrySubdivision ?? DEFAULT_CONF.geometrySubdivision)
-  )
+  // 初始档位：自动模式=设备检测值；显式=用户值。
+  // 用普通变量承载（而非 useRef initializer 里读 ref.current），
+  // 避免渲染期访问 ref（React Compiler react(refs) lint）；initSubRef
+  // 供 tick 闭包读取，confRef 首次初始化直接用 initSub 值。
+  const initSub = autoSubMode
+    ? initialSubdivision()
+    : (conf?.geometrySubdivision ?? DEFAULT_CONF.geometrySubdivision)
+  const initSubRef = useRef(initSub)
   // 当前生效配置（props 变化时同步，tick 每帧读取）
   const confRef = useRef<OceanConf>({
     ...DEFAULT_CONF,
     ...conf,
-    geometrySubdivision: initSubRef.current,
+    geometrySubdivision: initSub,
   })
   // 海洋状态（路由/滚动/点击切换时同步；状态机 tick 内读取，动画平滑过渡）
   const stateRef = useRef<SeaState>(state)
   // 水面 mesh 引用：细分度变化需重建几何体（结构参数无法 uniform 同步）
   const waterRef = useRef<THREE.Mesh | null>(null)
 
-  // 重建水面几何体（细分度变化时调用；替换并释放旧几何体）
-  const rebuildGeometry = (nextSub: number) => {
+  // 重建水面几何体（细分度变化时调用；替换并释放旧几何体）。
+  // useCallback 稳定化：ref-sync effect 依赖它不会因每次渲染新引用而重跑。
+  const rebuildGeometry = useCallback((nextSub: number) => {
     if (!waterRef.current) {
       return
     }
@@ -410,11 +413,15 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
       nextSub
     )
     old.dispose()
-  }
+  }, [])
 
   // props.conf 变化 → 更新 ref（不重建场景，tick 里实时同步）；
   // 例外：geometrySubdivision（三角面细分度）是几何结构参数，无法 uniform
-  // 同步，检测到变化时重建水面几何体并替换
+  // 同步，检测到变化时重建水面几何体并替换。
+  // props.conf 变化 → 更新 ref（不重建场景，tick 里实时同步）；
+  // 例外：geometrySubdivision（三角面细分度）是几何结构参数，无法 uniform
+  // 同步，检测到变化时重建水面几何体并替换。rebuildGeometry 已 useCallback
+  // 稳定化 → 加入依赖不会导致重跑（仍只在 conf 变化时执行）。
   useEffect(() => {
     const prevSub = confRef.current.geometrySubdivision
     const next = { ...DEFAULT_CONF, ...conf }
@@ -428,13 +435,17 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
     if (prevSub !== nextSub) {
       rebuildGeometry(nextSub)
     }
-  }, [conf])
+  }, [conf, rebuildGeometry])
 
   // 海洋状态变化 → 同步 ref（不重建场景；tick 内驱动下潜/上浮动画）
   useEffect(() => {
     stateRef.current = state
   }, [state])
 
+  // —— 场景初始化（挂载一次）：构建场景/相机/渲染器 + rAF tick 循环。
+  // 函数体引用的组件内函数与变量全部只读 ref/常量，场景结构参数无需响应式；
+  // 依赖数组 [] 是刻意设计（重建场景开销大），豁免 exhaustive-deps 误报。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const container = containerRef.current
     if (!container) {
@@ -848,7 +859,9 @@ export function Ocean({ conf, state = "surface", blur = false }: OceanProps) {
         container.removeChild(renderer.domElement)
       }
     }
-  }, [])
+    // rebuildGeometry 已 useCallback 稳定化 → 加入依赖不改变 mount-once 语义
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 场景只初始化一次，其余引用均为稳定 ref/模块函数
+  }, [rebuildGeometry])
 
   return (
     <>

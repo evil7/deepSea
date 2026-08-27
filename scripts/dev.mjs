@@ -74,10 +74,10 @@ function killPid(pid) {
   })
 }
 
-/** 等待端口释放（最多 timeoutMs） */
+/** 等待端口释放（最多 timeoutMs；轮询语义，必须串行 await） */
 async function waitPortFree(port, timeoutMs = 10_000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
     if (!(await isPortInUse(port))) return true
     await new Promise((r) => setTimeout(r, 300))
   }

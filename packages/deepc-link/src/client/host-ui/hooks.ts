@@ -52,15 +52,20 @@ export function useQrDataUrl(uri: string | null | undefined): string {
   const [url, setUrl] = useState('')
   useEffect(() => {
     let cancelled = false
-    if (!uri) {
-      setUrl('')
-      return
-    }
-    void qrDataUrl(uri).then((u) => {
-      if (!cancelled) setUrl(u)
-    })
+    // 宏任务：避免 effect 同步路径 setUrl('')（React Compiler set-state-in-effect）
+    const id = setTimeout(() => {
+      if (cancelled) return
+      if (!uri) {
+        setUrl('')
+        return
+      }
+      void qrDataUrl(uri).then((u) => {
+        if (!cancelled) setUrl(u)
+      })
+    }, 0)
     return () => {
       cancelled = true
+      clearTimeout(id)
     }
   }, [uri])
   return url

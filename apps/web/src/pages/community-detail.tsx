@@ -429,7 +429,7 @@ function CommentItem({
 }
 
 export function CommunityDetailPage() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { number } = useParams<{ number: string }>()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
   // 路由 source 段为静态段，需从 pathname 解析
@@ -440,7 +440,7 @@ export function CommunityDetailPage() {
   const { loginHref } = useAuthHrefs()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
   // t 引用随语言变化 → 语言切换时重新解析社区文案（label/description/对侧名）
-  const info = useMemo(() => resolveCommunity(source, t), [source, t, i18n.language])
+  const info = useMemo(() => resolveCommunity(source, t), [source, t])
   const [detail, setDetail] = useState<DiscussionDetail | null>(null)
   const [state, setState] = useState<"loading" | "unauthorized" | "error" | "ok">(
     "loading"
@@ -461,29 +461,39 @@ export function CommunityDetailPage() {
 
   useEffect(() => {
     let alive = true
-    if (!Number.isInteger(num) || num <= 0) {
-      setState("error")
-      return
-    }
-    setState("loading")
-    const loadDetail =
-      info.source === "dsh"
-        ? loadOfficialDiscussionDetail
-        : loadDiscussionDetail
-    loadDetail(num).then((d) => {
-      if (!alive) return
-      if (!d) {
-        // 区分未登录（401）与其他错误
+    // setTimeout 宏任务：避免 effect 同步路径里 setState（React Compiler
+    // set-state-in-effect lint）。首次挂载 state 已是初始值，宏任务延迟一拍
+    // 无感；清理时连带取消，避免已卸载后 setState。
+    const id = window.setTimeout(() => {
+      if (!Number.isInteger(num) || num <= 0) {
         setState("error")
         return
       }
-      setDetail(d)
-      setState("ok")
-    })
+      setState("loading")
+      const loadDetail =
+        source === "dsh"
+          ? loadOfficialDiscussionDetail
+          : loadDiscussionDetail
+      loadDetail(num).then((d) => {
+        if (!alive) return
+        if (!d) {
+          // 区分未登录（401）与其他错误
+          setState("error")
+          return
+        }
+        setDetail(d)
+        setState("ok")
+      })
+    }, 0)
     return () => {
       alive = false
+      window.clearTimeout(id)
     }
-  }, [num, info.source])
+    // user 进依赖：登录回跳后 user 就绪 → 重跑本 effect 重新拉详情
+    // （官方社区匿名 401 → error；带 token 后成功）。函数体未直接读取 user
+    // （token 已注入 octokit client），此为依赖触发的重拉，豁免 exhaustive-deps。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [num, source, user])
 
   /** 乐观更新某个 subjectId（discussion / comment）的表情反应 */
   const updateReactions = (
