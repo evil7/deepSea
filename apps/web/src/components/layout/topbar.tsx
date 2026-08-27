@@ -1,6 +1,7 @@
 import {
   Compass,
   ExternalLink,
+  Globe,
   Layers,
   Loader2,
   LogOut,
@@ -13,6 +14,7 @@ import {
   Waves,
 } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -25,15 +27,6 @@ import {
 import { useAuth } from "@/hooks/use-auth"
 import { useAuthHrefs } from "@/hooks/use-auth-hrefs"
 import { HOME_SLIDE_IDS } from "@/components/showcase/sea-state"
-
-const menuItems = [
-  // 与首页各屏逐一对应：取消 hash 定位，点击经 location.state 携带 slideId
-  // 精准滚动到对应屏（HomePage 监听 state 调 goTo）
-  { label: "生态概览", slideId: HOME_SLIDE_IDS.ecosystem, icon: Compass },
-  { label: "插件精选", slideId: HOME_SLIDE_IDS.curated, icon: Layers },
-  { label: "讨论交流", slideId: HOME_SLIDE_IDS.community, icon: MessagesSquare },
-  { label: "深海套装", slideId: HOME_SLIDE_IDS.deepseaKit, icon: Package },
-]
 
 /** 名片统计格（关注者 / 关注中 / 公开仓库） */
 function ProfileStat({ value, label }: { value: number; label: string }) {
@@ -48,9 +41,18 @@ function ProfileStat({ value, label }: { value: number; label: string }) {
 }
 
 export function Topbar() {
+  const { t, i18n } = useTranslation()
   const { user, loading, logout } = useAuth()
   const { loginHref, reauthHref } = useAuthHrefs()
   const { theme, setTheme } = useTheme()
+
+  // 首页各屏菜单（与首页 slide 逐一对应；文案随语言切换）
+  const menuItems = [
+    { label: t("nav.ecosystem"), slideId: HOME_SLIDE_IDS.ecosystem, icon: Compass },
+    { label: t("nav.curated"), slideId: HOME_SLIDE_IDS.curated, icon: Layers },
+    { label: t("nav.community"), slideId: HOME_SLIDE_IDS.community, icon: MessagesSquare },
+    { label: t("nav.deepseaKit"), slideId: HOME_SLIDE_IDS.deepseaKit, icon: Package },
+  ]
 
   const toggleTheme = () => {
     if (theme === "system") {
@@ -78,9 +80,9 @@ export function Topbar() {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 lg:flex" aria-label="主导航">
+        <nav className="hidden items-center gap-1 lg:flex" aria-label={t("nav.mainNav")}>
           {menuItems.map((item) => (
-            <Button key={item.slideId} asChild variant="ghost" size="sm">
+            <Button key={item.slideId} asChild variant="ghost" size="sm" className="whitespace-nowrap">
               <Link to="/" state={{ slideId: item.slideId }}>
                 <item.icon className="size-4" />
                 {item.label}
@@ -90,18 +92,57 @@ export function Topbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* 语言切换器：紧跟明暗切换按钮（Globe 图标 → zh / EN） */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9"
+                aria-label={t("nav.switchLanguage")}
+                title={t("nav.switchLanguage")}
+              >
+                <Globe className="size-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={8}>
+              <button
+                type="button"
+                onClick={() => void i18n.changeLanguage("zh-CN")}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-accent ${
+                  i18n.language.startsWith("zh")
+                    ? "font-semibold text-cyan-300"
+                    : "text-foreground"
+                }`}
+              >
+                简体中文
+              </button>
+              <button
+                type="button"
+                onClick={() => void i18n.changeLanguage("en-US")}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-accent ${
+                  i18n.language.startsWith("en")
+                    ? "font-semibold text-cyan-300"
+                    : "text-foreground"
+                }`}
+              >
+                English
+              </button>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"
             className="size-9"
-            aria-label={theme === "dark" ? "切换到浅色" : "切换到深色"}
-            title={theme === "dark" ? "切换到浅色" : "切换到深色"}
+            aria-label={theme === "dark" ? t("nav.switchToLight") : t("nav.switchToDark")}
+            title={theme === "dark" ? t("nav.switchToLight") : t("nav.switchToDark")}
             onClick={toggleTheme}
           >
             {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
           </Button>
           {loading ? (
-            <Button variant="ghost" size="sm" disabled aria-label="加载中">
+            <Button variant="ghost" size="sm" disabled aria-label={t("nav.loading")}>
               <Loader2 className="size-4 animate-spin" />
             </Button>
           ) : user ? (
@@ -112,7 +153,9 @@ export function Topbar() {
                   variant="ghost"
                   size="sm"
                   className="flex items-center gap-2 px-1.5 hover:bg-accent/60"
-                  aria-label={`已登录：${user.name?.trim() || user.login}`}
+                  aria-label={t("nav.loggedInAs", {
+                    name: user.name?.trim() || user.login,
+                  })}
                 >
                   <Avatar className="size-7 border border-border/60">
                     <AvatarImage
@@ -171,9 +214,9 @@ export function Topbar() {
 
                 {/* 统计条 */}
                 <div className="flex divide-x divide-border/60 border-y border-border/60 bg-muted/30">
-                  <ProfileStat value={user.followers ?? 0} label="关注者" />
-                  <ProfileStat value={user.following ?? 0} label="关注中" />
-                  <ProfileStat value={user.public_repos ?? 0} label="公开仓库" />
+                  <ProfileStat value={user.followers ?? 0} label={t("nav.followers")} />
+                  <ProfileStat value={user.following ?? 0} label={t("nav.following")} />
+                  <ProfileStat value={user.public_repos ?? 0} label={t("nav.publicRepos")} />
                 </div>
 
                 {/* 底部栏：重新授权 + 登出账号（等宽按钮组） */}
@@ -181,7 +224,7 @@ export function Topbar() {
                   <Button asChild variant="outline" size="sm" className="flex-1">
                     <a href={reauthHref}>
                       <RefreshCw className="size-4" />
-                      重新授权
+                      {t("nav.reauth")}
                     </a>
                   </Button>
                   <Button
@@ -191,7 +234,7 @@ export function Topbar() {
                     onClick={() => void logout()}
                   >
                     <LogOut className="size-4" />
-                    登出账号
+                    {t("nav.logoutAccount")}
                   </Button>
                 </div>
               </DropdownMenuContent>
@@ -207,7 +250,7 @@ export function Topbar() {
                 size="icon"
                 variant="outline"
                 className="size-9 sm:hidden"
-                aria-label="登录"
+                aria-label={t("common.login")}
               >
                 <a href={loginHref}>
                   <UserCircle className="size-5" />
@@ -222,7 +265,7 @@ export function Topbar() {
               >
                 <a href={loginHref}>
                   <UserCircle className="size-4" />
-                  登录
+                  {t("common.login")}
                 </a>
               </Button>
             </>

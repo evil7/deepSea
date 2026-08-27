@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { CheckCircle2, Loader2, LogIn, ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ import { loginUrl } from "@/lib/auth"
 type Phase = "idle" | "submitting" | "done" | "error"
 
 export function DeviceLoginPage() {
+  const { t } = useTranslation()
   const { user, loading } = useAuth()
   const [searchParams] = useSearchParams()
   const state = useMemo(() => searchParams.get("state") ?? "", [searchParams])
@@ -48,13 +50,13 @@ export function DeviceLoginPage() {
         setPhase("done")
       } else {
         setPhase("error")
-        setError("授权失败，请返回插件端重新发起")
+        setError(t("device.authorizeFailedDetail"))
       }
     } catch {
       setPhase("error")
-      setError("网络错误，请稍后重试")
+      setError(t("device.networkError"))
     }
-  }, [state, user])
+  }, [state, user, t])
 
   // 已登录且有 state → 自动走授权（传递凭据，无需手动点「确认授权」）。
   // 覆盖两条路径：① 主站本就登录着打开本页；② 未登录 → OAuth 回跳后 user 就绪。
@@ -78,24 +80,24 @@ export function DeviceLoginPage() {
         <CardHeader className="text-center">
           <CardTitle className="flex items-center justify-center gap-2">
             <ShieldCheck className="size-5 text-sky-400" />
-            设备授权
+            {t("device.title")}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
-              检查登录状态…
+              {t("device.checking")}
             </div>
           ) : !user ? (
             <>
               <p className="text-sm text-muted-foreground">
-                需要登录 GitHub 账号后，才能授权本机 dsh 插件接入你的多端互联。
+                {t("device.needLoginDesc")}
               </p>
               <Button asChild className="w-full gap-2">
                 <a href={loginHref}>
                   <LogIn className="size-4" />
-                  登录 GitHub
+                  {t("device.loginGithub")}
                 </a>
               </Button>
             </>
@@ -103,34 +105,32 @@ export function DeviceLoginPage() {
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <CheckCircle2 className="size-10 text-emerald-400" />
               <p className="text-sm font-medium">
-                授权成功，请返回 dsh 插件端
+                {t("device.successTitle")}
               </p>
               <p className="text-xs text-muted-foreground">
-                插件端会自动换取设备凭证并完成登录
+                {t("device.successDesc")}
               </p>
             </div>
           ) : phase === "error" ? (
             <>
-              <p className="text-sm text-rose-400">{error ?? "授权失败"}</p>
+              <p className="text-sm text-rose-400">{error ?? t("device.authorizeFailed")}</p>
               <Button onClick={confirm} className="w-full gap-2">
                 <ShieldCheck className="size-4" />
-                重新授权
+                {t("device.reauth")}
               </Button>
             </>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                正在为账号{" "}
-                <span className="font-medium text-foreground">{user.login}</span>{" "}
-                授权本机 dsh 插件（deepc-link）接入多端互联…
+                {t("device.authorizingAccount", { login: user.login })}
               </p>
               <div className="flex items-center justify-center gap-2 py-2 text-sm text-sky-400">
                 <Loader2 className="size-4 animate-spin" />
-                {phase === "submitting" ? "授权中…" : "准备授权…"}
+                {phase === "submitting" ? t("device.authorizing") : t("device.preparing")}
               </div>
               {!state && (
                 <p className="text-xs text-amber-400">
-                  缺少 state 参数，请从插件端重新发起登录
+                  {t("device.missingState")}
                 </p>
               )}
             </>

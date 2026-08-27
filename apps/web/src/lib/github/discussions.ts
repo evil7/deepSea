@@ -10,6 +10,7 @@
 
 import { githubGraphQL, getToken } from "@/lib/github/client"
 import { CACHE_FILES, loadCacheFile } from "@/lib/github/cache"
+import i18n from "@/i18n"
 
 /** 主社区（自有仓库，可互动） */
 export const COMMUNITY_OWNER = "evil7"
@@ -55,12 +56,12 @@ export function resolveCommunity(
       source: "dsh",
       owner: OFFICIAL_OWNER,
       repo: OFFICIAL_REPO,
-      label: "蓝鲸社区",
-      description: "DeepSeek Harness 官方讨论 · 内容实时同步。",
+      label: i18n.t("community.dshLabel"),
+      description: i18n.t("community.dshDesc"),
       // 是否可回复不再在此硬编码：详情页通过 GraphQL 探测每个 discussion 的
       // locked / state 动态判断（仅当管理员锁定或关闭该讨论时才显示只读）。
       createUrl: `https://github.com/${OFFICIAL_OWNER}/${OFFICIAL_REPO}/discussions/new`,
-      counterpartLabel: "浪尖酒馆",
+      counterpartLabel: i18n.t("community.dpcLabel"),
       counterpartSource: "dpc",
     }
   }
@@ -68,10 +69,10 @@ export function resolveCommunity(
     source: "dpc",
     owner: COMMUNITY_OWNER,
     repo: COMMUNITY_REPO,
-    label: "浪尖酒馆",
-    description: "畅聊插件、Q&A 与创意 · 回复与表态都从这里开始。",
+    label: i18n.t("community.dpcLabel"),
+    description: i18n.t("community.dpcDesc"),
     createUrl: `https://github.com/${COMMUNITY_OWNER}/${COMMUNITY_REPO}/discussions/new`,
-    counterpartLabel: "蓝鲸社区",
+    counterpartLabel: i18n.t("community.dshLabel"),
     counterpartSource: "dsh",
   }
 }
@@ -349,7 +350,7 @@ export function sortDiscussionsHot(
   )
 }
 
-/** 相对时间（如 "3 分钟前"、"2 小时前"、"5 天前"） */
+/** 相对时间（如 "3 分钟前"、"2 小时前"、"5 天前"；随站点语言切换） */
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) {
@@ -358,18 +359,18 @@ export function formatRelativeTime(iso: string): string {
   const diff = Date.now() - t
   const min = Math.floor(diff / 60000)
   if (min < 1) {
-    return "刚刚"
+    return i18n.t("time.justNow")
   }
   if (min < 60) {
-    return `${min} 分钟前`
+    return i18n.t("time.minutesAgo", { count: min })
   }
   const hr = Math.floor(min / 60)
   if (hr < 24) {
-    return `${hr} 小时前`
+    return i18n.t("time.hoursAgo", { count: hr })
   }
   const day = Math.floor(hr / 24)
   if (day < 30) {
-    return `${day} 天前`
+    return i18n.t("time.daysAgo", { count: day })
   }
   return iso.slice(0, 10)
 }

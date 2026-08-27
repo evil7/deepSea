@@ -9,8 +9,10 @@
 // ---------------------------------------------------------------------------
 
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 export function SiteFooter() {
+  const { t } = useTranslation()
   return (
     <footer className="shrink-0 border-t border-white/10 bg-slate-950/60 py-4 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 text-sm text-white/70 sm:flex-row sm:px-6">
@@ -23,7 +25,7 @@ export function SiteFooter() {
             deepSea
           </Link>
           <span className="text-white/40">·</span>
-          <span>DeepSeek Harness 插件生态的入海口</span>
+          <span>{t("home.heroTagline1")}</span>
         </div>
 
         {/* 右侧：GitHub stars + 版权 */}

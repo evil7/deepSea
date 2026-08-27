@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { Toaster } from "@/components/ui/sonner"
 import { Topbar } from "@/components/layout/topbar"
-import type { OceanConf } from "@/components/showcase/ocean-conf"
 import { Ocean } from "@/components/showcase/ocean"
-import { SeaDebugPanel } from "@/components/showcase/sea-debug-panel"
 import type { SeaState } from "@/components/showcase/sea-state"
 import { useAuth } from "@/hooks/use-auth"
 import { useDiscussionsSync } from "@/hooks/use-discussions-sync"
@@ -29,16 +28,19 @@ function CommunityNumberRedirect() {
 
 const SITE = "https://deepc.cn"
 
+/** SEO 翻译函数签名（key 为 i18n key，可带插值参数） */
+type SeoT = (key: string, options?: Record<string, unknown>) => string
+
 /** 路由 → SEO meta 映射（SPA 路由级 SEO；静态兜底 meta 在 index.html）。
  *  动态参数页（插件 / 帖子）用占位模板，页面内可再调 usePageMeta 覆盖更精确文案。 */
-function seoForPath(pathname: string) {
+function seoForPath(pathname: string, t: SeoT) {
   // 插件详情 /plugin/:owner/:repo
   const pluginMatch = pathname.match(/^\/plugin\/([^/]+)\/([^/]+)\/?$/)
   if (pluginMatch) {
     const [, owner, repo] = pluginMatch
     return {
-      title: `${owner}/${repo} · 插件详情 · deepSea`,
-      description: `查看 DeepSeek Harness 插件 ${owner}/${repo} 的详情、安装命令与使用说明。`,
+      title: t("seo.pluginDetailTitle", { owner, repo }),
+      description: t("seo.pluginDetailDesc", { owner, repo }),
       canonical: `${SITE}/plugin/${owner}/${repo}`,
     }
   }
@@ -47,71 +49,75 @@ function seoForPath(pathname: string) {
   if (postMatch) {
     const [, source, number] = postMatch
     return {
-      title: `社区讨论 #${number} · deepSea`,
+      title: t("seo.postTitle", { number }),
       description:
-        source === "dsh"
-          ? "蓝鲸社区（DeepSeek Harness 官方）讨论详情。"
-          : "浪尖酒馆（deepSea 自家社区）讨论详情。",
+        source === "dsh" ? t("seo.postDshDesc") : t("seo.postDpcDesc"),
       canonical: `${SITE}/community/${source}/${number}`,
     }
   }
   switch (pathname) {
     case "/":
       return {
-        title: "deepSea · DeepSeek Harness 插件生态社区",
-        description:
-          "发现与搜索 DeepSeek Harness 插件、浏览插件排行榜、参与社区讨论、一站式安装与管理插件。",
+        title: t("seo.homeTitle"),
+        description: t("seo.homeDesc"),
         canonical: `${SITE}/`,
       }
     case "/plugins":
       return {
-        title: "插件精选 · deepSea",
-        description: "浏览 DeepSeek Harness 插件精选与排行榜，一键安装你需要的插件。",
+        title: t("seo.pluginsTitle"),
+        description: t("seo.pluginsDesc"),
         canonical: `${SITE}/plugins`,
       }
     case "/community":
     case "/community/dpc":
       return {
-        title: "浪尖酒馆 · deepSea 社区",
-        description: "deepSea 自建社区（浪尖酒馆）：分享插件、提问求助、讨论 DeepSeek Harness 生态。",
+        title: t("seo.dpcTitle"),
+        description: t("seo.dpcDesc"),
         canonical: `${SITE}/community/dpc`,
       }
     case "/community/dsh":
       return {
-        title: "蓝鲸社区 · DeepSeek Harness 官方",
-        description: "DeepSeek Harness 官方社区（蓝鲸社区）：官方公告、插件展示、Q&A 与想法征集。",
+        title: t("seo.dshTitle"),
+        description: t("seo.dshDesc"),
         canonical: `${SITE}/community/dsh`,
       }
     case "/links":
       return {
-        title: "多端互联 · deepSea",
-        description: "管理 deepSea 多端互联：本地共享、Tunnel 映射与主站纳管。",
+        title: t("seo.linksTitle"),
+        description: t("seo.linksDesc"),
         canonical: `${SITE}/links`,
         noindex: true,
       }
     case "/device-login":
       return {
-        title: "设备授权登录 · deepSea",
-        description: "使用设备授权码登录 deepSea。",
+        title: t("seo.deviceTitle"),
+        description: t("seo.deviceDesc"),
         canonical: `${SITE}/device-login`,
         noindex: true,
       }
     default:
       // /auth/* 等 Worker 路由与未知路径：不收录
       if (pathname.startsWith("/auth/")) {
-        return { title: "deepSea", noindex: true }
+        return { title: t("seo.authTitle"), noindex: true }
       }
-      return { title: "deepSea · DeepSeek Harness 插件生态社区", canonical: `${SITE}/` }
+      return { title: t("seo.defaultTitle"), canonical: `${SITE}/` }
   }
 }
 
 export function App() {
-  // 海洋参数配置（调试面板 #sea-debug 调整；也可以直接写 JSON 对象）
-  const [conf, setConf] = useState<Partial<OceanConf>>({})
+  const { i18n } = useTranslation()
   const location = useLocation()
 
-  // SPA 路由级 SEO：随路径更新 title / description / canonical / robots
-  usePageMeta(seoForPath(location.pathname))
+  // SPA 路由级 SEO：随路径更新 title / description / canonical / robots；
+  // 语言切换时重算（i18n.language 进依赖）
+  const meta = useMemo(
+    () =>
+      seoForPath(location.pathname, (key, options) =>
+        String(i18n.t(key as never, options as never))
+      ),
+    [location.pathname, i18n]
+  )
+  usePageMeta(meta)
 
   // 全局登录态（topbar 用户卡片同源）；登录后由 useDiscussionsSync 启动
   // 前端同步 worker（每 3 分钟刷新 discussions 列表，见 discussions-sync.ts）
@@ -164,7 +170,7 @@ export function App() {
     <div id="top" className="flex min-h-dvh flex-col">
       {/* 3D 海面背景：仅桌面首页渲染（移动端用静态渐变，见下方）；
           子路由页面使用 shadcn 默认背景，不叠加海洋 3D */}
-      {!isSubPage && !isMobile && <Ocean conf={conf} state={seaState} blur={false} />}
+      {!isSubPage && !isMobile && <Ocean state={seaState} blur={false} />}
 
       {/* 移动端首页：静态深海渐变背景（替代 3D 海洋，省 WebGL） */}
       {!isSubPage && isMobile && (
@@ -177,9 +183,6 @@ export function App() {
           }}
         />
       )}
-
-      {/* 调试面板：仅桌面首页（地址 #sea-debug 显示，滑块调参 + 复制 JSON） */}
-      {!isSubPage && !isMobile && <SeaDebugPanel conf={conf} onChange={setConf} />}
 
       <Topbar />
 

@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,6 +50,7 @@ import {
 } from "lucide-react"
 
 export function LinksPage() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const [nodes, setNodes] = useState<TunnelNodeView[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -103,15 +105,15 @@ export function LinksPage() {
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-10 sm:px-6">
       <PageHeader
-        title="远端互联"
-        description="由用户本地 2FA 应用管理安全码，通过Cloudflare Tunnels快捷互联。"
+        title={t("links.title")}
+        description={t("links.description")}
         sticky={false}
         showTopButton={false}
       />
 
       <div className="mt-10">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-muted-foreground">纳管节点</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">{t("links.managedNodes")}</h2>
           <Button
             variant="ghost"
             size="sm"
@@ -119,7 +121,7 @@ export function LinksPage() {
             className="gap-1.5 text-xs"
           >
             <RefreshCw className="size-3.5" />
-            刷新
+            {t("common.refresh")}
           </Button>
         </div>
 
@@ -128,25 +130,24 @@ export function LinksPage() {
             <EmptyMedia variant="icon">
               <ShieldCheck />
             </EmptyMedia>
-            <EmptyTitle>登录后管理节点</EmptyTitle>
+            <EmptyTitle>{t("links.needLoginTitle")}</EmptyTitle>
             <EmptyDescription>
-              登录 GitHub 账号后，可查看并管理同一账号下上报的 dsh 节点
+              {t("links.needLoginDesc")}
             </EmptyDescription>
           </Empty>
         ) : !loaded ? (
           <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
             <Loader2 className="mr-2 size-4 animate-spin" />
-            加载节点…
+            {t("links.loadingNodes")}
           </div>
         ) : nodes.length === 0 ? (
           <Empty className="border-none">
             <EmptyMedia variant="icon">
               <Laptop />
             </EmptyMedia>
-            <EmptyTitle>暂无纳管节点</EmptyTitle>
+            <EmptyTitle>{t("links.emptyTitle")}</EmptyTitle>
             <EmptyDescription>
-              在本地 dsh 安装 deepc-link 插件，选择「主站纳管」模式并登录后，
-              节点会显示在这里
+              {t("links.emptyDesc")}
             </EmptyDescription>
           </Empty>
         ) : (
@@ -205,6 +206,7 @@ function TunnelCard({
   node: TunnelNodeView
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [copied, setCopied] = useState(false)
   const [opening, setOpening] = useState(false)
@@ -326,7 +328,7 @@ function TunnelCard({
               online ? "bg-emerald-500" : "bg-muted-foreground/50",
             )}
           />
-          {online ? "在线" : live === "connecting" ? "连接中…" : "离线"}
+          {online ? t("links.online") : live === "connecting" ? t("links.connecting") : t("links.offline")}
         </Badge>
       </CardHeader>
 
@@ -344,7 +346,7 @@ function TunnelCard({
           {!isOffline && (
             <button
               type="button"
-              title="复制完整地址"
+              title={t("links.copyUrl")}
               onClick={handleCopy}
               className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             >
@@ -360,7 +362,7 @@ function TunnelCard({
         <div className="flex items-center gap-2">
           <Button size="sm" className="flex-1 gap-1.5" onClick={() => void handleOpen()} disabled={opening || isOffline}>
             {opening ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />}
-            打开节点
+            {t("links.open")}
           </Button>
           <Button
             variant={confirmDelete ? "destructive" : "ghost"}
@@ -376,7 +378,7 @@ function TunnelCard({
               }
             }}
           >
-            {confirmDelete ? "确认" : <Trash2 />}
+            {confirmDelete ? t("links.confirmDelete") : <Trash2 />}
           </Button>
         </div>
       </CardContent>

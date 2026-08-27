@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { Swiper, SwiperSlide } from "swiper/react"
 import { Autoplay } from "swiper/modules"
 import "swiper/css"
@@ -38,70 +39,66 @@ type Feature = {
   slideId?: string
 }
 
-const features: Feature[] = [
-  {
-    id: "feature-explore",
-    label: "搜索插件",
-    icon: Compass,
-    title: "全生态插件搜罗",
-    description:
-      "dsh-plugin 关键词持续搜索，聚合周边插件最新动态",
-    tag: "discovery",
-    to: "/plugins",
-  },
-  {
-    id: "feature-curated",
-    label: "查看精选",
-    icon: Layers,
-    title: "热门与最新精选",
-    description:
-      "深海里打捞上来的生态亮点：快速安装一键直达",
-    tag: "curated",
-    slideId: HOME_SLIDE_IDS.curated,
-  },
-  {
-    id: "feature-community",
-    label: "进入酒馆",
-    icon: MessagesSquare,
-    title: "双社区讨论交流",
-    description:
-      "蓝鲸社区 + 浪尖酒馆，热点消息一目了然",
-    tag: "discussions",
-    slideId: HOME_SLIDE_IDS.community,
-  },
-  {
-    id: "feature-install",
-    label: "安装指引",
-    icon: Rocket,
-    title: "安装即用，有问直达",
-    description:
-      "统一生成安装指引，对插件项目提问与工单",
-    tag: "issue-bridge",
-    slideId: HOME_SLIDE_IDS.deepseaKit,
-  },
-  {
-    id: "feature-manage",
-    label: "管理插件",
-    icon: Package,
-    title: "线上线下集中管理",
-    description:
-      "综合管理社区插件：清单、版本、更新提示一目了然",
-    tag: "plugin-manager",
-    slideId: HOME_SLIDE_IDS.deepseaKit,
-  },
-  {
-    id: "feature-kit",
-    label: "深海套装",
-    icon: Palette,
-    title: "互联 · 高效 · 安全",
-    description:
-      "多端 WebRTC 互联与自定义加密安全护栏，工作推进不离手",
-    tag: "deepsea-kit",
-    slideId: HOME_SLIDE_IDS.deepseaKit,
-  },
-]
-
 export function Features({ active = false }: { active?: boolean }) {
+  const { t } = useTranslation()
+  // 特性卡（文案随语言切换，组件内生成）
+  const features: Feature[] = [
+    {
+      id: "feature-explore",
+      label: t("home.featureSearchLabel"),
+      icon: Compass,
+      title: t("home.featureSearchTitle"),
+      description: t("home.featureSearchDesc"),
+      tag: "discovery",
+      to: "/plugins",
+    },
+    {
+      id: "feature-curated",
+      label: t("home.featureCuratedLabel"),
+      icon: Layers,
+      title: t("home.featureCuratedTitle"),
+      description: t("home.featureCuratedDesc"),
+      tag: "curated",
+      slideId: HOME_SLIDE_IDS.curated,
+    },
+    {
+      id: "feature-community",
+      label: t("home.featureCommunityLabel"),
+      icon: MessagesSquare,
+      title: t("home.featureCommunityTitle"),
+      description: t("home.featureCommunityDesc"),
+      tag: "discussions",
+      slideId: HOME_SLIDE_IDS.community,
+    },
+    {
+      id: "feature-install",
+      label: t("home.featureInstallLabel"),
+      icon: Rocket,
+      title: t("home.featureInstallTitle"),
+      description: t("home.featureInstallDesc"),
+      tag: "issue-bridge",
+      slideId: HOME_SLIDE_IDS.deepseaKit,
+    },
+    {
+      id: "feature-manage",
+      label: t("home.featureManageLabel"),
+      icon: Package,
+      title: t("home.featureManageTitle"),
+      description: t("home.featureManageDesc"),
+      tag: "plugin-manager",
+      slideId: HOME_SLIDE_IDS.deepseaKit,
+    },
+    {
+      id: "feature-kit",
+      label: t("home.featureKitLabel"),
+      icon: Palette,
+      title: t("home.featureKitTitle"),
+      description: t("home.featureKitDesc"),
+      tag: "deepsea-kit",
+      slideId: HOME_SLIDE_IDS.deepseaKit,
+    },
+  ]
+
   // animejs 进入动画：标题区上浮 → 卡片 stagger（进入视口触发）
   const sectionRef = useSlideReveal<HTMLDivElement>()
 
@@ -119,13 +116,13 @@ export function Features({ active = false }: { active?: boolean }) {
       {/* 杂志化标题区：眉题编号 + 居中大标题 */}
       <div className="slide-reveal-title mx-auto mb-10 max-w-2xl text-center">
         <p className="font-mono text-xs tracking-[0.3em] text-cyan-300/90">
-          02 · ECOSYSTEM
+          01 · ECOSYSTEM
         </p>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white drop-shadow-[0_1px_6px_rgba(2,8,24,0.9)] sm:text-4xl">
-          万物皆插件，经此入海流
+        <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-white drop-shadow-[0_1px_6px_rgba(2,8,24,0.9)] sm:text-4xl">
+          {t("home.featuresSubtitle")}
         </h2>
         <p className="mt-3 text-white/75">
-          从挖掘精选、社区探讨到安装、管理插件与多端互联，完成集成聚合。
+          {t("home.featuresDesc")}
         </p>
       </div>
 

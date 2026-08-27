@@ -25,6 +25,7 @@
 import type { JSX } from "react"
 import { useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { useAuth } from "@/hooks/use-auth"
 import { loginUrl } from "@/lib/auth"
@@ -55,6 +56,7 @@ function buildRedirect(pathname: string, search: string): string {
 }
 
 export function RequireAuth({ children }: { children: JSX.Element }) {
+  const { t } = useTranslation()
   const { user, loading } = useAuth()
   const location = useLocation()
   // 登录循环错误态：停止自动跳转，提示用户手动重新登录
@@ -94,7 +96,7 @@ export function RequireAuth({ children }: { children: JSX.Element }) {
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <span className="text-sm text-muted-foreground">正在验证登录态…</span>
+        <span className="text-sm text-muted-foreground">{t("auth.verifying")}</span>
       </div>
     )
   }
@@ -105,15 +107,15 @@ export function RequireAuth({ children }: { children: JSX.Element }) {
       return (
         <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-muted-foreground">
-            登录状态已失效，自动跳转登录未成功。请点击下方按钮重新登录。
+            {t("auth.loopBlocked")}
           </p>
-          <Button onClick={handleManualLogin}>重新登录</Button>
+          <Button onClick={handleManualLogin}>{t("auth.reLogin")}</Button>
         </div>
       )
     }
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <span className="text-sm text-muted-foreground">正在验证登录态…</span>
+        <span className="text-sm text-muted-foreground">{t("auth.verifying")}</span>
       </div>
     )
   }

@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 
 import { getToken } from "@/lib/github/client"
 import {
@@ -56,8 +57,9 @@ const PAGE_SIZE = 12
 const SKELETON_KEYS = Array.from({ length: 6 }, (_, i) => `skeleton-${i}`)
 
 // star 快速过滤：默认「不限」（0 = 不过滤），且「不限」放首个。
+// label 仅用于非 0 档位的数字格式展示（如 "≥ 10"）；0 档渲染时经 i18n 显示。
 const STAR_LEVELS = [
-  { label: "不限", value: 0 },
+  { label: "All", value: 0 },
   { label: "≥ 10", value: 10 },
   { label: "≥ 100", value: 100 },
   { label: "≥ 1k", value: 1000 },
@@ -67,7 +69,7 @@ const STAR_LEVELS = [
 /** 创建时间限制（created_at 距今 ≥ 该天数；0 = 不限）。
  *  缓存脚本不再按创建时间过滤，故默认「不限」；仅作额外筛选器供用户主动收紧。 */
 const CREATED_LEVELS = [
-  { label: "不限", value: 0 },
+  { label: "All", value: 0 },
   { label: "≥ 5 天", value: 5 },
   { label: "≥ 15 天", value: 15 },
   { label: "≥ 30 天", value: 30 },
@@ -98,6 +100,7 @@ function minutesUntilNextSync(): number {
 }
 
 export function PluginsPage() {
+  const { t } = useTranslation()
   const [repos, setRepos] = useState<PluginRepo[] | null>(null)
   const [keyword, setKeyword] = useState("")
   const [language, setLanguage] = useState<string | null>(null)
@@ -124,7 +127,7 @@ export function PluginsPage() {
   /** 在线搜索：按当前过滤条件实时查询 GitHub（默认过滤官方 topic） */
   const handleLiveSearch = async () => {
     if (!getToken()) {
-      toast.info("需登录github oauth进行搜索接口调用")
+      toast.info(t("plugins.needLoginToast"))
       return
     }
     if (searching) {
@@ -139,12 +142,12 @@ export function PluginsPage() {
         createdWithinDays: createdWithin,
       })
       if (results.length === 0) {
-        toast.info("没有捕捞到渔获，换个条件试试")
+        toast.info(t("plugins.noCatchToast"))
       }
       setRepos(results)
       setPage(1)
     } catch {
-      toast.error("捕捞失败，可能触发了 GitHub 限流，请稍后再试")
+      toast.error(t("plugins.searchFailedToast"))
     } finally {
       setSearching(false)
     }
@@ -215,7 +218,7 @@ export function PluginsPage() {
       {/* 页头（共享 PageHeader，sticky 吸附变形）
           手机端：标题右侧同排「热门|最新」切换（搜索栏整个移除，见下方 hidden） */}
       <PageHeader
-        title="插件生态"
+        title={t("plugins.title")}
         actions={
           <Tabs
             value={mode}
@@ -223,8 +226,8 @@ export function PluginsPage() {
             className="w-fit sm:hidden"
           >
             <TabsList className="h-8 border border-border bg-muted text-xs">
-              <TabsTrigger value="hot">热门</TabsTrigger>
-              <TabsTrigger value="latest">最新</TabsTrigger>
+              <TabsTrigger value="hot">{t("plugins.hot")}</TabsTrigger>
+              <TabsTrigger value="latest">{t("plugins.latest")}</TabsTrigger>
             </TabsList>
           </Tabs>
         }
@@ -245,7 +248,7 @@ export function PluginsPage() {
                   handleLiveSearch()
                 }
               }}
-              placeholder="直接输入即过滤缓存渔获，点击搜索在线查询 GitHub…"
+              placeholder={t("plugins.searchPlaceholder")}
               className="h-9 border-border bg-background pl-9 text-foreground placeholder:text-muted-foreground"
             />
           </div>
@@ -258,13 +261,13 @@ export function PluginsPage() {
             <RefreshCw
               className={cn("size-3.5", searching && "animate-spin")}
             />
-            搜索
+            {t("plugins.search")}
           </Button>
         </div>
 
         {/* 语言下拉 + star 限制 + 发布时间 + 来源模式切换 */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-muted-foreground">语言</span>
+          <span className="text-[11px] text-muted-foreground">{t("plugins.language")}</span>
           <Select
             value={language ?? "all"}
             onValueChange={(v) => setLanguage(v === "all" ? null : v)}
@@ -273,10 +276,10 @@ export function PluginsPage() {
               size="sm"
               className="h-7 border-border bg-background text-xs text-foreground"
             >
-              <SelectValue placeholder="全部" />
+              <SelectValue placeholder={t("plugins.allLanguage")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="all">{t("plugins.allLanguage")}</SelectItem>
               {languages.map((lang) => (
                 <SelectItem key={lang} value={lang}>
                   {lang}
@@ -287,25 +290,25 @@ export function PluginsPage() {
 
           <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
 
-          <span className="text-[11px] text-muted-foreground">Stars</span>
+          <span className="text-[11px] text-muted-foreground">{t("plugins.stars")}</span>
           {STAR_LEVELS.map((s) => (
             <FilterBadge
               key={s.value}
               active={starLevel === s.value}
               onClick={() => handleStarClick(s.value)}
-              label={s.label}
+              label={s.value === 0 ? t("common.all") : s.label}
             />
           ))}
 
           <span className="mx-1 hidden h-4 w-px bg-border sm:block" />
 
-          <span className="text-[11px] text-muted-foreground">创建时间</span>
+          <span className="text-[11px] text-muted-foreground">{t("plugins.created")}</span>
           {CREATED_LEVELS.map((c) => (
             <FilterBadge
               key={c.value}
               active={createdWithin === c.value}
               onClick={() => handleCreatedClick(c.value)}
-              label={c.label}
+              label={c.value === 0 ? t("common.all") : t("plugins.createdDays", { count: c.value })}
             />
           ))}
         </div>
@@ -320,8 +323,8 @@ export function PluginsPage() {
           className="w-fit"
         >
           <TabsList className="h-8 border border-border bg-muted text-xs">
-            <TabsTrigger value="hot">热门</TabsTrigger>
-            <TabsTrigger value="latest">最新</TabsTrigger>
+            <TabsTrigger value="hot">{t("plugins.hot")}</TabsTrigger>
+            <TabsTrigger value="latest">{t("plugins.latest")}</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -334,14 +337,14 @@ export function PluginsPage() {
                 className="h-8 cursor-help gap-1.5 rounded-full border-border bg-card px-3 text-xs font-normal text-muted-foreground"
               >
                 <Info className="size-3.5 text-muted-foreground" />
-                已捕捞
+                {t("plugins.caught")}
                 <span className="text-cyan-300">{filtered.length}</span>
-                个渔获
+                {t("plugins.catchCount")}
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="left" sideOffset={8}>
               <div className="flex flex-col gap-0.5">
-                <p>距下次出海：{minutesUntilNextSync()} 分钟</p>
+                <p>{t("plugins.nextSyncIn", { minutes: minutesUntilNextSync() })}</p>
               </div>
             </TooltipContent>
           </Tooltip>
@@ -357,8 +360,8 @@ export function PluginsPage() {
         </div>
       ) : pageItems.length === 0 ? (
         <div className="mt-16 text-center">
-          <p className="text-sm text-muted-foreground">没有匹配的插件</p>
-          <p className="mt-1 text-xs text-muted-foreground">换个关键词或放宽筛选试试</p>
+          <p className="text-sm text-muted-foreground">{t("plugins.noMatch")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("plugins.noMatchHint")}</p>
         </div>
       ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -377,7 +380,7 @@ export function PluginsPage() {
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             className="text-muted-foreground hover:text-foreground"
-            aria-label="上一页"
+            aria-label={t("common.prevPage")}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -412,7 +415,7 @@ export function PluginsPage() {
             disabled={page >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             className="text-muted-foreground hover:text-foreground"
-            aria-label="下一页"
+            aria-label={t("common.nextPage")}
           >
             <ChevronRight className="size-4" />
           </Button>
@@ -448,6 +451,7 @@ function FilterBadge({
 }
 
 function PluginCard({ repo }: { repo: PluginRepo }) {
+  const { t } = useTranslation()
   const [owner, name] = repo.full_name.split("/")
   return (
     <Link
@@ -464,7 +468,7 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
               {repo.full_name}
             </h3>
             <p className="truncate text-[11px] text-muted-foreground">
-              {repo.language ?? "未知语言"}
+              {repo.language ?? t("common.unknownLanguage")}
               {repo.license ? ` · ${repo.license}` : ""}
             </p>
           </div>
@@ -474,13 +478,13 @@ function PluginCard({ repo }: { repo: PluginRepo }) {
             variant="outline"
             className="shrink-0 border-amber-400/40 bg-amber-400/10 text-amber-300"
           >
-            官方
+            {t("common.official")}
           </Badge>
         )}
       </div>
 
       <p className="mt-3 line-clamp-2 min-h-8 text-xs leading-relaxed text-muted-foreground">
-        {repo.description || "暂无描述"}
+        {repo.description || t("common.noDescription")}
       </p>
 
       {/* 标签 */}

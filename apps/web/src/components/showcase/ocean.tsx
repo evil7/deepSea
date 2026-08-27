@@ -28,8 +28,7 @@ import { buildUnderwaterScene } from "@/components/showcase/underwater/systems"
 // ── 参数传入 ──────────────────────────────────────────────────────
 //   组件通过 props.conf 接收 Partial<OceanConf>（见 ocean-conf.ts），
 //   与 DEFAULT_CONF 深合并；tick 每帧同步到 uniforms/相机/雾，实时生效。
-//   浏览器地址加 #sea-debug 打开调试面板（SeaDebugPanel）：
-//     滑块调参 + 复制按钮导出完整 JSON（可直接作为 conf 传入）。
+//   调参见 ocean-conf.ts 的 DEFAULT_CONF（需修改配置时直接编辑）。
 // ── 调参速查（ocean-conf.ts 的 DEFAULT_CONF）────────────────────────
 // 【海浪】waveHeight（浪高）/ waveDensity（密度）/ waveSpeed（海浪移速）
 //        flowAngle（流向角）/ flowSpeed（海面移速）

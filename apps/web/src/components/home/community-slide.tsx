@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 import { useNavigate } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { animate } from "animejs"
 
 import { useSlideReveal } from "@/components/showcase/slide-reveal"
@@ -291,6 +292,7 @@ function CornerLabel({
 }
 
 export function CommunitySlide() {
+  const { t } = useTranslation()
   const sectionRef = useSlideReveal<HTMLDivElement>()
   const navigate = useNavigate()
   const [own, setOwn] = useState<DiscussionSummary[] | null>(null)
@@ -617,10 +619,10 @@ export function CommunitySlide() {
       {/* 标题区：仅保留代号 + 英文 + 大标题（上移，为下方图片腾出画幅） */}
       <div className="slide-reveal-title mb-4">
         <p className="font-mono text-xs tracking-[0.3em] text-cyan-300/90">
-          04 · COMMUNITY
+          {t("communitySlide.eyebrow")}
         </p>
         <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">
-          讨论交流
+          {t("communitySlide.title")}
         </h2>
       </div>
 
@@ -658,7 +660,7 @@ export function CommunitySlide() {
             <div ref={zoomLeftRef} className="absolute inset-0">
               <img
                 src="/c1.png"
-                alt="蓝鲸社区"
+                alt={t("communitySlide.blueWhale")}
                 draggable={false}
                 className="absolute inset-0 h-full w-full object-cover"
               />
@@ -667,8 +669,8 @@ export function CommunitySlide() {
           </div>
           {/* 左下角名称：蓝鲸社区（官方·沉稳上浮），随本半区 clipPath 裁剪 */}
           <CornerLabel
-            title="蓝鲸社区"
-            stat={`${officialCount} 帖 · ${officialComments} 讨论`}
+            title={t("communitySlide.blueWhale")}
+            stat={t("communitySlide.stat", { count: officialCount, comments: officialComments })}
             corner="bottom-left"
             tone="cyan"
             variant="rise"
@@ -686,7 +688,7 @@ export function CommunitySlide() {
             <div ref={zoomRightRef} className="absolute inset-0">
               <img
                 src="/c2.png"
-                alt="浪尖酒馆"
+                alt={t("communitySlide.tavern")}
                 draggable={false}
                 className="absolute inset-0 h-full w-full object-cover"
               />
@@ -695,8 +697,8 @@ export function CommunitySlide() {
           </div>
           {/* 右上角名称：浪尖酒馆（我们·轻快溅落），随本半区 clipPath 裁剪 */}
           <CornerLabel
-            title="浪尖酒馆"
-            stat={`${ownCount} 帖 · ${ownComments} 讨论`}
+            title={t("communitySlide.tavern")}
+            stat={t("communitySlide.stat", { count: ownCount, comments: ownComments })}
             corner="top-right"
             tone="amber"
             variant="splash"

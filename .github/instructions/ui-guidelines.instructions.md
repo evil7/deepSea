@@ -59,7 +59,7 @@ applyTo: ["apps/web/src/**"]
   压缩为「标题+操作（单行）」：breadcrumb/description 隐藏、标题 `text-2xl→text-base+truncate`。
 - stuck 检测：sentinel（`h-px`，与 header 平级）+ IntersectionObserver（`rootMargin: -64px`）。
 - **`showTopButton`（默认 true）**：sticky 状态在操作区最右显示 `[↑ Top]`，animejs 数值动画平滑滚动到顶。
-- **眉题规范**：`04 · COMMUNITY` 这类序号眉题**仅用于首页 showcase 板块**，子页面页头不显示。
+- **眉题规范**：`03 · COMMUNITY` 这类序号眉题**仅用于首页 showcase 板块**，子页面页头不显示。
 
 ## 配色自适应 autoColor（社区页）
 

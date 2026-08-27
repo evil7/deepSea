@@ -8,6 +8,7 @@ import {
 import { animate } from "animejs"
 import { Layers, Star } from "lucide-react"
 import { useNavigate } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import type { PluginRepo } from "@/lib/github/types"
 import { Badge } from "@/components/ui/badge"
@@ -114,6 +115,7 @@ function formatStars(n: number): string {
 }
 
 export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   // 传入的最新数据（只取前 9 张真实卡）
   const incomingRepos = repos.slice(0, REAL_CARD_COUNT)
@@ -363,7 +365,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
     <div
       ref={containerRef}
       role="region"
-      aria-label="插件精选画廊"
+      aria-label={t("plugins.galleryLabel")}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onMouseMove={handleMouseMove}
@@ -384,7 +386,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
               cardRefs.current[i] = el
             }}
             role="presentation"
-            aria-label={`${repo.full_name}，插件卡 ${i + 1}`}
+            aria-label={t("plugins.cardLabel", { name: repo.full_name, index: i + 1 })}
             className="absolute top-11 left-0 block will-change-transform"
             style={{
               width: CARD_W,
@@ -465,7 +467,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
                       {repo.full_name}
                     </h3>
                     <p className="mt-2 line-clamp-3 flex-1 text-xs leading-relaxed text-white/60">
-                      {repo.description || "暂无描述"}
+                      {repo.description || t("common.noDescription")}
                     </p>
 
                     <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
@@ -491,7 +493,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
         <div
           ref={backCardRef}
           role="presentation"
-          aria-label="更多插件（浏览全部）"
+          aria-label={t("plugins.morePlugins")}
           className="absolute top-11 left-0 block will-change-transform"
           style={{
             width: CARD_W,

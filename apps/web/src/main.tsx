@@ -6,6 +6,8 @@ import "./index.css"
 // 站点自定义层（主题/字体/全局色板）—— 在官方 index.css 之后引入，
 // 通过 @layer 追加覆盖；禁止修改 index.css（脚手架自动生成）
 import "./custom.css"
+// i18n 初始化（资源随包打包，同步可用；语言检测/切换见 src/i18n）
+import "./i18n"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 

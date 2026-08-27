@@ -84,7 +84,7 @@ function MaskParticles() {
 }
 
 interface ComingSoonSlideProps {
-  /** 眉题：章节编号 + 英文名（如 "04 · COMMUNITY"） */
+  /** 眉题：章节编号 + 英文名（如 "03 · COMMUNITY"） */
   eyebrow: string
   /** 大标题 */
   title: string
@@ -114,7 +114,7 @@ export function ComingSoonSlide({
         <p className="font-mono text-xs tracking-[0.3em] text-cyan-300/90">
           {eyebrow}
         </p>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+        <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
           {title}
         </h2>
         <p className="mt-3 text-white/65">{description}</p>

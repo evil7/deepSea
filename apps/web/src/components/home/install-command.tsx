@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { Check, Copy } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
@@ -29,6 +30,7 @@ export function InstallCommand({
   inline = false,
   className,
 }: InstallCommandProps) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
@@ -54,8 +56,8 @@ export function InstallCommand({
     <button
       type="button"
       onClick={copy}
-      aria-label={`复制安装命令 ${command}`}
-      title="点击复制安装命令"
+      aria-label={t("install.copyCommand", { command })}
+      title={t("install.copyTitle")}
       className={cn(
         "deepc-install group inline-flex max-w-full items-center gap-2.5 rounded-full border border-cyan-400/25 bg-slate-950/55 px-4 py-2 font-mono text-sm text-cyan-100/90 shadow-[0_0_24px_rgba(34,211,238,0.15)] backdrop-blur-md transition-all duration-300 hover:border-cyan-300/50 hover:shadow-[0_0_32px_rgba(34,211,238,0.3)]",
         !inline && "mx-auto mt-8",

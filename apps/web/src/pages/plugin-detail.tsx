@@ -13,6 +13,7 @@ import {
   Star,
 } from "lucide-react"
 import { Link, useParams } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
@@ -46,11 +47,12 @@ function formatStars(n: number): string {
   return String(n)
 }
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, locale: string): string {
   if (!iso) {
     return "-"
   }
-  return new Date(iso).toLocaleDateString("zh-CN", {
+  const loc = locale.startsWith("zh") ? "zh-CN" : "en-US"
+  return new Date(iso).toLocaleDateString(loc, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -93,6 +95,7 @@ type DetailState =
     }
 
 export function PluginDetailPage() {
+  const { t, i18n } = useTranslation()
   const { owner = "", repo = "" } = useParams()
   const [state, setState] = useState<DetailState>({ status: "loading" })
 
@@ -111,10 +114,10 @@ export function PluginDetailPage() {
           status: "error",
           message:
             err.status === 404
-              ? "未找到该插件仓库（可能已删除或不存在）"
+              ? t("plugin.repoNotFound")
               : err.status === 403 || err.status === 429
-                ? "GitHub API 限流，请稍后重试"
-                : "加载失败，请稍后重试",
+                ? t("plugin.rateLimited")
+                : t("plugin.loadFailed"),
         })
       })
   }
@@ -149,14 +152,14 @@ export function PluginDetailPage() {
               className="flex items-center gap-1 transition-colors hover:text-foreground"
             >
               <Home className="size-3.5" />
-              首页
+              {t("plugin.breadcrumbHome")}
             </Link>
             <span>/</span>
             <Link
               to="/plugins"
               className="transition-colors hover:text-foreground"
             >
-              插件生态
+              {t("plugin.breadcrumbEcosystem")}
             </Link>
           </>
         }
@@ -184,7 +187,7 @@ export function PluginDetailPage() {
 
       {state.status === "error" && (
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
-          <p className="text-lg font-medium text-foreground">出错了</p>
+          <p className="text-lg font-medium text-foreground">{t("plugin.errorTitle")}</p>
           <p className="text-sm text-muted-foreground">{state.message}</p>
           <Button
             variant="outline"
@@ -193,7 +196,7 @@ export function PluginDetailPage() {
             className="mt-2 border-border bg-card text-foreground hover:bg-accent"
           >
             <RefreshCw className="size-3.5" />
-            重试
+            {t("common.retry")}
           </Button>
         </div>
       )}
@@ -214,7 +217,7 @@ export function PluginDetailPage() {
                   rel="noreferrer"
                   className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  在 GitHub 查看
+                  {t("common.viewOnGitHub")}
                   <ExternalLink className="size-3" />
                 </a>
               )}
@@ -228,7 +231,7 @@ export function PluginDetailPage() {
                   branch={state.info.default_branch}
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">该仓库没有 README 文件</p>
+                <p className="text-sm text-muted-foreground">{t("plugin.noReadme")}</p>
               )}
             </div>
           </div>
@@ -268,7 +271,7 @@ export function PluginDetailPage() {
               </div>
 
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                {state.info.description || "暂无描述"}
+                {state.info.description || t("common.noDescription")}
               </p>
 
               {/* 统计 */}
@@ -292,19 +295,19 @@ export function PluginDetailPage() {
 
               {/* 元信息 */}
               <dl className="mt-5 space-y-2.5 text-xs">
-                <MetaRow label="语言">{state.info.language ?? "-"}</MetaRow>
-                <MetaRow label="许可">{state.info.license ?? "-"}</MetaRow>
-                <MetaRow label="默认分支">
+                <MetaRow label={t("plugin.language")}>{state.info.language ?? "-"}</MetaRow>
+                <MetaRow label={t("plugin.license")}>{state.info.license ?? "-"}</MetaRow>
+                <MetaRow label={t("plugin.defaultBranch")}>
                   <span className="font-mono">{state.info.default_branch}</span>
                 </MetaRow>
-                <MetaRow label="仓库大小">
+                <MetaRow label={t("plugin.repoSize")}>
                   {`${(state.info.size / 1024).toFixed(1)} MB`}
                 </MetaRow>
-                <MetaRow label="创建时间">
-                  {formatDate(state.info.created_at)}
+                <MetaRow label={t("plugin.createdAt")}>
+                  {formatDate(state.info.created_at, i18n.language)}
                 </MetaRow>
-                <MetaRow label="最近推送">
-                  {formatDate(state.info.pushed_at)}
+                <MetaRow label={t("plugin.pushedAt")}>
+                  {formatDate(state.info.pushed_at, i18n.language)}
                 </MetaRow>
               </dl>
 
@@ -327,7 +330,7 @@ export function PluginDetailPage() {
                 <div className="mt-5 border-t border-border pt-4">
                   <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                     <Download className="size-3.5 text-cyan-300" />
-                    最新发布
+                    {t("plugin.latestRelease")}
                   </div>
                   <a
                     href={state.release.html_url}
@@ -342,7 +345,7 @@ export function PluginDetailPage() {
                       <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
                         {state.release.name || state.release.tag_name}
                         {state.release.published_at
-                          ? ` · ${formatDate(state.release.published_at)}`
+                          ? ` · ${formatDate(state.release.published_at, i18n.language)}`
                           : ""}
                       </p>
                     </div>
@@ -381,7 +384,7 @@ export function PluginDetailPage() {
                     rel="noreferrer"
                   >
                     <FolderGit2 className="size-4" />
-                    GitHub 主页
+                    {t("plugin.githubHome")}
                   </a>
                 </Button>
                 <Button
@@ -396,7 +399,7 @@ export function PluginDetailPage() {
                     rel="noreferrer"
                   >
                     <Bug className="size-4" />
-                    问题反馈
+                    {t("plugin.reportIssue")}
                   </a>
                 </Button>
               </div>

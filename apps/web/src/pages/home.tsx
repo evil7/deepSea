@@ -7,6 +7,7 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { ComingSoonSlide } from "@/components/home/coming-soon"
 import { CommunitySlide } from "@/components/home/community-slide"
@@ -45,6 +46,7 @@ const SLIDE_INDEX_BY_ID: Record<string, number> = {
 }
 
 export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
+  const { t } = useTranslation()
   const isMobile = useIsMobile()
   const location = useLocation()
   const navigate = useNavigate()
@@ -76,7 +78,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
   // 首屏 hero（带大标题）：手机端不显示安装命令，桌面端保留
   const heroSlide = {
     id: "hero",
-    label: "首页",
+    label: t("home.slideHome"),
     node: (
       <div className="relative h-full">
         {/* 内容居中于 hero 屏：slide 占满 content 区（navbar 与 footer 之间），
@@ -86,15 +88,15 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
             variant="outline"
             className="border-white/20 bg-white/10 text-white backdrop-blur-sm"
           >
-            DeepSeek + DeePwn =
+            {t("home.heroBadge")}
           </Badge>
           <h1 className="mt-6 text-5xl font-bold tracking-tight text-white drop-shadow-[0_2px_16px_rgba(8,26,61,0.9)] sm:text-7xl">
             deepSea
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-white/85 drop-shadow-[0_1px_8px_rgba(8,26,61,0.9)] sm:text-lg">
-            DeepSeek Harness 插件生态的入海口
+            {t("home.heroTagline1")}
             <br />
-            发现 · 安装 · 管理 · 互联，一站式聚合
+            {t("home.heroTagline2")}
           </p>
           {/* deepc 安装命令：终端风格（仅桌面显示，手机端不显示） */}
           {!isMobile && <InstallCommand />}
@@ -106,7 +108,7 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
             >
               <Link to="/links">
                 <Radio className="size-4" />
-                多端互联
+                {t("home.multiDeviceLink")}
               </Link>
             </Button>
           </div>
@@ -123,66 +125,62 @@ export function HomePage({ seaState, onSeaStateChange }: HomePageProps) {
       {
         // 万物皆插件：原第三屏（核心能力）上移到第二屏；轻雾遮罩
         id: "dsh-ecosystem",
-        label: "万物皆插件",
+        label: t("home.slideEcosystem"),
         overlayClassName: "bg-slate-950/40 backdrop-blur-[2px]",
         node: <Features active={seaState === "deep"} />,
       },
       {
         // 插件精选：原第二屏移到第三屏；中雾遮罩
         id: "dsh-curated",
-        label: "插件精选",
+        label: t("home.slideCurated"),
         overlayClassName: "bg-slate-950/55 backdrop-blur-md",
         node: <PluginPreview />,
       },
       {
         // 讨论交流：官方 discussions 最热/最新帖子（GraphQL 抓取）；深雾遮罩
         id: "dsh-community",
-        label: "讨论交流",
+        label: t("home.slideCommunity"),
         overlayClassName: "bg-slate-950/65 backdrop-blur-md",
         node: <CommunitySlide />,
       },
       {
         // 深海套装：占位（后续提供 deepsea 主题/插件管理/多端互联）；浓雾遮罩
         id: "dsh-deepsea-kit",
-        label: "深海套装",
+        label: t("home.slideDeepseaKit"),
         overlayClassName: "bg-slate-950/75 backdrop-blur-lg",
         node: (
           <ComingSoonSlide
-            eyebrow="05 · DEEPSEA KIT"
-            title="深海套装"
-            description="把 deepSea 装进口袋：一套 deepc-link 组合包，搞定远程控制、工程同步与插件管理。"
+            eyebrow={t("home.kitEyebrow")}
+            title={t("home.kitTitle")}
+            description={t("home.kitDescription")}
             items={[
               {
                 id: "link",
                 icon: Radio,
-                title: "多端互联",
-                description:
-                  "deepc 主站自实现 chatUI，经 deepc-link 加密 RTC 通道远程控制本机 dsh，零端口暴露、零复刻官方前端。",
+                title: t("home.kitLinkTitle"),
+                description: t("home.kitLinkDesc"),
                 tag: "link",
                 href: "/links",
               },
               {
                 id: "sync",
                 icon: RefreshCw,
-                title: "工程同步",
-                description:
-                  "登录后把本地工作区 + 聊天记录经同一加密 RTC 通道实时传输，多端数据一致、备份与迁移。",
+                title: t("home.kitSyncTitle"),
+                description: t("home.kitSyncDesc"),
                 tag: "sync",
               },
               {
                 id: "manage",
                 icon: Package,
-                title: "插件管理",
-                description:
-                  "本地管理点注入 dsh 设置页，异步执行安装/卸载/更新与安全审计，插件与主题共用一个设置页，多 profile 一站式管理。",
+                title: t("home.kitManageTitle"),
+                description: t("home.kitManageDesc"),
                 tag: "deepc",
               },
               {
                 id: "security",
                 icon: ShieldCheck,
-                title: "安全护栏",
-                description:
-                  "沙箱命名空间映射白名单、动态安全路径、危险操作二次验证与审计日志，同步密钥自协商派生不出设备。",
+                title: t("home.kitSecurityTitle"),
+                description: t("home.kitSecurityDesc"),
                 tag: "security",
               },
             ]}
@@ -230,6 +228,7 @@ function ScrollFadeExploreButton({
   onClick: () => void
   visible: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
@@ -240,9 +239,9 @@ function ScrollFadeExploreButton({
         "fixed bottom-14 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-1.5 text-white/70 transition-opacity duration-500 hover:text-white",
         visible ? "opacity-100" : "pointer-events-none opacity-0"
       )}
-      aria-label="探索更多"
+      aria-label={t("home.exploreMore")}
     >
-      <span className="text-xs font-medium tracking-[0.2em]">探索更多</span>
+      <span className="text-xs font-medium tracking-[0.2em]">{t("home.exploreMore")}</span>
       <ChevronDown className="size-5 animate-bounce" />
     </button>
   )

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { animate } from "animejs"
 import { ArrowUp } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -66,6 +67,7 @@ export function PageHeader({
   showTopButton = true,
   className,
 }: PageHeaderProps) {
+  const { t } = useTranslation()
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const [stuck, setStuck] = useState(false)
   // 手机端不做 sticky：不吸附也不触发 stuck 收缩（页头保持完整展开）
@@ -139,7 +141,7 @@ export function PageHeader({
               <Button
                 type="button"
                 onClick={smoothScrollToTop}
-                aria-label="返回顶部"
+                aria-label={t("common.backToTop")}
                 variant="ghost"
                 className={stuck ? "inline-flex" : "hidden"}
               >

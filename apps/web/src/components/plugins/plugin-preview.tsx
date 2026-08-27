@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Flame, Link2, Star } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { PluginFanDeck } from "@/components/plugins/plugin-coverflow"
 import { useSlideReveal } from "@/components/showcase/slide-reveal"
@@ -26,6 +27,7 @@ function formatStars(n: number): string {
 }
 
 export function PluginPreview() {
+  const { t } = useTranslation()
   const isMobile = useIsMobile()
   const [repos, setRepos] = useState<PluginRepo[] | null>(null)
   const [mode, setMode] = useState<ViewMode>("hot")
@@ -62,13 +64,13 @@ export function PluginPreview() {
       <div className="slide-reveal-title mb-10 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-mono text-xs tracking-[0.3em] text-cyan-300/90">
-            03 · CURATED
+            02 · CURATED
           </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">
-            插件精选
+            {t("home.slideCurated")}
           </h2>
           <p className="mt-1 text-sm text-white/65">
-            深海里打捞上来的热门 deepseek-harness 插件
+            {t("home.featureCuratedDesc")}
           </p>
         </div>
         {/* 热门 | 最新：shadcn Tabs 默认样式（跟随主题圆角） */}
@@ -83,14 +85,14 @@ export function PluginPreview() {
               className="text-white/60 hover:text-white data-active:bg-white/15 data-active:text-white"
             >
               <Flame className="size-3.5" />
-              热门
+              {t("plugins.hot")}
             </TabsTrigger>
             <TabsTrigger
               value="latest"
               className="text-white/60 hover:text-white data-active:bg-white/15 data-active:text-white"
             >
               <Link2 className="size-3.5" />
-              最新
+              {t("plugins.latest")}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -122,7 +124,7 @@ export function PluginPreview() {
                   </h3>
                 </div>
                 <p className="mt-2 line-clamp-3 flex-1 text-xs leading-relaxed text-white/60">
-                  {repo.description || "暂无描述"}
+                  {repo.description || t("common.noDescription")}
                 </p>
                 <div className="mt-3 flex items-center gap-1.5 border-t border-white/10 pt-3 text-xs text-white/50">
                   <Star className="size-3.5 text-amber-300" />
@@ -141,7 +143,7 @@ export function PluginPreview() {
             to="/plugins"
             className="flex w-24 shrink-0 snap-start items-center justify-center rounded-2xl border border-white/10 bg-slate-900/70 p-4"
           >
-            <span className="text-sm font-medium text-cyan-300">更多 →</span>
+            <span className="text-sm font-medium text-cyan-300">{t("common.viewAll")} →</span>
           </Link>
         </div>
       ) : (

@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 
 import { useAuth } from "@/hooks/use-auth"
 import {
@@ -92,6 +93,7 @@ function AuthorAvatar({ url, name }: { url?: string; name: string }) {
 }
 
 export function CommunityPage() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   // 社区来源：/community/dsh（蓝鲸社区，只读）| /community/dpc（浪尖酒馆，可互动）
   // 路由为静态段（无 :source 参数），需从 pathname 解析来源
@@ -234,7 +236,7 @@ export function CommunityPage() {
 
   const startNew = () => {
     if (!user) {
-      toast.info("请先登录，再发起讨论")
+      toast.info(t("community.needLoginToast"))
       return
     }
     window.open(info.createUrl, "_blank", "noopener,noreferrer")
@@ -260,7 +262,7 @@ export function CommunityPage() {
                   : "border-amber-400/40 bg-amber-400/10 text-amber-300"
               )}
             >
-              {info.source === "dpc" ? "自家社区" : "官方社区"}
+              {info.source === "dpc" ? t("community.ownBadge") : t("community.officialBadge")}
             </Badge>
             <p className="text-muted-foreground">{info.description}</p>
           </div>
@@ -273,7 +275,7 @@ export function CommunityPage() {
               size="icon"
               variant="outline"
               className="size-9 border-border bg-card text-foreground hover:bg-accent sm:hidden"
-              aria-label={`前往${info.counterpartLabel}`}
+              aria-label={t("community.goto", { name: info.counterpartLabel })}
             >
               <Link to={`/community/${info.counterpartSource}`}>
                 <ArrowLeftRight className="size-5" />
@@ -292,7 +294,7 @@ export function CommunityPage() {
             </Button>
             <Button size="sm" onClick={startNew} className="hidden sm:inline-flex">
               <PenLine className="size-4" />
-              新建
+              {t("community.new")}
             </Button>
           </>
         }
@@ -307,7 +309,7 @@ export function CommunityPage() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索标题或作者…"
+              placeholder={t("community.searchPlaceholder")}
               className="h-9 border-border bg-background pl-9 text-foreground placeholder:text-muted-foreground"
             />
           </div>
@@ -319,11 +321,11 @@ export function CommunityPage() {
             <TabsList className="h-8 border border-border bg-muted">
               <TabsTrigger value="hot" className="gap-1.5">
                 <Flame className="size-3.5 text-orange-400" />
-                热门
+                {t("community.hot")}
               </TabsTrigger>
               <TabsTrigger value="latest" className="gap-1.5">
                 <Link2 className="size-3.5 text-sky-400" />
-                最新
+                {t("community.latest")}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -341,7 +343,7 @@ export function CommunityPage() {
                 : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
-            全部
+            {t("community.categoryAll")}
           </button>
           {categories.map((c) => {
             const count = list?.filter((d) => d.categoryName === c).length ?? 0
@@ -373,7 +375,7 @@ export function CommunityPage() {
           ))
         ) : pageItems.length === 0 ? (
           <div className="community-panel rounded-lg border border-border px-6 py-12 text-center text-sm text-muted-foreground">
-            没有匹配的讨论
+            {t("community.empty")}
           </div>
         ) : (
           pageItems.map((d) => (
@@ -446,7 +448,7 @@ export function CommunityPage() {
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             className="text-muted-foreground"
           >
-            上一页
+            {t("common.prevPage")}
           </Button>
           <span className="text-xs text-muted-foreground">
             {safePage + 1} / {pageCount}
@@ -458,7 +460,7 @@ export function CommunityPage() {
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
             className="text-muted-foreground"
           >
-            下一页
+            {t("common.nextPage")}
           </Button>
         </div>
       )}

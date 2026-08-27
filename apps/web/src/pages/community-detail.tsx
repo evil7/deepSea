@@ -14,6 +14,7 @@ import {
   User,
 } from "lucide-react"
 import { Link, useLocation, useParams } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
@@ -97,6 +98,7 @@ function ReactionBar({
   canInteract: boolean
   onToggle: (content: string, active: boolean) => void
 }) {
+  const { t } = useTranslation()
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const reacted = (content: string) =>
@@ -142,7 +144,7 @@ function ReactionBar({
         <button
           type="button"
           onClick={() => setPickerOpen((v) => !v)}
-          aria-label="添加表情"
+          aria-label={t("communityDetail.addReaction")}
           aria-expanded={pickerOpen}
           className={cn(
             "flex items-center rounded-full border border-dashed px-1.5 py-0.5 text-xs transition-colors",
@@ -197,6 +199,7 @@ function ReplyEditor({
   submitting: boolean
   onSubmit: (body: string) => void
 }) {
+  const { t } = useTranslation()
   const [text, setText] = useState("")
   const canSubmit = text.trim().length > 0 && !submitting
 
@@ -214,13 +217,13 @@ function ReplyEditor({
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="且慢，我有话要说…"
+            placeholder={t("communityDetail.replyPlaceholder")}
             rows={3}
             className="w-full resize-y bg-transparent px-3.5 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="flex items-center justify-between border-t border-border px-3 py-2">
             <span className="font-mono text-[10px] text-muted-foreground">
-              Markdown 语法支持
+              {t("communityDetail.markdownSupported")}
             </span>
             <Button
               size="sm"
@@ -233,7 +236,7 @@ function ReplyEditor({
               ) : (
                 <Send className="size-3.5" />
               )}
-              评论
+              {t("communityDetail.comment")}
             </Button>
           </div>
         </div>
@@ -330,6 +333,7 @@ function CommentItem({
   canInteract: boolean
   onToggleReaction: (subjectId: string, content: string, active: boolean) => void
 }) {
+  const { t } = useTranslation()
   const { comment, depth, children } = node
   const indented = depth > 0 && depth <= MAX_VISUAL_DEPTH
 
@@ -358,13 +362,13 @@ function CommentItem({
             </span>
             {comment.author === discussionAuthor && (
               <Badge className="border-violet-400/40 bg-violet-400/10 font-mono text-[10px] text-violet-300">
-                作者
+                {t("communityDetail.authorBadge")}
               </Badge>
             )}
             {comment.isAnswer && (
               <Badge className="border-emerald-400/40 bg-emerald-400/10 font-mono text-[10px] text-emerald-300">
                 <CheckCircle2 className="mr-1 size-3" />
-                已采纳答案
+                {t("communityDetail.answerBadge")}
               </Badge>
             )}
             <span className="text-xs text-muted-foreground">
@@ -376,7 +380,7 @@ function CommentItem({
           {comment.replyToAuthor && (
             <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
               <CornerDownRight className="size-3" />
-              回复
+              {t("communityDetail.reply")}
               <span className="font-medium text-cyan-300">
                 @{comment.replyToAuthor}
               </span>
@@ -422,6 +426,7 @@ function CommentItem({
 }
 
 export function CommunityDetailPage() {
+  const { t } = useTranslation()
   const { number } = useParams<{ number: string }>()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
   // 路由 source 段为静态段，需从 pathname 解析
@@ -522,10 +527,10 @@ export function CommunityDetailPage() {
   /** 写操作失败时的降级：按失败原因针对性提示 + 引导跳转 GitHub */
   const handleWriteFallback = (failure?: WriteFailure) => {
     if (failure?.kind === "forbidden") {
-      toast.error("没有写入权限", {
-        description: "该讨论所在组织限制了第三方应用的写入权限，请在 GitHub 上操作",
+      toast.error(t("communityDetail.writeForbiddenTitle"), {
+        description: t("communityDetail.writeForbiddenDesc"),
         action: {
-          label: "前往 GitHub",
+          label: t("communityDetail.goGitHub"),
           onClick: () =>
             detail && window.open(detail.url, "_blank", "noopener,noreferrer"),
         },
@@ -533,15 +538,15 @@ export function CommunityDetailPage() {
       return
     }
     if (failure?.kind === "rate_limited") {
-      toast.error("触发 GitHub 限流", {
-        description: "操作过于频繁，请稍后再试",
+      toast.error(t("communityDetail.rateLimitedTitle"), {
+        description: t("communityDetail.rateLimitedDesc"),
       })
       return
     }
-    toast.error("操作未成功", {
-      description: "可在 GitHub 上完成该操作",
+    toast.error(t("communityDetail.writeFailedTitle"), {
+      description: t("communityDetail.writeFailedDesc"),
       action: {
-        label: "前往 GitHub",
+        label: t("communityDetail.goGitHub"),
         onClick: () =>
           detail && window.open(detail.url, "_blank", "noopener,noreferrer"),
       },
@@ -555,11 +560,11 @@ export function CommunityDetailPage() {
     active: boolean
   ) => {
     if (!canReply) {
-      toast.info("该讨论已锁定或关闭，无法表态")
+      toast.info(t("communityDetail.lockedToast"))
       return
     }
     if (!user) {
-      toast.info("请先登录，再表达态度")
+      toast.info(t("communityDetail.needLoginToast"))
       return
     }
     updateReactions(subjectId, content, active)
@@ -584,7 +589,7 @@ export function CommunityDetailPage() {
         setDetail((prev) =>
           prev ? { ...prev, comments: [...prev.comments, comment] } : prev
         )
-        toast.success("回复已发布")
+        toast.success(t("communityDetail.replyPosted"))
       } else {
         handleWriteFallback(failure)
       }
@@ -655,15 +660,15 @@ export function CommunityDetailPage() {
       {needsLogin && (
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
           <MessagesSquare className="size-10 text-muted-foreground" />
-          <p className="text-lg font-medium text-foreground">登录后畅聊</p>
+          <p className="text-lg font-medium text-foreground">{t("communityDetail.loginToChat")}</p>
           <p className="text-sm text-muted-foreground">
-            讨论正文与评论需要 GitHub 授权后才能查看
+            {t("communityDetail.loginToReadDesc")}
           </p>
           <Button asChild size="sm" className="mt-2">
             {/* 真实导航：/auth/login 由 Worker 处理，无前端路由 */}
             <a href={loginHref}>
               <User className="size-4" />
-              登录
+              {t("common.login")}
             </a>
           </Button>
         </div>
@@ -671,15 +676,17 @@ export function CommunityDetailPage() {
 
       {state === "error" && !needsLogin && (
         <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-          <p className="text-lg font-medium text-foreground">出错了</p>
-          <p className="text-sm text-muted-foreground">讨论不存在或加载失败</p>
+          <p className="text-lg font-medium text-foreground">{t("plugin.errorTitle")}</p>
+          <p className="text-sm text-muted-foreground">{t("communityDetail.discussionError")}</p>
           <Button
             variant="outline"
             size="sm"
             className="mt-2 border-border bg-card text-foreground hover:bg-accent"
           >
             <ArrowLeft className="size-3.5" />
-            <Link to={`/community/${info.source}`}>返回{info.label}</Link>
+            <Link to={`/community/${info.source}`}>
+              {t("communityDetail.backTo", { name: info.label })}
+            </Link>
           </Button>
         </div>
       )}
@@ -700,11 +707,13 @@ export function CommunityDetailPage() {
                         {detail.author}
                       </span>
                       <Badge className="border-cyan-400/40 bg-cyan-400/10 font-mono text-[10px] text-cyan-300">
-                        发起者
+                        {t("communityDetail.initiator")}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {formatRelativeTime(detail.createdAt)} 发起
+                      {t("communityDetail.startedAt", {
+                        time: formatRelativeTime(detail.createdAt),
+                      })}
                     </p>
                   </div>
                 </div>
@@ -715,7 +724,7 @@ export function CommunityDetailPage() {
                   rel="noreferrer"
                   className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  在 GitHub 查看
+                  {t("common.viewOnGitHub")}
                   <ExternalLink className="size-3" />
                 </a>
               </div>
@@ -769,7 +778,7 @@ export function CommunityDetailPage() {
             {commentTree.length === 0 ? (
               <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                 <CornerDownRight className="size-4" />
-                还没有评论，来抢沙发
+                {t("communityDetail.noComments")}
               </div>
             ) : (
               <div className="space-y-4">
@@ -791,15 +800,15 @@ export function CommunityDetailPage() {
                 <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
                   <span>
                     {detail.locked
-                      ? "该讨论已被管理员锁定，无法回复"
+                      ? t("communityDetail.lockedReply")
                       : detail.closed
-                      ? "该讨论已关闭，无法回复"
-                      : "当前无法回复"}
+                      ? t("communityDetail.closedReply")
+                      : t("communityDetail.cannotReply")}
                   </span>
                   <Button asChild size="sm" variant="outline">
                     <a href={detail.url} target="_blank" rel="noreferrer">
                       <ExternalLink className="size-4" />
-                      前往 GitHub 参与
+                      {t("communityDetail.joinOnGithub")}
                     </a>
                   </Button>
                 </div>
@@ -812,11 +821,11 @@ export function CommunityDetailPage() {
                 />
               ) : (
                 <div className="flex items-center justify-between rounded-xl border border-dashed border-border px-4 py-4 text-sm text-muted-foreground">
-                  <span>登录后即可参与回复</span>
+                  <span>{t("communityDetail.loginToReply")}</span>
                   <Button asChild size="sm" variant="outline">
                     <a href={loginHref}>
                       <User className="size-4" />
-                      登录
+                      {t("common.login")}
                     </a>
                   </Button>
                 </div>
@@ -835,19 +844,23 @@ export function CommunityDetailPage() {
                     {detail.author}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatRelativeTime(detail.createdAt)} 发起 · 最新更新{" "}
-                    {formatRelativeTime(detail.updatedAt)}
+                    {t("communityDetail.activity", {
+                      time: formatRelativeTime(detail.createdAt),
+                      time2: formatRelativeTime(detail.updatedAt),
+                    })}
                   </p>
                 </div>
               </div>
               <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <MessagesSquare className="size-3.5 text-cyan-300/80" />
-                  {detail.commentTotalCount} 条评论
+                  {t("communityDetail.commentsCount", {
+                    count: detail.commentTotalCount,
+                  })}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <ArrowUp className="size-3.5 text-cyan-300/80" />
-                  {detail.upvoteCount} 个投票
+                  {t("communityDetail.votesCount", { count: detail.upvoteCount })}
                 </span>
               </div>
             </div>

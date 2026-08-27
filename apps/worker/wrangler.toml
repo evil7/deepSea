@@ -2,7 +2,7 @@
 # 部署：wrangler deploy（静态资源直接取 ../web/dist 作为 ASSETS）
 name = "deepsea"
 main = "src/index.ts"
-compatibility_date = "2025-08-04"
+compatibility_date = "2026-08-04"
 # nodejs_compat：crypto.ts 的 toBase64/fromBase64 用了 btoa()/atob()，
 # 生产 Workers 无此 flag 时二者为 undefined → 登录/token 解密抛 1101。
 compatibility_flags = ["nodejs_compat"]
@@ -23,7 +23,8 @@ directory = "../web/dist"
 binding = "ASSETS"
 # SPA 路由回退：/plugins、/plugin/... 等前端路由返回 index.html
 not_found_handling = "single-page-application"
-# 选择性 Worker-first（官方支持）：只让 /auth/* 这 4 个路由先进 Worker。
+# 选择性 Worker-first（官方支持）：仅下列 12 个动态路由先进 Worker——
+# /auth/* 全套（OAuth 登录回调、会话、设备授权、tunnel 管理）+ /ws/tunnel-events。
 # 其余请求保持默认 asset-first——静态资源（JS/CSS/字体/图片）由 Assets 直接
 # 服务、SPA 回退由 Assets 免费处理，全程零 Worker 计算额度。
 # 若不配置此项，浏览器导航（Sec-Fetch-Mode: navigate）到 /auth/callback
