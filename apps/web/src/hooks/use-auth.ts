@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react"
-import { useLocation } from "react-router-dom"
+import { useSearchParams } from "react-router-dom"
 
 import { AUTH_EXPIRED_EVENT, setGitHubToken } from "@/lib/github/client"
 
@@ -30,6 +30,8 @@ interface MeResponse {
   authed: boolean
   user?: AuthUser
   token?: string
+  /** GitHub token 已失效（被撤销 / 过期 / 无法解密），需重新授权 */
+  tokenExpired?: boolean
 }
 
 /** sessionStorage 键：登录态（user + token）会话内暂留 */
@@ -102,6 +104,13 @@ function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
       })
       if (!res.ok) return null
       const data = (await res.json()) as MeResponse
+      // token 已失效（撤销/过期/无法解密）：立即清缓存。否则缓存命中后
+      // octokit 调 GitHub API 会 401 二次探测（多一次请求 + 广播事件）；
+      // 直接清空让 RequireAuth 走重新授权，少一次往返。
+      if (data.tokenExpired) {
+        sessionStorage.removeItem(AUTH_STORAGE_KEY)
+        return null
+      }
       if (!data.authed || !data.user || !data.token) return null
       return { user: data.user, token: data.token }
     } catch {
@@ -117,13 +126,13 @@ function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
-  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  // 仅依赖 location.search：登录回跳（?auth=success）强制刷新拿新 token；
-  // SPA 切换页面（pathname 变化、search 不变）不触发 → 避免反复请求 /auth/me
+  // 仅依赖 search 参数：登录回跳（?auth=success）强制刷新拿新 token；
+  // SPA 切换页面（pathname 变化、search 不变）不触发 → 避免反复请求 /auth/me。
   useEffect(() => {
     let cancelled = false
-    const isAuthCallback = location.search.includes("auth=success")
+    const isAuthCallback = searchParams.get("auth") === "success"
     const cached = isAuthCallback ? null : readCached()
     if (cached) {
       // 命中会话缓存：直接恢复，零网络请求
@@ -140,6 +149,22 @@ export function useAuth() {
           // token 注入前端 octokit（仅存内存），供 GitHub API 直调
           setGitHubToken(result.token)
           writeCached(result)
+          // 消费 auth=success：登录/续期成功即清理 URL 参数（replace 不产生历史
+          // 记录）。否则 ?auth=success 粘滞在 URL 上，每次刷新都强制 fetchMe，
+          // 且后续 RequireAuth 拼 redirect 时叠加 auth 参数。
+          // 清理触发 search 变化 → effect 重跑 → 命中刚写入的缓存直接恢复，
+          // 不会产生第二次网络请求。失败（未登录/过期）不清理：RequireAuth
+          // 会整页跳转登录，URL 自然切换，无需在此处理。
+          if (isAuthCallback) {
+            setSearchParams(
+              (prev) => {
+                const next = new URLSearchParams(prev)
+                next.delete("auth")
+                return next
+              },
+              { replace: true }
+            )
+          }
         } else {
           setUser(null)
           setGitHubToken(null)
@@ -151,7 +176,7 @@ export function useAuth() {
     return () => {
       cancelled = true
     }
-  }, [location.search])
+  }, [searchParams, setSearchParams])
 
   // 监听授权失效事件（octokit 401 检测触发）：token 被撤销/过期时，清缓存
   // 并登出。所有 useAuth 实例（topbar/links 等）各自监听，统一回到未登录态，

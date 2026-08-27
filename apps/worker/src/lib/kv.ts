@@ -36,6 +36,17 @@ export function sessionTtl(env: Env): number {
   return Number(env.SESSION_TTL_SECONDS ?? 30 * 24 * 60 * 60)
 }
 
+/**
+ * GitHub token 本地有效期（毫秒，默认 8 小时）。
+ * 站点会话策略：token 签发（= 最近一次 OAuth 授权成功时间，callback 写入的
+ * updatedAt/updated_at）超过 TTL 即强制重新走 GitHub OAuth 授权，即使 GitHub
+ * 侧 token 仍有效 —— 定期轮换授权，降低 token 长期驻留风险。
+ * 配置：wrangler.toml [vars] TOKEN_TTL_SECONDS（默认 28800）。
+ */
+export function tokenTtlMs(env: Env): number {
+  return Number(env.TOKEN_TTL_SECONDS ?? 8 * 60 * 60) * 1000
+}
+
 /** state TTL（秒） */
 export function stateTtl(env: Env): number {
   return Number(env.STATE_TTL_SECONDS ?? 7 * 60)

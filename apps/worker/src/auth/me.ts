@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Env } from "../index"
-import { SESSION_COOKIE, kvKeys } from "../lib/kv"
+import { SESSION_COOKIE, kvKeys, tokenTtlMs } from "../lib/kv"
 import { expireCookie, parseCookies } from "../lib/cookies"
 import { decryptToken } from "../lib/crypto"
 import { verifyToken } from "../lib/github"
@@ -44,6 +44,8 @@ interface UserProfile {
   following: number
   public_repos: number
   tokenEnc: string
+  /** token 最近签发时间（D1 updated_at / KV updatedAt，毫秒） */
+  updatedAt: number
 }
 
 export async function handleMe(request: Request, env: Env): Promise<Response> {
@@ -90,6 +92,7 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
       following: d1User.following,
       public_repos: d1User.public_repos,
       tokenEnc: d1User.token_enc,
+      updatedAt: d1User.updated_at,
     }
   } else {
     const userRaw = await env.DEEPSEA_KV.get(kvKeys.user(String(githubId)))
@@ -106,6 +109,7 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
         followers?: number
         following?: number
         public_repos?: number
+        updatedAt?: number
       }
       profile = {
         login: u.login,
@@ -118,6 +122,8 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
         following: u.following ?? 0,
         public_repos: u.public_repos ?? 0,
         tokenEnc: u.tokenEnc,
+        // 旧记录无 updatedAt 字段 → 0，视为已过期（保守强制重新授权）
+        updatedAt: u.updatedAt ?? 0,
       }
     } catch {
       return json({ authed: false })
@@ -138,10 +144,42 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
     })
   }
 
-  // 4. 解密 token（仅 cookie 主站会话需要，供前端 octokit 直调）。
+  // 4. 本地 8 小时过期（站点会话策略）：token 签发超过 TTL 即强制重新授权，
+  //    即使 GitHub 侧 token 仍有效。与解密失败同走清理分支：删会话 + 清 cookie
+  //    + tokenExpired，前端据此清缓存并重新走 OAuth（GitHub 已授权过则静默）。
+  //    无签发时间戳（旧记录 updatedAt=0）保守视为已过期。
+  if (
+    !profile.updatedAt ||
+    Date.now() - profile.updatedAt > tokenTtlMs(env)
+  ) {
+    await env.DEEPSEA_KV.delete(kvKeys.session(sessionId))
+    const headers = new Headers(
+      json({ authed: false, tokenExpired: true }).headers
+    )
+    headers.set("Set-Cookie", expireCookie(SESSION_COOKIE))
+    return new Response(
+      JSON.stringify({ authed: false, tokenExpired: true }),
+      { status: 200, headers }
+    )
+  }
+
+  // 5. 解密 token（仅 cookie 主站会话需要，供前端 octokit 直调）。
   const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
   const token = await decryptToken(encKey, profile.tokenEnc)
-  if (!token) return json({ authed: false })
+  if (!token) {
+    // 解密失败 = token 不可用 = 会话无效。必须与 tokenExpired 分支一致：
+    // 删会话 + 强制过期 cookie。否则残留 cookie 会让 /auth/login 短路分支
+    // 302 回跳本页 → RequireAuth 又跳 login → 死循环（页面一直刷新）。
+    await env.DEEPSEA_KV.delete(kvKeys.session(sessionId))
+    const headers = new Headers(
+      json({ authed: false, tokenExpired: true }).headers
+    )
+    headers.set("Set-Cookie", expireCookie(SESSION_COOKIE))
+    return new Response(
+      JSON.stringify({ authed: false, tokenExpired: true }),
+      { status: 200, headers }
+    )
+  }
 
   // 5. token 有效性校验：GitHub 明确拒绝（撤销/过期）时清理 D1 + KV 缓存 + 会话，
   // 返回 tokenExpired 供前端清 sessionStorage 并引导重新授权；网络错误降级

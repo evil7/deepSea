@@ -55,6 +55,8 @@ export interface Env {
   TOKEN_ENC_KEY?: string
   /** 会话 TTL（秒，默认 30 天） */
   SESSION_TTL_SECONDS?: string
+  /** GitHub token 本地有效期（秒，默认 8 小时）：超时强制重新授权 */
+  TOKEN_TTL_SECONDS?: string
   /** state TTL（秒，默认 7 分钟） */
   STATE_TTL_SECONDS?: string
   /** 设备授权码 TTL（秒，state 换取 token 窗口，默认 5 分钟） */

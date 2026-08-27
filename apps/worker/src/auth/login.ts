@@ -14,6 +14,7 @@ import {
   SESSION_COOKIE,
   kvKeys,
   stateTtl,
+  tokenTtlMs,
 } from "../lib/kv"
 import { expireCookie, parseCookies } from "../lib/cookies"
 import { decryptToken } from "../lib/crypto"
@@ -33,11 +34,26 @@ async function sessionTokenStillValid(
   try {
     const rawUser = await env.DEEPSEA_KV.get(kvKeys.user(githubId))
     if (!rawUser) return true // 无档案缓存无法校验，降级短路（与旧行为一致）
-    const u = JSON.parse(rawUser) as { tokenEnc?: string }
+    const u = JSON.parse(rawUser) as {
+      tokenEnc?: string
+      updatedAt?: number
+    }
     if (!u.tokenEnc) return true
+    // 本地 8 小时过期（站点会话策略）：token 签发超过 TTL 即强制重新授权，
+    // 即使 GitHub 侧仍有效。无时间戳（旧记录）保守视为过期。
+    if (
+      !u.updatedAt ||
+      Date.now() - u.updatedAt > tokenTtlMs(env)
+    ) {
+      return false
+    }
     const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
     const token = await decryptToken(encKey, u.tokenEnc)
-    if (!token) return true
+    // 解密失败 = token 不可用。必须视为失效走重新授权：若仍短路回跳，
+    // /auth/me 同样解密失败返回 authed:false → RequireAuth 又跳 login
+    // → 302 回跳循环（页面一直刷新）。改为 false 则删会话 + 清 cookie，
+    // 一次性切到 GitHub OAuth 自愈。
+    if (!token) return false
     const verify = await verifyToken(token)
     // unknown（网络抖动）降级视为有效，避免 GitHub 抖动误登出；
     // 真失效（401/403）才触发重新授权。

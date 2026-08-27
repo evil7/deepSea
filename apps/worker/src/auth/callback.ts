@@ -15,10 +15,42 @@ import { expireCookie, serializeCookie } from "../lib/cookies"
 import { encryptToken } from "../lib/crypto"
 import { exchangeCode, fetchGitHubUser } from "../lib/github"
 
-/** 构造带 auth 状态的回跳 URL（拼接站点基址为绝对 URL，Response.redirect 要求） */
-function backTo(env: Env, redirect: string, auth: "success" | string): string {
-  const sep = redirect.includes("?") ? "&" : "?"
-  return `${env.DEEPSEA_BASE}${redirect}${sep}auth=${encodeURIComponent(auth)}`
+/** 构造带 auth 状态的回跳 URL（拼接站点基址为绝对 URL，Response.redirect 要求）。
+ * 剥离 redirect 中已有的 auth 参数，避免续期场景叠加（如 /links?auth=success 再拼
+ * auth=success → /links?auth=success&auth=success）。 */
+function backTo(env: Env, redirect: string, auth: string): string {
+  const [path, query = ""] = redirect.split("?")
+  const params = new URLSearchParams(query)
+  params.delete("auth")
+  params.set("auth", auth)
+  const qs = params.toString()
+  return `${env.DEEPSEA_BASE}${path}${qs ? `?${qs}` : ""}`
+}
+
+/** 站内相对路径校验（防开放重定向）。 */
+function isSafeRedirect(redirect: string): boolean {
+  return redirect.startsWith("/") && !redirect.startsWith("//")
+}
+
+/**
+ * 从 URL 的 state 参数恢复 redirect（失败路径尽量回跳原位置）。
+ * 用于 error（用户取消授权）等 state 尚未消费的场景：state 仍在 KV 中，
+ * 读取后消费删除，恢复出原访问位置。state 缺失/过期返回 "/"（无法恢复）。
+ */
+async function restoreRedirect(
+  env: Env,
+  stateParam: string | null
+): Promise<string> {
+  if (!stateParam) return "/"
+  try {
+    const raw = await env.DEEPSEA_KV.get(kvKeys.state(stateParam))
+    if (!raw) return "/"
+    await env.DEEPSEA_KV.delete(kvKeys.state(stateParam)) // 一次性，无论结果
+    const { redirect } = JSON.parse(raw) as { redirect?: string }
+    return redirect && isSafeRedirect(redirect) ? redirect : "/"
+  } catch {
+    return "/"
+  }
 }
 
 export async function handleCallback(
@@ -33,37 +65,42 @@ export async function handleCallback(
   // 失败回跳时一并强制过期旧会话 cookie：OAuth 失败（GitHub 拒绝/取消/state 过期）
   // 后若残留旧 cookie，前端 useAuth 命中缓存会显示假登录态，再点登录又被 /auth/login
   // 短路 → 反复失败。清 cookie 让下次登录从干净的未登录态重新走 OAuth。
-  const fail = (reason: string) =>
+  // ⚠️ redirect 优先回跳原位置：过期自动续期等场景下失败不应把用户踢回首页。
+  const fail = (redirect: string, reason: string) =>
     new Response(null, {
       status: 302,
       headers: {
-        Location: backTo(env, "/", `error:${reason}`),
+        Location: backTo(env, redirect, `error:${reason}`),
         "Set-Cookie": expireCookie(SESSION_COOKIE),
       },
     })
 
-  if (error) return fail(error)
-  if (!code || !state) return fail("missing_params")
+  // 用户取消授权（GitHub 返回 error）：state 通常仍在 KV，恢复 redirect 回跳原位置
+  if (error) {
+    return fail(await restoreRedirect(env, state), error)
+  }
+  if (!code || !state) return fail("/", "missing_params")
 
   // 校验一次性 state
   const rawState = await env.DEEPSEA_KV.get(kvKeys.state(state))
   await env.DEEPSEA_KV.delete(kvKeys.state(state)) // 一次性，无论结果
-  if (!rawState) return fail("invalid_state")
+  if (!rawState) return fail("/", "invalid_state")
 
   let redirect = "/"
   try {
-    redirect = (JSON.parse(rawState) as { redirect?: string }).redirect ?? "/"
+    const r = (JSON.parse(rawState) as { redirect?: string }).redirect ?? "/"
+    if (isSafeRedirect(r)) redirect = r
   } catch {
     /* ignore malformed */
   }
 
   // code → token
   const { accessToken, error: exchangeError } = await exchangeCode(env, code)
-  if (!accessToken) return fail(exchangeError ?? "token_exchange")
+  if (!accessToken) return fail(redirect, exchangeError ?? "token_exchange")
 
   // token → 用户档案
   const user = await fetchGitHubUser(accessToken)
-  if (!user) return fail("user_fetch")
+  if (!user) return fail(redirect, "user_fetch")
 
   // token 加密缓存（避免重复请求 GitHub）；无 TOKEN_ENC_KEY 时退化为明文存 KV 的调用约定（生产必须配置）
   const encKey = env.TOKEN_ENC_KEY ?? env.GITHUB_CLIENT_SECRET
