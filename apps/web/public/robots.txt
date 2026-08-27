@@ -1,0 +1,10 @@
+# deepSea robots.txt —— 搜索引擎抓取策略
+# 公开内容全部收录；登录态 / 工具类页面禁止收录
+
+User-agent: *
+Allow: /
+Disallow: /links
+Disallow: /device-login
+Disallow: /auth/
+
+Sitemap: https://deepc.cn/sitemap.xml

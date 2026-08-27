@@ -1,10 +1,73 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/deepsea.svg" />
+    <link rel="apple-touch-icon" href="/deepsea.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>deepSea</title>
+
+    <!-- ── 基础 SEO ─────────────────────────────────────────────────── -->
+    <title>deepSea · DeepSeek Harness 插件生态社区</title>
+    <meta
+      name="description"
+      content="deepSea 是 DeepSeek Harness（dsh）插件生态社区：发现与搜索 dsh 插件、浏览插件排行榜、参与社区讨论、一站式安装与管理插件。"
+    />
+    <meta
+      name="keywords"
+      content="deepSea,deepc,DeepSeek Harness,dsh,插件,plugin,DeepSeek,插件生态,插件搜索,社区"
+    />
+    <link rel="canonical" href="https://deepc.cn/" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0a1a3a" />
+    <meta name="author" content="deepSea" />
+
+    <!-- ── Open Graph（社交分享卡片）───────────────────────────────── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="deepSea" />
+    <meta property="og:title" content="deepSea · DeepSeek Harness 插件生态社区" />
+    <meta
+      property="og:description"
+      content="发现与搜索 DeepSeek Harness 插件、参与插件生态讨论、一站式安装与管理插件。"
+    />
+    <meta property="og:url" content="https://deepc.cn/" />
+    <meta property="og:image" content="https://deepc.cn/deepsea.png" />
+    <meta property="og:locale" content="zh_CN" />
+
+    <!-- ── Twitter Card ────────────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="deepSea · DeepSeek Harness 插件生态社区" />
+    <meta
+      name="twitter:description"
+      content="发现与搜索 DeepSeek Harness 插件、参与插件生态讨论、一站式安装与管理插件。"
+    />
+    <meta name="twitter:image" content="https://deepc.cn/deepsea.png" />
+
+    <!-- ── 结构化数据（JSON-LD）────────────────────────────────────── -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "deepSea",
+        "alternateName": "deepc.cn",
+        "url": "https://deepc.cn/",
+        "description": "DeepSeek Harness（dsh）插件生态社区：插件发现、搜索、安装与社区讨论。",
+        "inLanguage": "zh-CN",
+        "publisher": {
+          "@type": "Organization",
+          "name": "deepSea",
+          "url": "https://deepc.cn/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://deepc.cn/deepsea.svg"
+          }
+        }
+      }
+    </script>
+
+    <!-- ── 预连接：前端 octokit 直调 GitHub API，减少握手延迟 ─────── -->
+    <link rel="preconnect" href="https://api.github.com" crossorigin />
+    <link rel="preconnect" href="https://github.com" crossorigin />
+    <link rel="preconnect" href="https://avatars.githubusercontent.com" crossorigin />
   </head>
   <body>
     <div id="root"></div>

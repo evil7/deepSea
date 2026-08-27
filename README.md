@@ -10,24 +10,24 @@
 
 ## 核心功能
 
-| 功能 | 说明 |
-|------|------|
-| **插件生态搜索** | 全 GitHub 按 topics / 关键词搜索，汇聚 `dsh` · `dsh-plugin` · `cordis` 等周边生态 |
-| **插件精选** | 热门 / 最新精选画廊，封面流呈现生态亮点，直达插件详情 |
-| **Discussions 社区** | 蓝鲸酒馆双社区：官方只读直连 + 自家可互动，分区清晰 |
-| **安装与互助** | 统一生成 `dsh plugin add` 安装指引，直连插件 issues 发起提问 |
-| **多端互联** | deepc-link 插件经 WebRTC 加密通道远程控制本地 DSH host |
+| 功能                 | 说明                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| **插件生态搜索**     | 全 GitHub 按 topics / 关键词搜索，汇聚 `dsh-plugin` 周边生态  |
+| **插件精选**         | 热门 / 最新精选画廊，封面流呈现生态亮点，直达插件详情         |
+| **Discussions 社区** | 蓝鲸酒馆双社区：官方只读直连 + 自家可互动，分区清晰           |
+| **安装与互助**       | 统一生成检索安装指引，直连插件 Github issues 发起提问         |
+| **多端互联**         | deepc-link 插件经 `Tunnel+TOTP` 加密通道远程控制本地 DSH 节点 |
 
 ## 技术栈
 
-| 领域 | 选型 |
-|------|------|
-| 前端 | Vite + React 19 + TypeScript + shadcn/ui (Radix + Tailwind CSS v4) |
-| 动效 | animejs（展示 / 落地页） |
-| 数据 | octokit 直连 GitHub API（REST + GraphQL） |
-| 后端 | Cloudflare Worker（OAuth + 设备授权 + 信令 DO + 配置同步 + 审计） |
-| 互联 | deepc-link（node-datachannel WebRTC + WS 信令 + 加密 RTC 数据面） |
-| 包管理 | pnpm workspace monorepo |
+| 领域   | 选型                                                               |
+| ------ | ------------------------------------------------------------------ |
+| 前端   | Vite + React 19 + TypeScript + shadcn/ui (Radix + Tailwind CSS v4) |
+| 动效   | animejs（展示 / 落地页）                                           |
+| 数据   | octokit 直连 GitHub API（REST + GraphQL）                          |
+| 后端   | Cloudflare Worker（OAuth + 设备授权 + 信令 DO + 配置同步 + 审计）  |
+| 互联   | deepc-link（Cloudflare Tunnel + local Proxy + TOTP）               |
+| 包管理 | pnpm workspace monorepo                                            |
 
 ## 项目结构
 
