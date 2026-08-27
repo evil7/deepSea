@@ -67,12 +67,13 @@ const STAR_LEVELS = [
 ]
 
 /** 创建时间限制（created_at 距今 ≥ 该天数；0 = 不限）。
- *  缓存脚本不再按创建时间过滤，故默认「不限」；仅作额外筛选器供用户主动收紧。 */
+ *  缓存脚本不再按创建时间过滤，故默认「不限」；仅作额外筛选器供用户主动收紧。
+ *  仅存 value，标签渲染时经 i18n（t("plugins.createdDays", { count })）。 */
 const CREATED_LEVELS = [
-  { label: "All", value: 0 },
-  { label: "≥ 5 天", value: 5 },
-  { label: "≥ 15 天", value: 15 },
-  { label: "≥ 30 天", value: 30 },
+  { value: 0 },
+  { value: 5 },
+  { value: 15 },
+  { value: 30 },
 ]
 
 /** Action 同步分钟（每小时第 23 分钟 UTC，与 sync-plugin-seed.yml 一致） */

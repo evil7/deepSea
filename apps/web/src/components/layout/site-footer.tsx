@@ -8,33 +8,31 @@
 // 子页面（暗色背景）。移动端垂直堆叠，桌面横排。
 // ---------------------------------------------------------------------------
 
-import { Link } from "react-router-dom"
-import { useTranslation } from "react-i18next"
+import { Copyright } from "lucide-react"
+
+const YEAR = new Date().getFullYear()
 
 export function SiteFooter() {
-  const { t } = useTranslation()
   return (
     <footer className="shrink-0 border-t border-white/10 bg-slate-950/60 py-4 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 text-sm text-white/70 sm:flex-row sm:px-6">
-        {/* 品牌 + 定位 */}
+        {/* 左侧：品牌 + GitHub stars（均指向仓库） */}
         <div className="flex items-center gap-2">
-          <Link
-            to="/"
-            className="font-semibold tracking-tight text-white transition-colors hover:text-sky-200"
-          >
-            deepSea
-          </Link>
-          <span className="text-white/40">·</span>
-          <span>{t("home.heroTagline1")}</span>
-        </div>
-
-        {/* 右侧：GitHub stars + 版权 */}
-        <div className="flex items-center gap-4">
           <a
             href="https://github.com/evil7/deepSea"
             target="_blank"
             rel="noopener noreferrer"
-            className="transition-colors hover:text-white"
+            className="font-semibold tracking-tight text-white transition-colors hover:text-sky-200"
+          >
+            deepSea
+          </a>
+          <span className="text-white/40">·</span>
+          <a
+            href="https://github.com/evil7/deepSea"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-opacity hover:opacity-80"
+            aria-label="GitHub stars"
           >
             <img
               alt="GitHub Repo stars"
@@ -42,7 +40,21 @@ export function SiteFooter() {
               className="inline-block h-4 w-auto"
             />
           </a>
-          <span className="text-white/50">© 2026 deepSea</span>
+        </div>
+
+        {/* 右侧：版权 icon + 自动年份 · deePwn */}
+        <div className="flex items-center gap-1.5 text-white/50">
+          <Copyright className="size-3.5" />
+          <span>{YEAR}</span>
+          <span className="text-white/40">·</span>
+          <a
+            href="https://deepwn.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-colors hover:text-sky-200"
+          >
+            deePwn
+          </a>
         </div>
       </div>
     </footer>

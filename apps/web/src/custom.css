@@ -22,15 +22,25 @@
   --font-sans:
     "Inter Variable", "Inter", "PingFang SC", "Microsoft YaHei",
     system-ui, -apple-system, sans-serif;
-  /* 等宽字体：代码/仓库名等场景 */
+  /* 等宽字体：代码/仓库名等场景。
+     末尾追加中文字体回退：等宽拉丁字体不含中文 glyph，若只靠 generic
+     monospace，中文会回退到浏览器默认等宽字体（宋体系），与 --font-sans
+     的中文（PingFang SC / YaHei）不一致 —— 故补同一组中文回退，保证
+     font-mono 上下文里的中文与正文统一。 */
   --font-mono:
     ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas,
-    monospace;
+    "PingFang SC", "Microsoft YaHei", monospace;
 }
 
 /* —— 站点全局基调（unlayered） —— */
 html {
   color-scheme: light;
+  /* ⚠️ 关键覆盖：index.css 的 @theme inline 把 --font-sans 内联成
+     'Inter Variable', sans-serif（html { @apply font-sans } 用的是字面量），
+     custom.css 的 :root { --font-sans: ... }（含 PingFang SC 中文字体栈）因此
+     不生效。这里在 html 上显式引用 var(--font-sans)，unlayered 后加载，
+     优先级高于 @layer base，让站点完整字体栈真正落地。 */
+  font-family: var(--font-sans);
 }
 html.dark {
   color-scheme: dark;

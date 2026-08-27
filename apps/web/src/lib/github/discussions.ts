@@ -10,6 +10,7 @@
 
 import { githubGraphQL, getToken } from "@/lib/github/client"
 import { CACHE_FILES, loadCacheFile } from "@/lib/github/cache"
+import type { TFunction } from "i18next"
 import i18n from "@/i18n"
 
 /** 主社区（自有仓库，可互动） */
@@ -47,21 +48,25 @@ export interface CommunityInfo {
   counterpartSource: CommunitySource
 }
 
-/** 依据 source 解析社区配置（默认 dpc = 浪尖酒馆） */
+/** 依据 source 解析社区配置（默认 dpc = 浪尖酒馆）。
+ *  翻译函数可注入：组件传 useTranslation 的 t（引用随语言变化），
+ *  useMemo 依赖 [source, t] 即可在语言切换时重新解析；缺省回退模块级 i18n.t。 */
 export function resolveCommunity(
-  source: string | null | undefined
+  source: string | null | undefined,
+  tr?: TFunction
 ): CommunityInfo {
+  const t: TFunction = tr ?? (i18n.t.bind(i18n) as TFunction)
   if (source === "dsh") {
     return {
       source: "dsh",
       owner: OFFICIAL_OWNER,
       repo: OFFICIAL_REPO,
-      label: i18n.t("community.dshLabel"),
-      description: i18n.t("community.dshDesc"),
+      label: t("community.dshLabel"),
+      description: t("community.dshDesc"),
       // 是否可回复不再在此硬编码：详情页通过 GraphQL 探测每个 discussion 的
       // locked / state 动态判断（仅当管理员锁定或关闭该讨论时才显示只读）。
       createUrl: `https://github.com/${OFFICIAL_OWNER}/${OFFICIAL_REPO}/discussions/new`,
-      counterpartLabel: i18n.t("community.dpcLabel"),
+      counterpartLabel: t("community.dpcLabel"),
       counterpartSource: "dpc",
     }
   }
@@ -69,10 +74,10 @@ export function resolveCommunity(
     source: "dpc",
     owner: COMMUNITY_OWNER,
     repo: COMMUNITY_REPO,
-    label: i18n.t("community.dpcLabel"),
-    description: i18n.t("community.dpcDesc"),
+    label: t("community.dpcLabel"),
+    description: t("community.dpcDesc"),
     createUrl: `https://github.com/${COMMUNITY_OWNER}/${COMMUNITY_REPO}/discussions/new`,
-    counterpartLabel: i18n.t("community.dshLabel"),
+    counterpartLabel: t("community.dshLabel"),
     counterpartSource: "dsh",
   }
 }

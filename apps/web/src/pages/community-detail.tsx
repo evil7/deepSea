@@ -248,10 +248,13 @@ function ReplyEditor({
 /** 评论排序方式（作用于顶层评论；子回复恒按时间正序） */
 type SortMode = "oldest" | "newest" | "top"
 
-const SORT_OPTIONS: { value: SortMode; label: string }[] = [
-  { value: "oldest", label: "Oldest" },
-  { value: "newest", label: "Newest" },
-  { value: "top", label: "Top" },
+const SORT_OPTIONS: {
+  value: SortMode
+  labelKey: "communityDetail.sortOldest" | "communityDetail.sortNewest" | "communityDetail.sortTop"
+}[] = [
+  { value: "oldest", labelKey: "communityDetail.sortOldest" },
+  { value: "newest", labelKey: "communityDetail.sortNewest" },
+  { value: "top", labelKey: "communityDetail.sortTop" },
 ]
 
 /** 评论树节点（含已排序子回复） */
@@ -426,7 +429,7 @@ function CommentItem({
 }
 
 export function CommunityDetailPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { number } = useParams<{ number: string }>()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
   // 路由 source 段为静态段，需从 pathname 解析
@@ -436,7 +439,8 @@ export function CommunityDetailPage() {
   const { user } = useAuth()
   const { loginHref } = useAuthHrefs()
   // 社区来源：/community/dsh/:number（蓝鲸社区，只读）| /community/dpc/:number（浪尖酒馆）
-  const info = useMemo(() => resolveCommunity(source), [source])
+  // t 引用随语言变化 → 语言切换时重新解析社区文案（label/description/对侧名）
+  const info = useMemo(() => resolveCommunity(source, t), [source, t, i18n.language])
   const [detail, setDetail] = useState<DiscussionDetail | null>(null)
   const [state, setState] = useState<"loading" | "unauthorized" | "error" | "ok">(
     "loading"
@@ -619,7 +623,7 @@ export function CommunityDetailPage() {
               className="flex items-center gap-1 transition-colors hover:text-foreground"
             >
               <Home className="size-3.5" />
-              首页
+              {t("plugin.breadcrumbHome")}
             </Link>
             <span>/</span>
             <Link
@@ -753,7 +757,9 @@ export function CommunityDetailPage() {
             {/* 评论 bar：{n} comments（左）+ outline 排序 tabs（右），左右分布 */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
               <span className="text-sm font-medium text-foreground">
-                {detail.commentTotalCount} comments
+                {t("communityDetail.commentsCount", {
+                  count: detail.commentTotalCount,
+                })}
               </span>
               <div className="flex items-center gap-1">
                 {SORT_OPTIONS.map((opt) => (
@@ -768,7 +774,7 @@ export function CommunityDetailPage() {
                         : "border-border text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </button>
                 ))}
               </div>
@@ -868,7 +874,7 @@ export function CommunityDetailPage() {
             {/* 分类 */}
             <div className="rounded-xl border border-border bg-card p-5">
               <p className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground">
-                CATEGORY
+                {t("communityDetail.category")}
               </p>
               <div className="mt-3">
                 <Badge
@@ -887,7 +893,7 @@ export function CommunityDetailPage() {
             {detail.authorPosts.length > 0 && (
               <div className="rounded-xl border border-border bg-card p-5">
                 <p className="font-mono text-[10px] tracking-[0.25em] text-muted-foreground">
-                  MORE DISCUSSIONS
+                  {t("communityDetail.moreDiscussions")}
                 </p>
                 <ul className="mt-3 space-y-0.5">
                   {detail.authorPosts.map((p) => (
@@ -915,7 +921,7 @@ export function CommunityDetailPage() {
             <Button asChild className="w-full">
               <a href={detail.url} target="_blank" rel="noreferrer">
                 <ExternalLink className="size-4" />
-                在 GitHub 参与讨论
+                {t("communityDetail.joinOnGithub")}
               </a>
             </Button>
           </aside>

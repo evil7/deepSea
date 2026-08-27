@@ -1,5 +1,6 @@
 import { type LucideIcon } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -107,6 +108,7 @@ export function ComingSoonSlide({
   items,
   installHint,
 }: ComingSoonSlideProps) {
+  const { t } = useTranslation()
   return (
     <div className="mx-auto flex h-full w-full max-w-7xl flex-col justify-center px-4 py-16 sm:px-6">
       {/* 杂志化标题区：眉题 + 左对齐大标题 */}
@@ -145,7 +147,7 @@ export function ComingSoonSlide({
                       variant="secondary"
                       className="shrink-0 border-emerald-400/30 bg-emerald-400/10 font-mono text-emerald-300"
                     >
-                      已上线
+                      {t("comingSoon.launched")}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -244,7 +246,7 @@ export function ComingSoonSlide({
       {/* 占位标识 */}
       <p className="mt-8 flex items-center gap-2 text-xs text-white/40">
         <span className="size-1.5 rounded-full bg-cyan-400/70" />
-        该板块规划中，即将上线
+        {t("comingSoon.planning")}
       </p>
     </div>
   )

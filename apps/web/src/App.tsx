@@ -16,6 +16,7 @@ import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
 import { LinksPage } from "@/pages/links"
+import { LinkViewPage } from "@/pages/link-view"
 import { DeviceLoginPage } from "@/pages/device-login"
 import { RequireAuth } from "@/components/auth/require-auth"
 import { SiteFooter } from "@/components/layout/site-footer"
@@ -54,8 +55,10 @@ function seoForPath(pathname: string, t: SeoT) {
         source === "dsh" ? t("seo.postDshDesc") : t("seo.postDpcDesc"),
       canonical: `${SITE}/community/${source}/${number}`,
     }
-  }
-  switch (pathname) {
+  }  // 远端节点 /link/:nodeId 为 iframe 包装页：不收录（地址栏不暴露隧道域名）
+  if (pathname.startsWith("/link/")) {
+    return { title: t("seo.linkViewTitle"), noindex: true }
+  }  switch (pathname) {
     case "/":
       return {
         title: t("seo.homeTitle"),
@@ -105,17 +108,17 @@ function seoForPath(pathname: string, t: SeoT) {
 }
 
 export function App() {
-  const { i18n } = useTranslation()
+  const { t } = useTranslation()
   const location = useLocation()
 
   // SPA 路由级 SEO：随路径更新 title / description / canonical / robots；
-  // 语言切换时重算（i18n.language 进依赖）
+  // 语言切换时重算（useTranslation 的 t 引用随语言变化 → 进依赖即触发重算）
   const meta = useMemo(
     () =>
       seoForPath(location.pathname, (key, options) =>
-        String(i18n.t(key as never, options as never))
+        String(t(key as never, options as never))
       ),
-    [location.pathname, i18n]
+    [location.pathname, t]
   )
   usePageMeta(meta)
 
@@ -129,7 +132,9 @@ export function App() {
 
   // 二级功能页（/plugins、/plugin/...）：固定海底 + 背景虚化
   // /auth/* 为登录等纯功能路由（worker 处理），不改变海洋展示状态（视为首页）
+  // /link/:nodeId 为远端节点 iframe 包装页（不渲染 footer，见下）
   const isAuthRoute = location.pathname.startsWith("/auth/")
+  const isLinkView = location.pathname.startsWith("/link/")
   const isSubPage = !isAuthRoute && location.pathname !== "/"
 
   // 统一海洋状态：surface=海面（首页 hero/插件精选），deep=深海
@@ -208,6 +213,14 @@ export function App() {
             </RequireAuth>
           }
         />
+        <Route
+          path="/link/:nodeId"
+          element={
+            <RequireAuth>
+              <LinkViewPage />
+            </RequireAuth>
+          }
+        />
         <Route path="/device-login" element={<DeviceLoginPage />} />
         <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
         <Route path="/community/dsh" element={<CommunityPage />} />
@@ -238,7 +251,7 @@ export function App() {
 
       {/* 子页面共享 footer（首页 / 保留其专属三行布局 footer；/auth/* 为 Worker 路由不渲染；
           /link/:nodeId 为沉浸式全屏 chatUI，隐藏 footer 避免挤压） */}
-      {isSubPage && <SiteFooter />}
+      {isSubPage && !isLinkView && <SiteFooter />}
 
       {/* 全局提示（自行捕捞需登录等）
            · richColors：开启后 success/info/warning/error 各自醒目配色

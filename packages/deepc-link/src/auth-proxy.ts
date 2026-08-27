@@ -540,6 +540,22 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   })
   proxy.on('proxyReqWs', stripOrigin)
 
+  // 允许主站 iframe 嵌套（/link/:nodeId 统一路径包装）：剥离 X-Frame-Options 与
+  // CSP frame-ancestors —— dsh 3080 若带这些头会拒绝被 deepc.cn 嵌入。3081 本身
+  // 即鉴权边界（cookie 验签通过才会反代），剥离不影响安全；iframe 内仍走 cookie
+  // 鉴权（Partitioned 分区 cookie，见 setCookieHeader）。
+  proxy.on('proxyRes', (proxyRes) => {
+    delete proxyRes.headers['x-frame-options']
+    const csp = proxyRes.headers['content-security-policy']
+    if (typeof csp === 'string' && /\bframe-ancestors\b/i.test(csp)) {
+      proxyRes.headers['content-security-policy'] = csp
+        .split(';')
+        .map((s) => s.trim())
+        .filter((s) => !/^frame-ancestors\b/i.test(s))
+        .join('; ')
+    }
+  })
+
   /** TOTP secret（仅内存，由 host.ts 从 ~/.deepc 载入注入）。 */
   let secret: string | null = null
 

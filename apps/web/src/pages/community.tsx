@@ -93,14 +93,15 @@ function AuthorAvatar({ url, name }: { url?: string; name: string }) {
 }
 
 export function CommunityPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
   // 社区来源：/community/dsh（蓝鲸社区，只读）| /community/dpc（浪尖酒馆，可互动）
   // 路由为静态段（无 :source 参数），需从 pathname 解析来源
   const { pathname } = useLocation()
   const source: CommunitySource =
     pathname.split("/")[2] === "dsh" ? "dsh" : "dpc"
-  const info = useMemo(() => resolveCommunity(source), [source])
+  // t 引用随语言变化 → 语言切换时重新解析社区文案（label/description/对侧名）
+  const info = useMemo(() => resolveCommunity(source, t), [source, t, i18n.language])
 
   // 社区主题配色：注入 CSS 变量，社区组件通过 --theme-primary/secondary/accent 自适应
   const theme: ThemeColors = COMMUNITY_THEME[info.source]

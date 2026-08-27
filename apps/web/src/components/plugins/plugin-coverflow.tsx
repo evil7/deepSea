@@ -458,7 +458,7 @@ export function PluginFanDeck({ repos }: { repos: PluginRepo[] }) {
                           variant="outline"
                           className="border-amber-400/40 bg-amber-400/10 text-amber-300"
                         >
-                          官方
+                          {t("common.official")}
                         </Badge>
                       )}
                     </div>

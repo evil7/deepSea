@@ -7,10 +7,12 @@
 //   3. managed 主站纳管：登录后插件上报最新 URL，本页列出（断链自动重连上报）。
 //
 // 主站只纳管 URL，不存任何 secret（TOTP 动态码由用户本地 2FA 应用生成）。
-// 卡片「打开」= 新窗口打开节点 URL，进入 3081 鉴权页输入 2FA 码。
+// 卡片「打开」= 站内导航到 /link/<nodeId> iframe 包装页（地址栏不暴露隧道域名，
+// 免密直连 ticket / 手动 2FA 都在包装页内完成）。
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { Badge } from "@/components/ui/badge"
@@ -33,17 +35,15 @@ import { cn } from "@/lib/utils"
 import {
   listTunnels,
   deleteTunnel,
-  requestAccess,
   type TunnelNodeView,
-  type TunnelTicket,
 } from "@/lib/deepc-link/tunnels"
 import {
   Check,
   Copy,
-  ExternalLink,
   Globe,
   Laptop,
   Loader2,
+  PanelRightOpen,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -173,31 +173,6 @@ function prettyHost(url: string): string {
   return host.split(".")[0] || ""
 }
 
-/** 提交一次性 ticket 到隧道（form urlencoded POST，新窗口；3081 验签后种 cookie 302 进入）。 */
-function postTicket(url: string, ticket: TunnelTicket): void {
-  const form = document.createElement("form")
-  form.method = "POST"
-  form.action = `${url.replace(/\/+$/, "")}/__deepc_ticket`
-  form.target = "_blank"
-  form.rel = "noreferrer"
-  const fields: Record<string, string> = {
-    nodeId: ticket.nodeId,
-    ts: String(ticket.ts),
-    nonce: ticket.nonce,
-    sig: ticket.sig,
-  }
-  for (const [k, v] of Object.entries(fields)) {
-    const input = document.createElement("input")
-    input.type = "hidden"
-    input.name = k
-    input.value = v
-    form.appendChild(input)
-  }
-  document.body.appendChild(form)
-  form.submit()
-  form.remove()
-}
-
 /** 隧道节点卡片：名称 + 状态 + 二级域名 + 打开 + 删除。在线状态由前端 WS 探测（纯前端）。 */
 function TunnelCard({
   node,
@@ -207,9 +182,9 @@ function TunnelCard({
   onDelete: () => void
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [opening, setOpening] = useState(false)
   // 在线探测：前端直连节点隧道地址的 __deepc_probe WS 端点做 ping/pong（不写 DB）。
   const [live, setLive] = useState<"connecting" | "online" | "offline">("connecting")
   const host = prettyHost(node.url)
@@ -295,21 +270,10 @@ function TunnelCard({
     window.setTimeout(() => setCopied(false), 1200)
   }
 
-  const handleOpen = async () => {
-    if (opening) return
-    setOpening(true)
-    try {
-      // 优先免密直连（bypass）：主站签一次性 ticket → form POST → 3081 验签进入。
-      const access = await requestAccess(node.nodeId)
-      if (access) {
-        postTicket(access.url, access.ticket)
-      } else {
-        // 未启用 bypass / 无权限：回退到「新窗口打开 + 手动输 TOTP」。
-        window.open(node.url, "_blank", "noopener")
-      }
-    } finally {
-      setOpening(false)
-    }
+  // 打开 = 站内导航到 /link/<nodeId>（iframe 内嵌，地址栏不暴露隧道域名；
+  // ticket/bypass 与手动 2FA 流程都在包装页内处理）。
+  const handleOpen = () => {
+    navigate(`/link/${node.nodeId}`)
   }
 
   return (
@@ -360,8 +324,8 @@ function TunnelCard({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="sm" className="flex-1 gap-1.5" onClick={() => void handleOpen()} disabled={opening || isOffline}>
-            {opening ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />}
+          <Button size="sm" className="flex-1 gap-1.5" onClick={handleOpen} disabled={isOffline}>
+            <PanelRightOpen className="size-3.5" />
             {t("links.open")}
           </Button>
           <Button
