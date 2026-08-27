@@ -12,6 +12,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface DirEntry {
   name: string
@@ -162,6 +163,7 @@ function icon(svg: string): React.ReactElement {
 
 /** 目录浏览对话框（远端路径选择 UI）。 */
 export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactElement | null {
+  const { t } = useTranslation()
   ensureStyle()
   const { open, busy, listDirectory, createDirectory, listRoots, onOpen, onClose } = props
   const [listing, setListing] = React.useState<DirectoryListing | null>(null)
@@ -195,7 +197,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
         setSelected(l.path)
       })
       .catch(() => {
-        if (!ctrl.signal.aborted) setError('目录加载失败')
+        if (!ctrl.signal.aborted) setError(t('directory.loadFailed'))
       })
       .finally(() => setLoading(false))
     return () => ctrl.abort()
@@ -213,7 +215,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
         setListing(l)
         setSelected(l.path)
       })
-      .catch(() => setError('目录加载失败'))
+      .catch(() => setError(t('directory.loadFailed')))
       .finally(() => setLoading(false))
   }
 
@@ -225,7 +227,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
         setRoots(r)
         setRootsOpen(true)
       })
-      .catch(() => setError('读取盘符失败'))
+      .catch(() => setError(t('directory.rootsFailed')))
   }
 
   /** 判断面包屑名是否为 Windows 盘符根（C:/D:/…）。 */
@@ -243,7 +245,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
         navigate(p)
       })
       .catch(() => {
-        setError('新建文件夹失败')
+        setError(t('directory.createFailed'))
         setCreating(false)
       })
   }
@@ -256,7 +258,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
     React.createElement(
       'div',
       { className: '__dcb_dp-dialog' },
-      React.createElement('div', { className: '__dcb_dp-head' }, '选择工作区目录'),
+      React.createElement('div', { className: '__dcb_dp-head' }, t('directory.title')),
       React.createElement(
         'div',
         { className: '__dcb_dp-crumbs' },
@@ -289,7 +291,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
         { className: '__dcb_dp-list' },
         rootsOpen
           ? roots.length === 0
-            ? React.createElement('div', { className: '__dcb_dp-status' }, '（无可用盘符）')
+            ? React.createElement('div', { className: '__dcb_dp-status' }, t('directory.noRoots'))
             : roots.map((r) => (
                 React.createElement(
                   'div',
@@ -307,9 +309,9 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
                 )
               ))
           : loading
-            ? React.createElement('div', { className: '__dcb_dp-status' }, '加载中…')
+            ? React.createElement('div', { className: '__dcb_dp-status' }, t('directory.loading'))
             : listing.entries.length === 0
-              ? React.createElement('div', { className: '__dcb_dp-status' }, '（空目录）')
+              ? React.createElement('div', { className: '__dcb_dp-status' }, t('directory.empty'))
               : listing.entries.map((en) => {
                   const sel = selected === en.path
                   return React.createElement(
@@ -328,7 +330,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
                   )
                 }),
         listing.truncated
-          ? React.createElement('div', { className: '__dcb_dp-status' }, '文件夹过多，仅显示前 1000 项。')
+          ? React.createElement('div', { className: '__dcb_dp-status' }, t('directory.truncated'))
           : null,
       ),
       creating
@@ -338,7 +340,7 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
             React.createElement('input', {
               className: '__dcb_dp-input',
               autoFocus: true,
-              placeholder: '文件夹名称',
+              placeholder: t('directory.folderName'),
               value: newName,
               onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value),
               onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -346,8 +348,8 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
                 if (e.key === 'Escape') setCreating(false)
               },
             }),
-            React.createElement('button', { className: '__dcb_dp-btn __dcb_dp-primary', onClick: doCreate }, '创建'),
-            React.createElement('button', { className: '__dcb_dp-btn', onClick: () => setCreating(false) }, '取消'),
+            React.createElement('button', { className: '__dcb_dp-btn __dcb_dp-primary', onClick: doCreate }, t('directory.create')),
+            React.createElement('button', { className: '__dcb_dp-btn', onClick: () => setCreating(false) }, t('directory.cancel')),
           )
         : React.createElement(
             'div',
@@ -355,14 +357,14 @@ export function DirectoryBrowser(props: DirectoryBrowserProps): React.ReactEleme
             React.createElement(
               'button',
               { className: '__dcb_dp-btn', onClick: () => setCreating(true) },
-              '新建文件夹',
+              t('directory.newFolder'),
             ),
             React.createElement('div', { className: '__dcb_dp-spacer' }),
-            React.createElement('button', { className: '__dcb_dp-btn', onClick: onClose }, '取消'),
+            React.createElement('button', { className: '__dcb_dp-btn', onClick: onClose }, t('directory.cancel')),
             React.createElement(
               'button',
               { className: '__dcb_dp-btn __dcb_dp-primary', disabled: busy, onClick: () => onOpen(openTarget) },
-              '打开',
+              t('directory.open'),
             ),
           ),
       error ? React.createElement('div', { className: '__dcb_dp-status __dcb_dp-err' }, error) : null,

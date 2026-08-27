@@ -32,18 +32,36 @@ export interface ConnectionHandle {
   [key: string]: unknown
 }
 
-/** settingsScope 的共享 describe mirror（dsh-client-ui-settings 提供）。 */
+/**
+ * settingsScope 的共享 describe mirror（dsh-client-ui-settings 提供）。
+ * 宽松形状：描述面真实接口为 getSnapshot/subscribe/ensure/acceptView，
+ * 旧版 persistence/load 已不在此面（保留 [key: string]: unknown 兼容运行时探测）。
+ */
 export interface SettingsDescribeMirror {
-  /** "host" = 走 settings.describe RPC；"memory" = 远端回退（不读）。 */
-  persistence: string
-  /** 从 host 拉取 settings.describe。 */
-  load: () => unknown
+  /** 从 host 拉取 settings.describe（旧版签名，新版为 ensure()；运行时探测）。 */
+  load?: () => unknown
+  [key: string]: unknown
+}
+
+/**
+ * settingsScope 绑定的单 namespace scope（bind({namespace}) 返回）。
+ * 宽松形状：真实接口见 dsh-client-runtime 的 SettingsScope<T>。
+ */
+export interface SettingsNamespaceScope {
+  getSnapshot: () => {
+    status?: string
+    value?: Record<string, unknown>
+    [key: string]: unknown
+  }
+  subscribe: (listener: () => void) => () => void
   [key: string]: unknown
 }
 
 /** settingsScope 服务（SettingsScopeBinder）。 */
 export interface SettingsScopeService {
   describe: () => SettingsDescribeMirror
+  /** 绑定一个 settings namespace 的 scope（如 { namespace: 'locale' }）。 */
+  bind: (spec: { namespace: string }) => SettingsNamespaceScope
 }
 
 /** deepc-link client 端 monkey-patch 所需的 cordis ctx 面。 */
@@ -118,10 +136,14 @@ function patchSettingsMirror(ctx: MonkeyPatchCtx): void {
   if (connection && typeof connection.isLoopback === 'boolean') {
     connection.isLoopback = true
   }
-  const mirror = ctx.settingsScope?.describe?.()
+  // 新版 dsh：describe face 无 persistence/load 字段（改 getSnapshot/subscribe/ensure），
+  // 远端 memory 模式不再通过改 mirror 字段恢复；此处保留运行时探测——若旧版字段存在才补救。
+  const mirror = ctx.settingsScope?.describe?.() as
+    | (SettingsDescribeMirror & { persistence?: string; load?: () => unknown })
+    | undefined
   if (mirror && mirror.persistence === 'memory') {
     mirror.persistence = 'host'
-    void mirror.load()
+    void mirror.load?.()
   }
 }
 

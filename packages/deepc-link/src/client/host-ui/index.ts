@@ -8,6 +8,7 @@
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
 import { animate } from 'animejs'
+import { useTranslation } from 'react-i18next'
 
 import { deepcCall, prettySubdomain, prettyHost, copyToClipboard } from './api'
 import { HOST_ZONE_ID, HOST_UI_STYLE_ID, SHEET_ID, TRIGGER_ID, isOfficialLocalOrigin, isRemoteContext } from './constants'
@@ -32,29 +33,32 @@ const INITIAL_STATUS: BackendStatus = {
   otpauthUri: null,
 }
 
-/** 隧道状态机 → 副文案。 */
-function tunnelSubText(status: BackendStatus): { text: string; url: string | null } {
+/** 隧道状态机 → 副文案（t 由调用组件传入，保持纯函数）。 */
+function tunnelSubText(
+  status: BackendStatus,
+  t: (key: string) => string,
+): { text: string; url: string | null } {
   const st = status.tunnelState ?? 'off'
   switch (st) {
     case 'off':
-      return { text: '通过 Cloudflare 暴露到公网', url: null }
+      return { text: t('host.tunnelOff'), url: null }
     case 'download-pending':
-      return { text: 'cloudflared 待下载', url: null }
+      return { text: t('host.tunnelDownloadPending'), url: null }
     case 'downloading':
-      return { text: 'cloudflared 下载中…', url: null }
+      return { text: t('host.tunnelDownloading'), url: null }
     case 'downloaded':
-      return { text: 'cloudflared 已下载', url: null }
+      return { text: t('host.tunnelDownloaded'), url: null }
     case 'starting':
-      return { text: '隧道连接中…', url: null }
+      return { text: t('host.tunnelStarting'), url: null }
     case 'running':
     case 'managed': {
       // 最终态：去掉「已纳管/已启动」前缀，只显示二级域字段；无 url 时兑底显示状态文案。
       return status.url
         ? { text: prettySubdomain(status.url), url: status.url }
-        : { text: st === 'managed' ? '已纳管' : '已启动', url: null }
+        : { text: st === 'managed' ? t('host.tunnelManaged') : t('host.tunnelRunning'), url: null }
     }
     default:
-      return { text: '隧道连接中…', url: null }
+      return { text: t('host.tunnelStarting'), url: null }
   }
 }
 
@@ -68,6 +72,7 @@ function Head({
   onLogin: () => void
   onLogout: () => void
 }): React.ReactElement {
+  const { t } = useTranslation()
   const p = status.profile
   const brand = h(
     'div',
@@ -77,7 +82,7 @@ function Head({
       'div',
       null,
       h('div', { className: 'dcb-brand-title' }, 'deepSea'),
-      h('div', { className: 'dcb-brand-sub' }, '远端互联'),
+      h('div', { className: 'dcb-brand-sub' }, t('host.brandSub')),
     ),
   )
   if (status.loggedIn && p) {
@@ -91,7 +96,7 @@ function Head({
         { className: 'dcb-head-right' },
         h(
           'div',
-          { className: 'dcb-head-user', title: '点击登出', onClick: onLogout },
+          { className: 'dcb-head-user', title: t('host.clickToLogout'), onClick: onLogout },
           h('span', { className: 'dcb-user-name' }, name),
           h(Avatar, { login: p.login, avatarUrl: p.avatar_url }),
         ),
@@ -107,7 +112,7 @@ function Head({
       { className: 'dcb-head-right' },
       h('button', {
         className: 'dcb-head-login',
-        title: '登录主站',
+        title: t('host.loginMain'),
         onClick: onLogin,
         dangerouslySetInnerHTML: { __html: USER_ICON },
       }),
@@ -123,6 +128,7 @@ function OtpPanel({
   status: BackendStatus
   onShowQr: () => void
 }): React.ReactElement {
+  const { t } = useTranslation()
   const { code, remainSec, expiring, progress } = useTotpCode(status.totpSecret)
   return h(
     'div',
@@ -133,10 +139,10 @@ function OtpPanel({
       h(
         'span',
         { className: 'dcb-otp-label dcb-otp-label-row' },
-        '2FA 安全码',
+        t('host.otpLabel'),
         h('button', {
           className: 'dcb-otp-qr-trigger',
-          title: '显示二维码绑定',
+          title: t('host.showQrTitle'),
           onClick: onShowQr,
           dangerouslySetInnerHTML: { __html: QR_ICON },
         }),
@@ -169,6 +175,7 @@ function QrPanel({
   onClose: () => void
   onRotate: () => void
 }): React.ReactElement {
+  const { t } = useTranslation()
   const qrUrl = useQrDataUrl(status.otpauthUri)
   const [copied, setCopied] = React.useState(false)
   return h(
@@ -177,12 +184,12 @@ function QrPanel({
     h(
       'div',
       { className: 'dcb-otp-head' },
-      h('span', { className: 'dcb-otp-label' }, '绑定 2FA'),
+      h('span', { className: 'dcb-otp-label' }, t('host.bind2fa')),
       h(
         'button',
-        { className: 'dcb-iconbtn dcb-qr-back', title: '返回', onClick: onClose },
+        { className: 'dcb-iconbtn dcb-qr-back', title: t('host.back'), onClick: onClose },
         h(Icon, { svg: BACK_ICON, className: 'dcb-qr-back-icon' }),
-        '返回',
+        t('host.back'),
       ),
     ),
     h(
@@ -192,8 +199,8 @@ function QrPanel({
         'div',
         { className: 'dcb-qr-card dcb-qr-card--front' },
         qrUrl
-          ? h('img', { className: 'dcb-qr', alt: '2FA 二维码', src: qrUrl })
-          : h('div', { className: 'dcb-qr-placeholder' }, status.otpauthUri ? '二维码生成中…' : '无法生成二维码'),
+          ? h('img', { className: 'dcb-qr', alt: t('host.qrAlt'), src: qrUrl })
+          : h('div', { className: 'dcb-qr-placeholder' }, status.otpauthUri ? t('host.qrGenerating') : t('host.qrFailed')),
       ),
       h(
         'div',
@@ -222,9 +229,9 @@ function QrPanel({
             })
           },
         },
-        copied ? h(Icon, { svg: CHECK_ICON, className: 'dcb-qr-copy-check' }) : '复制',
+        copied ? h(Icon, { svg: CHECK_ICON, className: 'dcb-qr-copy-check' }) : t('host.copy'),
       ),
-      h('button', { className: 'dcb-iconbtn danger', onClick: onRotate }, '重置'),
+      h('button', { className: 'dcb-iconbtn danger', onClick: onRotate }, t('host.reset')),
     ),
   )
 }
@@ -241,17 +248,18 @@ function Group({
   onTunnel: (on: boolean) => void
   onDevMode: (on: boolean) => void
 }): React.ReactElement {
+  const { t } = useTranslation()
   const localOn = status.localOn !== false
   // 地址只显示 ip:port（去 http:// 前缀）；复制仍复制完整 URL（可直接粘贴到浏览器访问）。
   const localSub = localOn
-    ? (status.localUrl ? prettyHost(status.localUrl) : '局域网可访问本机 3081 端口')
-    : '已关闭，仅本机可访问'
-  const tunnel = tunnelSubText(status)
+    ? (status.localUrl ? prettyHost(status.localUrl) : t('host.localAccess'))
+    : t('host.localClosed')
+  const tunnel = tunnelSubText(status, (k) => t(k as never))
   return h(
     'div',
     { className: 'dcb-group' },
     h(TierRow, {
-      label: '局域共享',
+      label: t('host.tierLocal'),
       sub: localSub,
       subTitle: status.localUrl ?? undefined,
       copyText: localOn ? (status.localUrl ?? undefined) : undefined,
@@ -259,7 +267,7 @@ function Group({
       onChange: onLocal,
     }),
     h(TierRow, {
-      label: '隧道映射',
+      label: t('host.tierTunnel'),
       sub: tunnel.text,
       subTitle: status.url ?? undefined,
       copyText: tunnel.url ?? undefined,
@@ -267,8 +275,8 @@ function Group({
       onChange: onTunnel,
     }),
     h(TierRow, {
-      label: '开发模式',
-      sub: '使用本地 127.0.0.1:5174 基址',
+      label: t('host.tierDevMode'),
+      sub: t('host.devModeSub'),
       checked: status.devMode ?? false,
       onChange: onDevMode,
     }),
@@ -283,17 +291,19 @@ function RemoteRow({
   status: BackendStatus
   onDisconnect: () => void
 }): React.ReactElement {
+  const { t } = useTranslation()
   const duration = useConnectedDuration(status.connectedAt, status.connected)
   return h(
     'div',
     { className: 'dcb-remote-row' },
     h('span', { className: 'dcb-remote-duration' }, duration),
-    h('button', { className: 'dcb-iconbtn danger', title: '断开连接', onClick: onDisconnect }, '断开'),
+    h('button', { className: 'dcb-iconbtn danger', title: t('host.remoteDisconnectTitle'), onClick: onDisconnect }, t('host.remoteDisconnect')),
   )
 }
 
 /** App 根组件（状态 + 组合 + 动画）。 */
 function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
+  const { t } = useTranslation()
   const [status, setStatus] = React.useState<BackendStatus>(INITIAL_STATUS)
   const [showQr, setShowQr] = React.useState(false)
 
@@ -421,8 +431,8 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
   }
 
   const onLogout = (): void => {
-    const name = status.profile?.name?.trim() || status.profile?.login || '当前账号'
-    if (window.confirm(`登出 ${name} 并断开互联？`)) {
+    const name = status.profile?.name?.trim() || status.profile?.login || t('host.currentAccount')
+    if (window.confirm(t('host.logoutConfirm', { name }))) {
       void deepcCall('logout').then(() => refreshStatus())
     }
   }
@@ -464,10 +474,12 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
     // 替换为提示页，明确告知会话已结束、可安全关闭标签。
     setTimeout(() => {
       if (window.closed) return
+      const ended = t('host.remoteEnded')
       document.body.innerHTML =
         '<div style="display:flex;align-items:center;justify-content:center;height:100vh;' +
         'font-family:system-ui,sans-serif;font-size:14px;color:#9aa6b8;background:#0f1115;">' +
-        '已断开远端会话，可安全关闭此标签页</div>'
+        ended.replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+        '</div>'
     }, 300)
   }
 
@@ -481,7 +493,7 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
     h(Fab, {
       ref: fabRef,
       innerHtml: DEEPSEA_LOGO,
-      title: 'deepSea 互联',
+      title: t('host.fabTitle'),
       onClick: onFabClick,
       onMouseEnter: () => {
         isHoveringRef.current = true

@@ -195,7 +195,7 @@
     "activity": "{{time}} · updated {{time2}}"
   },
   "links": {
-    "title": "Remote Interconnect",
+    "title": "Remote Link",
     "description": "Security codes are managed by your local 2FA app — connect quickly via Cloudflare Tunnels.",
     "managedNodes": "Managed nodes",
     "needLoginTitle": "Sign in to manage nodes",
@@ -254,7 +254,7 @@
     "dpcDesc": "deepSea's own community (Wave Crest Tavern): share plugins, ask questions, discuss the DeepSeek Harness ecosystem.",
     "dshTitle": "Blue Whale Community · Official DeepSeek Harness",
     "dshDesc": "Official DeepSeek Harness community (Blue Whale): announcements, plugin showcases, Q&A and ideas.",
-    "linksTitle": "Remote Interconnect · deepSea",
+    "linksTitle": "Remote Link · deepSea",
     "linksDesc": "Manage deepSea multi-device interconnect: local sharing, Tunnel mapping and managed nodes.",
     "deviceTitle": "Device Authorization · deepSea",
     "deviceDesc": "Sign in to deepSea with a device authorization code.",

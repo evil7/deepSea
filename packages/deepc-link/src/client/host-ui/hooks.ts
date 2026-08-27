@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { browserTotpCode, formatDuration, qrDataUrl } from './api'
 
 /** 6 位 TOTP 动态码 + 30s 倒计时（本地即 2FA 客户端）。secret 为 null 时显示占位。 */
@@ -70,11 +71,12 @@ export function useConnectedDuration(
   connectedAt: number | null | undefined,
   connected: boolean,
 ): string {
+  const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(iv)
   }, [])
   if (connectedAt) return formatDuration(now - connectedAt)
-  return connected ? '已连接' : '未连接'
+  return connected ? t('host.connected') : t('host.disconnected')
 }

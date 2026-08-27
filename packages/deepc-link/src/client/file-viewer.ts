@@ -11,6 +11,7 @@
 
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
+import { useTranslation } from 'react-i18next'
 
 /** 与 node 端 directory.ts 的 FilePreview 对齐（浏览器端仅消费，独立声明）。 */
 interface DirEntry {
@@ -98,9 +99,10 @@ function ensureStyle(): void {
 
 /** 目录/文本/二进制预览体。 */
 function PreviewBody({ path, view }: { path: string; view: FilePreview | null }): React.ReactElement {
-  if (view === null) return React.createElement('div', { className: '__dcb_fv-muted' }, '加载中…')
+  const { t } = useTranslation()
+  if (view === null) return React.createElement('div', { className: '__dcb_fv-muted' }, t('file.loading'))
   if (!view.ok) {
-    return React.createElement('div', { className: '__dcb_fv-err' }, view.error ?? '读取失败')
+    return React.createElement('div', { className: '__dcb_fv-err' }, view.error ?? t('file.readFailed'))
   }
   if (view.kind === 'directory' && view.listing) {
     const entries = view.listing.entries
@@ -120,7 +122,7 @@ function PreviewBody({ path, view }: { path: string; view: FilePreview | null })
         '⬆ ..',
       ),
       entries.length === 0
-        ? React.createElement('div', { className: '__dcb_fv-muted' }, '（空目录）')
+        ? React.createElement('div', { className: '__dcb_fv-muted' }, t('file.empty'))
         : entries.map((en) =>
             React.createElement(
               'div',
@@ -141,16 +143,17 @@ function PreviewBody({ path, view }: { path: string; view: FilePreview | null })
   return React.createElement(
     'div',
     { className: '__dcb_fv-muted' },
-    '该文件类型无法在浏览器内预览（',
+    t('file.binaryHint'),
     view.ext ? '.' + view.ext + '，' : '',
     Math.max(1, Math.round((view.size ?? 0) / 1024)),
-    ' KB）。',
-    React.createElement('div', { style: { marginTop: 8 } }, '路径：', path),
+    t('file.kb'),
+    React.createElement('div', { style: { marginTop: 8 } }, t('file.path'), path),
   )
 }
 
 /** 查看器 modal 组件（挂到 body，路径非空时渲染）。 */
 function FileViewer(): React.ReactElement | null {
+  const { t } = useTranslation()
   const snap = React.useSyncExternalStore(subscribe, getSnapshot)
   const [view, setView] = React.useState<FilePreview | null>(null)
   const path = snap.path
@@ -168,12 +171,12 @@ function FileViewer(): React.ReactElement | null {
         if (!cancelled) setView(v)
       })
       .catch(() => {
-        if (!cancelled) setView({ ok: false, error: '网络错误' })
+        if (!cancelled) setView({ ok: false, error: t('file.networkError') })
       })
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, t])
 
   if (!path) return null
   const close = (): void => setState({ path: null })
@@ -188,7 +191,7 @@ function FileViewer(): React.ReactElement | null {
         { className: '__dcb_fv-head' },
         React.createElement('span', { className: '__dcb_fv-title' }, view?.name ?? path.replace(/^.*[\\/]/, '')),
         React.createElement('span', { className: '__dcb_fv-path', title: path }, path),
-        React.createElement('button', { className: '__dcb_fv-close', title: '关闭', onClick: close }, '✕'),
+        React.createElement('button', { className: '__dcb_fv-close', title: t('file.close'), onClick: close }, '✕'),
       ),
       React.createElement('div', { className: '__dcb_fv-body' }, React.createElement(PreviewBody, { path, view })),
     ),

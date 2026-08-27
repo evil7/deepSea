@@ -3,6 +3,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { CHECK_ICON, COPY_ICON } from './icons'
 import { FAB_ID } from './constants'
 import { copyToClipboard } from './api'
@@ -68,10 +69,11 @@ export function Switch({
 
 /** 复制图标按钮（复制 → 对勾短暂反馈）。 */
 export function CopyButton({ text }: { text: string }): React.ReactElement {
+  const { t } = useTranslation()
   const [copied, setCopied] = React.useState(false)
   return h('button', {
     className: 'dcb-sub-copy' + (copied ? ' copied' : ''),
-    title: '复制完整地址',
+    title: t('host.copyFullUrl'),
     dangerouslySetInnerHTML: { __html: copied ? CHECK_ICON : COPY_ICON },
     onClick: () => {
       void copyToClipboard(text).then(() => {
