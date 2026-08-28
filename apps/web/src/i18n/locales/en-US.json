@@ -192,6 +192,8 @@
     "backTo": "Back to {{name}}",
     "startedAt": "Started {{time}}",
     "commentsCount": "{{count}} comments",
+    "commentsAndReplies": "{{comments}} comments · {{replies}} replies",
+    "repliesCount": "{{count}} replies",
     "votesCount": "{{count}} votes",
     "noComments": "No comments yet — be the first",
     "joinOnGithub": "Join on GitHub",

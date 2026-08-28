@@ -192,6 +192,8 @@
     "backTo": "返回{{name}}",
     "startedAt": "{{time}} 发起",
     "commentsCount": "{{count}} 条评论",
+    "commentsAndReplies": "{{comments}} 条评论 · {{replies}} 条回复",
+    "repliesCount": "{{count}} 条回复",
     "votesCount": "{{count}} 个投票",
     "noComments": "还没有评论，来抢沙发",
     "joinOnGithub": "前往 GitHub 参与",

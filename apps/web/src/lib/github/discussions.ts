@@ -169,8 +169,10 @@ export interface DiscussionDetail {
   upvoteCount: number
   /** 发起人的其他帖子（不含当前帖，最多 10 条） */
   authorPosts: AuthorPost[]
-  /** 评论总数（含嵌套回复；列表可能因 first 截断而少于总数） */
+  /** 评论总数（顶层评论数；列表可能因 first 截断而少于总数） */
   commentTotalCount: number
+  /** 回复总数（所有顶层评论的嵌套回复数之和，用于 "N comments · M replies" 统计） */
+  replyTotalCount: number
   /** 讨论主体的表情反应 */
   reactions: ReactionGroup[]
   comments: DiscussionComment[]
@@ -200,6 +202,8 @@ export interface DiscussionComment {
   /** 被回复的父评论作者 login（用于「回复 @xxx」引用，null = 顶层） */
   replyToAuthor: string | null
   reactions: ReactionGroup[]
+  /** 嵌套回复（GraphQL DiscussionComment.replies 连接，恒按时间正序；GitHub 回复为两层结构，回复不再嵌套回复） */
+  replies: DiscussionComment[]
 }
 
 export interface DiscussionSummary {
@@ -523,9 +527,42 @@ export function loadOfficialDiscussionsLive(): Promise<
   return fetchDiscussionsLive(OFFICIAL_OWNER, OFFICIAL_REPO, 50)
 }
 
+/** GraphQL 原始评论/回复节点（DiscussionComment） */
+interface RawCommentNode {
+  id: string
+  author: { login: string; avatarUrl: string }
+  body: string
+  createdAt: string
+  isAnswer: boolean
+  upvoteCount: number
+  replyTo?: { id: string; author: { login: string } } | null
+  reactionGroups?: RawReactionGroup[]
+  /** 嵌套回复连接（仅顶层评论上查询；GitHub 回复为两层结构） */
+  replies?: { totalCount: number; nodes?: RawCommentNode[] } | null
+}
+
+/** 递归归一化评论/回复节点（replies 恒时间正序，与 GitHub 返回顺序一致） */
+function mapCommentNode(c: RawCommentNode): DiscussionComment {
+  return {
+    id: c.id,
+    author: c.author.login,
+    avatarUrl: c.author.avatarUrl,
+    body: c.body,
+    createdAt: c.createdAt,
+    isAnswer: c.isAnswer,
+    upvoteCount: c.upvoteCount,
+    replyToId: c.replyTo?.id ?? null,
+    replyToAuthor: c.replyTo?.author?.login ?? null,
+    reactions: mapReactions(c.reactionGroups),
+    replies: (c.replies?.nodes ?? []).map(mapCommentNode),
+  }
+}
+
 /**
  * 通用：加载某仓库讨论详情（前端 octokit GraphQL 直调，需登录）。
  * 未登录/失败返回 null，不抛错。
+ * 评论层级：discussion.comments 连接只返回顶层评论，嵌套回复需通过每个
+ * 评论的 replies 连接获取（官方 UI 的 "N comments · M replies" 分别计数）。
  */
 async function fetchDiscussionDetail(
   owner: string,
@@ -552,21 +589,20 @@ async function fetchDiscussionDetail(
           reactionGroups?: RawReactionGroup[]
           comments: {
             totalCount: number
-            nodes: {
-              id: string
-              author: { login: string; avatarUrl: string }
-              body: string
-              createdAt: string
-              isAnswer: boolean
-              upvoteCount: number
-              replyTo?: { id: string; author: { login: string } } | null
-              reactionGroups?: RawReactionGroup[]
-            }[]
+            nodes?: RawCommentNode[]
           }
         } | null
       } | null
     }>(
-      `query ($owner: String!, $repo: String!, $number: Int!) {
+      `fragment CommentFields on DiscussionComment {
+        id
+        author { login avatarUrl }
+        body createdAt
+        isAnswer upvoteCount
+        replyTo { id author { login } }
+        reactionGroups { content users { totalCount } viewerHasReacted }
+      }
+      query ($owner: String!, $repo: String!, $number: Int!) {
         repository(owner: $owner, name: $repo) {
           id
           discussion(number: $number) {
@@ -578,12 +614,11 @@ async function fetchDiscussionDetail(
             comments(first: 100) {
               totalCount
               nodes {
-                id
-                author { login avatarUrl }
-                body createdAt
-                isAnswer upvoteCount
-                replyTo { id author { login } }
-                reactionGroups { content users { totalCount } viewerHasReacted }
+                ...CommentFields
+                replies(first: 100) {
+                  totalCount
+                  nodes { ...CommentFields }
+                }
               }
             }
           }
@@ -599,6 +634,12 @@ async function fetchDiscussionDetail(
       d.author.login,
       repoNode.id,
       number
+    )
+    const comments = (d.comments.nodes ?? []).map(mapCommentNode)
+    // 回复总数 = 各顶层评论 replies.totalCount 之和（totalCount 不受 first 截断影响，统计更精确）
+    const replyTotalCount = (d.comments.nodes ?? []).reduce(
+      (sum, c) => sum + (c.replies?.totalCount ?? 0),
+      0
     )
     return {
       id: d.id,
@@ -616,19 +657,9 @@ async function fetchDiscussionDetail(
       upvoteCount: d.upvoteCount,
       authorPosts,
       commentTotalCount: d.comments.totalCount,
+      replyTotalCount,
       reactions: mapReactions(d.reactionGroups),
-      comments: (d.comments.nodes ?? []).map((c) => ({
-        id: c.id,
-        author: c.author.login,
-        avatarUrl: c.author.avatarUrl,
-        body: c.body,
-        createdAt: c.createdAt,
-        isAnswer: c.isAnswer,
-        upvoteCount: c.upvoteCount,
-        replyToId: c.replyTo?.id ?? null,
-        replyToAuthor: c.replyTo?.author?.login ?? null,
-        reactions: mapReactions(c.reactionGroups),
-      })),
+      comments,
     }
   } catch {
     return null
@@ -731,12 +762,13 @@ export async function postDiscussionComment(
         avatarUrl: c.author.avatarUrl,
         body: c.body,
         createdAt: c.createdAt,
-        // 新发布的评论恒为顶层、非答案、零票
+        // 新发布的评论恒为顶层、非答案、零票、无回复
         isAnswer: false,
         upvoteCount: 0,
         replyToId: null,
         replyToAuthor: null,
         reactions: mapReactions(c.reactionGroups),
+        replies: [],
       },
     }
   } catch (err) {

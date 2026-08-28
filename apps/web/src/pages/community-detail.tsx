@@ -257,44 +257,26 @@ const SORT_OPTIONS: {
   { value: "top", labelKey: "communityDetail.sortTop" },
 ]
 
-/** 评论树节点（含已排序子回复） */
+/** 评论树节点：顶层评论（已按 sortMode 排序）+ 时间正序的嵌套回复 */
 interface CommentNode {
   comment: DiscussionComment
-  depth: number
-  children: CommentNode[]
+  replies: DiscussionComment[]
 }
 
-/** 最大视觉缩进层级：更深层回复不再继续缩进，避免内容被压扁 */
-const MAX_VISUAL_DEPTH = 3
-
-/**
- * 构建评论树：按 replyToId 挂子回复；顶层按 sortMode 排序，
- * 子回复恒按时间正序（自然对话顺序）。
- */
 /** 按时间正序排序（子回复对话顺序，恒正序） */
 function sortByTimeAsc(list: DiscussionComment[]): DiscussionComment[] {
   return list.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
+/**
+ * 构建评论树：顶层评论按 sortMode 排序，嵌套回复（来自 GraphQL replies
+ * 连接）恒按时间正序（自然对话顺序）。GitHub 回复为两层结构（评论 → 回复），
+ * 回复不再嵌套，因此无需递归深度。
+ */
 function buildCommentTree(
   comments: DiscussionComment[],
   sortMode: SortMode
 ): CommentNode[] {
-  const byId = new Map<string, DiscussionComment>()
-  for (const c of comments) byId.set(c.id, c)
-
-  const childrenOf = new Map<string, DiscussionComment[]>()
-  const roots: DiscussionComment[] = []
-  for (const c of comments) {
-    if (c.replyToId && byId.has(c.replyToId)) {
-      const arr = childrenOf.get(c.replyToId) ?? []
-      arr.push(c)
-      childrenOf.set(c.replyToId, arr)
-    } else {
-      roots.push(c)
-    }
-  }
-
   const sortRoots = (list: DiscussionComment[]) => {
     if (sortMode === "newest") {
       return list.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -308,22 +290,106 @@ function buildCommentTree(
     }
     return list.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
-
-  const build = (c: DiscussionComment, depth: number): CommentNode => ({
+  return sortRoots(comments).map((c) => ({
     comment: c,
-    depth,
-    children: sortByTimeAsc(childrenOf.get(c.id) ?? []).map((ch) =>
-      build(ch, depth + 1)
-    ),
-  })
-
-  return sortRoots(roots).map((r) => build(r, 0))
+    replies: sortByTimeAsc(c.replies),
+  }))
 }
 
 /**
- * 单条评论（递归渲染其子回复）
- * 树状层级：depth 1~3 每层「缩进 + 左侧竖线」，更深层不再缩进（防压扁）；
- * 回复他人时显示「回复 @xxx」引用；被采纳显示「已采纳答案」徽章。
+ * 单条回复（评论卡片内「回复板块」的一行，GitHub 官方回复样式）
+ * 竖向 steps 串联：左侧头像列（小头像节点 + 贯穿竖线，最后一条无竖线），
+ * 右侧内容（作者/时间/正文/反应条）。回复无边框卡片，弱于评论形成层级区分。
+ */
+function ReplyRow({
+  reply,
+  discussionAuthor,
+  canInteract,
+  onToggleReaction,
+  isLast,
+}: {
+  reply: DiscussionComment
+  discussionAuthor: string
+  canInteract: boolean
+  onToggleReaction: (subjectId: string, content: string, active: boolean) => void
+  /** 是否为板块内最后一条回复（决定竖线是否贯穿到底） */
+  isLast: boolean
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex gap-3">
+      {/* 头像列：头像节点 + 竖向连接线（steps 主干） */}
+      <div className="flex shrink-0 flex-col items-center">
+        <UserAvatar url={reply.avatarUrl} name={reply.author} size="sm" />
+        {!isLast && <div className="mt-1.5 w-px flex-1 bg-border/70" />}
+      </div>
+
+      {/* 内容 */}
+      <div className={cn("min-w-0 flex-1", !isLast && "pb-5")}>
+        {/* 头部：作者 · 徽章 · 时间 */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-semibold text-foreground">
+            {reply.author}
+          </span>
+          {reply.author === discussionAuthor && (
+            <Badge className="border-violet-400/40 bg-violet-400/10 font-mono text-[10px] text-violet-300">
+              {t("communityDetail.authorBadge")}
+            </Badge>
+          )}
+          {reply.isAnswer && (
+            <Badge className="border-emerald-400/40 bg-emerald-400/10 font-mono text-[10px] text-emerald-300">
+              <CheckCircle2 className="mr-1 size-3" />
+              {t("communityDetail.answerBadge")}
+            </Badge>
+          )}
+          <span className="text-xs text-muted-foreground">
+            · {formatRelativeTime(reply.createdAt)}
+          </span>
+        </div>
+
+        {/* 回复引用（回复他人时显示） */}
+        {reply.replyToAuthor && (
+          <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+            <CornerDownRight className="size-3" />
+            {t("communityDetail.reply")}
+            <span className="font-medium text-cyan-300">
+              @{reply.replyToAuthor}
+            </span>
+          </div>
+        )}
+
+        {/* 正文（无边框扁平，弱于评论卡片） */}
+        <div
+          className="readme-body markdown-body mt-1.5"
+          dangerouslySetInnerHTML={{
+            __html: DOMPurify.sanitize(renderMarkdown(reply.body), {
+              ADD_ATTR: ["target"],
+            }),
+          }}
+        />
+
+        {/* 反应条（虚线分隔，轻量） */}
+        <div className="mt-1.5 border-t border-dashed border-border/60 pt-1.5">
+          <ReactionBar
+            reactions={reply.reactions}
+            upvoteCount={reply.upvoteCount}
+            canInteract={canInteract}
+            onToggle={(content, active) =>
+              onToggleReaction(reply.id, content, active)
+            }
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 单条顶层评论：评论卡片 + 卡片内「回复板块」
+ * 回复板块仿 GitHub 官方样式：竖向 steps 将回复头像串联（小头像 + 贯穿竖线），
+ * 回复内容无边框扁平展示，与评论卡片形成层级区分。回复他人时显示
+ * 「回复 @xxx」引用；被采纳显示「已采纳答案」徽章。
  */
 function CommentItem({
   node,
@@ -337,27 +403,22 @@ function CommentItem({
   onToggleReaction: (subjectId: string, content: string, active: boolean) => void
 }) {
   const { t } = useTranslation()
-  const { comment, depth, children } = node
-  const indented = depth > 0 && depth <= MAX_VISUAL_DEPTH
+  const { comment, replies } = node
 
   return (
-    <div
-      className={cn(
-        indented && "relative ml-6 border-l-2 border-border pl-4 sm:ml-8 sm:pl-5"
-      )}
-    >
+    <div>
       <div className="flex gap-3">
-        {/* 头像（子回复用更小尺寸，降低视觉重量） */}
+        {/* 头像（顶层评论用大尺寸） */}
         <div className="shrink-0 pt-0.5">
           <UserAvatar
             url={comment.avatarUrl}
             name={comment.author}
-            size={indented ? "sm" : "lg"}
+            size="lg"
           />
         </div>
 
         {/* 内容 */}
-        <div className="min-w-0 flex-1 pb-5">
+        <div className="min-w-0 flex-1">
           {/* 头部：作者 · 徽章 · 时间 */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-semibold text-foreground">
@@ -411,19 +472,28 @@ function CommentItem({
               />
             </div>
           </div>
+
+          {/* 回复板块：竖向 steps 串联回复头像（GitHub 官方回复样式） */}
+          {replies.length > 0 && (
+            <div className="mt-3 border-t border-border/60 pt-3">
+              <div className="mb-2.5 flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <CornerDownRight className="size-3" />
+                {t("communityDetail.repliesCount", { count: replies.length })}
+              </div>
+              {replies.map((reply, idx) => (
+                <ReplyRow
+                  key={reply.id}
+                  reply={reply}
+                  discussionAuthor={discussionAuthor}
+                  canInteract={canInteract}
+                  onToggleReaction={onToggleReaction}
+                  isLast={idx === replies.length - 1}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* 子回复递归 */}
-      {children.map((child) => (
-        <CommentItem
-          key={child.comment.id}
-          node={child}
-          discussionAuthor={discussionAuthor}
-          canInteract={canInteract}
-          onToggleReaction={onToggleReaction}
-        />
-      ))}
     </div>
   )
 }
@@ -529,12 +599,16 @@ export function CommunityDetailPage() {
       if (prev.id === subjectId) {
         return { ...prev, reactions: apply(prev.reactions) }
       }
-      return {
-        ...prev,
-        comments: prev.comments.map((c) =>
-          c.id === subjectId ? { ...c, reactions: apply(c.reactions) } : c
-        ),
-      }
+      // 递归更新评论及其嵌套回复（replies 两层结构，乐观更新需下探）
+      const updateCommentReactions = (
+        list: DiscussionComment[]
+      ): DiscussionComment[] =>
+        list.map((c) =>
+          c.id === subjectId
+            ? { ...c, reactions: apply(c.reactions) }
+            : { ...c, replies: updateCommentReactions(c.replies) }
+        )
+      return { ...prev, comments: updateCommentReactions(prev.comments) }
     })
   }
 
@@ -764,11 +838,12 @@ export function CommunityDetailPage() {
               </div>
             </section>
 
-            {/* 评论 bar：{n} comments（左）+ outline 排序 tabs（右），左右分布 */}
+            {/* 评论 bar：{n} comments · {m} replies（左）+ outline 排序 tabs（右），左右分布 */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
               <span className="text-sm font-medium text-foreground">
-                {t("communityDetail.commentsCount", {
-                  count: detail.commentTotalCount,
+                {t("communityDetail.commentsAndReplies", {
+                  comments: detail.commentTotalCount,
+                  replies: detail.replyTotalCount,
                 })}
               </span>
               <div className="flex items-center gap-1">
