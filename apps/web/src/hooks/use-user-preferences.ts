@@ -101,7 +101,9 @@ export function useUserPreferences() {
           void applyLanguagePreference(merged.language, i18n)
         }
         if (merged.theme) {
-          setTheme(merged.theme)
+          // theme 字段持久化为宽松 string，此处已由 normalizePreferences
+          // 收敛为 "light" | "dark" | "system"，断言后传给 setTheme
+          setTheme(merged.theme as "light" | "dark" | "system")
         }
         markPreferencesFetchedAt(fetchedAtRef.current)
       } finally {

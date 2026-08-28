@@ -93,8 +93,11 @@ function writeCached(data: { user: AuthUser; token: string } | null): void {
  * in-flight 单例：并发调用（App/Topbar/LinksPage 各自 useAuth 首次挂载）复用同一
  * 请求，避免一次页面加载对 /auth/me 发多次并发请求（P0-1 消除业务自身浪费）。
  */
-let fetchMeInFlight: Promise<{ user: AuthUser; token: string } | null> | null =
-  null
+let fetchMeInFlight: Promise<{
+  user: AuthUser
+  token: string
+  destroyedAt: number | null
+} | null> | null = null
 
 /** 读取当前登录用户 + token（未登录返回 null；网络错误返回 null 不抛错）。
  * 账号已销毁（destroyed）时返回 { destroyedAt } 标记，token 为空。 */

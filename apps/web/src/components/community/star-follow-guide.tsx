@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, Star, UserPlus, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { toast, type ToastT } from "sonner"
+import { toast } from "sonner"
 
 import { useAuth } from "@/hooks/use-auth"
 import { octokit, getToken } from "@/lib/github/client"
@@ -260,9 +260,9 @@ export function StarFollowGuide({
       }
       // sonner 标准交互 toast：左下角 + 10s 自动关闭
       toastIdRef.current = toast.custom(
-        (t: ToastT) => (
+        (id: string | number) => (
           <StarFollowToast
-            toastId={t.id}
+            toastId={id}
             star={star}
             follow={follow}
             initialStarred={starredNow}
