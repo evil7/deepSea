@@ -136,7 +136,11 @@
     "pushedAt": "Last push",
     "latestRelease": "Latest release",
     "githubHome": "GitHub home",
-    "reportIssue": "Report issue"
+    "reportIssue": "Report issue",
+    "goodWorkStar": "Good work",
+    "needLoginStar": "Please sign in to star this plugin",
+    "starredToast": "Starred {{repo}} — thank you!",
+    "starFailed": "Failed to star, please retry"
   },
   "community": {
     "ownBadge": "Own community",

@@ -9,6 +9,7 @@ import {
   FolderGit2,
   GitFork,
   Home,
+  Loader2,
   RefreshCw,
   Star,
 } from "lucide-react"
@@ -18,6 +19,7 @@ import DOMPurify from "dompurify"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
 import remarkGfm from "remark-gfm"
+import { toast } from "sonner"
 // GitHub 官方 Markdown 排版（变量驱动 base 版，随站点浅色/深色主题自动切换）
 import "github-markdown-css/github-markdown.css"
 
@@ -28,6 +30,7 @@ import {
   resolveReadmeAssetUrl,
 } from "@/lib/github/repo"
 import type { RepoInfo, RepoReadme, RepoRelease } from "@/lib/github/types"
+import { octokit, getToken } from "@/lib/github/client"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { usePageEnter } from "@/components/showcase/page-enter"
@@ -98,6 +101,31 @@ export function PluginDetailPage() {
   const { t, i18n } = useTranslation()
   const { owner = "", repo = "" } = useParams()
   const [state, setState] = useState<DetailState>({ status: "loading" })
+  // 「好活当赏」star：进行中 / 已 star
+  const [starPending, setStarPending] = useState(false)
+  const [starred, setStarred] = useState(false)
+
+  /** 点击 Star → OAuth API 直接触发（PUT /user/starred；需登录） */
+  const handleStar = async () => {
+    if (starPending || starred) return
+    if (!getToken()) {
+      toast.warning(t("plugin.needLoginStar"))
+      return
+    }
+    setStarPending(true)
+    try {
+      await octokit.request("PUT /user/starred/{owner}/{repo}", {
+        owner,
+        repo,
+      })
+      setStarred(true)
+      toast.success(t("plugin.starredToast", { repo: `${owner}/${repo}` }))
+    } catch {
+      toast.error(t("plugin.starFailed"))
+    } finally {
+      setStarPending(false)
+    }
+  }
 
   const load = () => {
     setState({ status: "loading" })
@@ -386,6 +414,20 @@ export function PluginDetailPage() {
                     <FolderGit2 className="size-4" />
                     {t("plugin.githubHome")}
                   </a>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-border bg-muted text-foreground hover:bg-accent"
+                  onClick={() => void handleStar()}
+                  disabled={starPending || starred}
+                >
+                  {starPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Star className="size-4 text-amber-400" />
+                  )}
+                  {t("plugin.goodWorkStar")}
                 </Button>
                 <Button
                   asChild

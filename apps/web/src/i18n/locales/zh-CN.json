@@ -136,7 +136,11 @@
     "pushedAt": "最近推送",
     "latestRelease": "最新发布",
     "githubHome": "GitHub 主页",
-    "reportIssue": "问题反馈"
+    "reportIssue": "问题反馈",
+    "goodWorkStar": "好活当赏",
+    "needLoginStar": "请先登录，再为插件点亮 Star",
+    "starredToast": "已为 {{repo}} 点亮 Star，感谢支持！",
+    "starFailed": "Star 操作失败，请稍后重试"
   },
   "community": {
     "ownBadge": "自家社区",
