@@ -35,6 +35,15 @@ declare module '@deepseek-ai/cordis' {
       /** 绑定地址：'127.0.0.1' | '0.0.0.0'。 */
       readonly host: '127.0.0.1' | '0.0.0.0'
     }
+
+    /**
+     * dsh v0.1.2+ 浏览器 launch-token 认证（connection 服务）。
+     * 老版本 dsh 无此服务或方法 → 惰性访问返回 undefined，插件不注入依赖。
+     */
+    connection?: {
+      /** 返回带进程 launch token 的根 URL（如 http://127.0.0.1:3080/?token=…）。 */
+      authenticatedUrl?: (baseUrl: string) => string
+    }
   }
 }
 

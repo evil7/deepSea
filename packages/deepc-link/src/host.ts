@@ -48,6 +48,13 @@ export interface DeepcHostOptions {
   log?: (msg: string) => void
   /** dsh 实际监听端口（getter：listen 完成前可能返回 undefined，兜底 3080）。 */
   getDshPort?: () => number
+  /**
+   * dsh v0.1.2+ launch-token 浏览器认证适配：返回当前 dsh 进程的 launch token
+   * （老版本 dsh 无此能力 → null，反代透传兼容）。
+   */
+  getLaunchToken?: () => string | null
+  /** 当前 dsh 是否支持 launch-token（用于 host-ui 提示降级/升级）。 */
+  legacyDsh?: boolean
 }
 
 export interface DeepcHost {
@@ -97,6 +104,8 @@ export interface DeepcHostStatus {
   devMode: boolean
   /** 主站免密开关（bypass）。 */
   allowBypass: boolean
+  /** 当前 dsh 是否为不支持 launch-token 的旧版本（需降级插件或升级 dsh）。 */
+  legacyDsh?: boolean
   /** 互联建立时间戳（前端「时长」显示用；null = 未连接）。 */
   connectedAt: number | null
   /** 隧道映射状态机（off/待下载/下载中/已下载/启动中/已启动/已纳管）。 */
@@ -247,6 +256,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       namedTunnel: mode !== 'local' ? detectNamedTunnel() : null,
       proxyPort: resolveProxyPort(),
       upstream: resolveUpstream(),
+      getLaunchToken: opts.getLaunchToken,
       onExit: () => {
         // cloudflared 断链 → 先上报离线（主站实时标记），再退避重连（成功后 report 恢复在线）。
         // 指数退避：1s → 2s → 4s → … 上限 30s，避免 CF 限流(429)后疯狂重连。
@@ -285,10 +295,11 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
     }
   }
 
-  /** 持久化运行时状态（mode/localOn/devMode/allowBypass），刷新/重启后恢复。 */
+  /** 持久化运行时状态（mode/localOn/allowBypass），刷新/重启后恢复。
+   *  devMode 刻意不入持久化（见 loadPersisted：开发开关不跨进程保留）。 */
   async function persistState(): Promise<void> {
     try {
-      await persistFile('state.json', JSON.stringify({ mode, localOn, devMode, allowBypass }))
+      await persistFile('state.json', JSON.stringify({ mode, localOn, allowBypass }))
     } catch {
       /* 忽略写盘失败（降级为内存态） */
     }
@@ -307,11 +318,13 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
 
   /** 载入持久化的运行时状态 + device_token + TOTP secret。 */
   async function loadPersisted(): Promise<void> {
-    // 恢复运行时状态（mode/localOn/devMode/allowBypass）
+    // 恢复运行时状态（mode/localOn/allowBypass）
     const st = await readState()
     if (st.mode === 'local' || st.mode === 'tunnel' || st.mode === 'managed') mode = st.mode
     if (typeof st.localOn === 'boolean') localOn = st.localOn
-    if (typeof st.devMode === 'boolean') devMode = st.devMode
+    // devMode 刻意不恢复：开发调试开关跨进程持久化会把信令基址锁在本地
+    // 127.0.0.1:5174（未起 Vite 时上报必然 network-error → 隧道回退 local）。
+    // 重启 dsh 后始终回生产基址；需要调试时在面板重新打开开发模式。
     // allowBypass 已改为默认行为（恒 true），不再从 state 读回。
     // 恢复 device_token
     if (!token) {
@@ -461,6 +474,7 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
         otpauthUri: totpSecret ? otpauthUri(totpSecret, deviceName) : null,
         devMode,
         allowBypass,
+        legacyDsh: opts.legacyDsh,
         profile,
         error: lastError,
       }

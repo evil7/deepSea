@@ -301,6 +301,13 @@ function RemoteRow({
   )
 }
 
+/** 旧版 dsh 警告条：不支持最新浏览器认证时提示降级/升级（仅本地面板）。 */
+function LegacyDshNotice({ legacyDsh }: { legacyDsh?: boolean }): React.ReactElement | null {
+  const { t } = useTranslation()
+  if (!legacyDsh) return null
+  return h('div', { className: 'dcb-legacy-notice', role: 'alert' }, t('host.legacyDshNotice'))
+}
+
 /** App 根组件（状态 + 组合 + 动画）。 */
 function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
   const { t } = useTranslation()
@@ -526,6 +533,7 @@ function App({ remoteMode }: { remoteMode: boolean }): React.ReactElement {
       'div',
       { id: SHEET_ID, ref: sheetRef, className: remoteMode ? 'dcb-remote-sheet' : undefined, onClick: (e: React.MouseEvent) => e.stopPropagation() },
       remoteMode ? null : h(Head, { status, onLogin, onLogout }),
+      h(LegacyDshNotice, { legacyDsh: status.legacyDsh }),
       h(
         'div',
         { className: remoteMode ? 'dcb-body dcb-remote-body' : 'dcb-body' },

@@ -964,8 +964,6 @@ export function CommunityDetailPage() {
                       })}
                     </p>
                   </div>
-                  {/* 用户屏蔽快捷按钮（OP） */}
-                  <BlockUserButton login={detail.author} size="icon" className="self-start" />
                 </div>
 
                 <a

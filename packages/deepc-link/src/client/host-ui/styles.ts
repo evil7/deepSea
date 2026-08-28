@@ -62,6 +62,8 @@ body {
   pointer-events: auto;
 }
 .dcb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--dc-border); }
+/* 旧版 dsh 警告条（不支持 launch-token 浏览器认证时提示降级/升级） */
+.dcb-legacy-notice { margin: 12px 16px 0; padding: 9px 12px; border: 1px solid rgba(251, 191, 36, .35); border-radius: var(--dc-radius-sm); background: rgba(251, 191, 36, .08); color: #fbbf24; font-size: 12px; line-height: 1.5; }
 .dcb-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .dcb-brand-title { font-size: 15px; font-weight: 700; color: var(--dc-fg); line-height: 1.15; letter-spacing: -.01em; }
 .dcb-brand-sub { font-size: 11px; color: var(--dc-fg-dim); }

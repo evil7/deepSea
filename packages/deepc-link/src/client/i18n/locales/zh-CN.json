@@ -1,6 +1,7 @@
 {
   "host": {
     "fabTitle": "deepSea 互联",
+    "legacyDshNotice": "当前 dsh 版本较旧，不支持最新浏览器认证——请升级 dsh，或降级插件至 deepc-link@0.0.7",
     "brandSub": "远端互联",
     "clickToLogout": "点击登出",
     "loginMain": "登录主站",

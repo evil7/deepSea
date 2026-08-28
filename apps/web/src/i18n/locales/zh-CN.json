@@ -246,17 +246,6 @@
     "tunnelMode": "Tunnel 暴露",
     "managedMode": "主站纳管"
   },
-  "linkView": {
-    "back": "返回节点列表",
-    "loading": "加载节点…",
-    "connecting": "正在建立安全连接…",
-    "copyUrl": "复制完整地址",
-    "openInNewWindow": "新窗口打开",
-    "refresh": "重新连接",
-    "notFound": "未找到该节点",
-    "notFoundDesc": "节点可能已被删除，或不属于当前账号。请返回节点列表重新选择。",
-    "backToLinks": "返回节点列表"
-  },
   "device": {
     "title": "设备授权",
     "checking": "检查登录状态…",
@@ -290,7 +279,6 @@
     "dshDesc": "DeepSeek Harness 官方社区（蓝鲸社区）：官方公告、插件展示、Q&A 与想法征集。",
     "linksTitle": "多端互联 · deepSea",
     "linksDesc": "管理 deepSea 多端互联：本地共享、Tunnel 映射与主站纳管。",
-    "linkViewTitle": "远端连接 · deepSea",
     "deviceTitle": "设备授权登录 · deepSea",
     "deviceDesc": "使用设备授权码登录 deepSea。",
     "settingsTitle": "用户管理 · deepSea",

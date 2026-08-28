@@ -244,17 +244,6 @@
     "tunnelMode": "Tunnel",
     "managedMode": "Managed"
   },
-  "linkView": {
-    "back": "Back to nodes",
-    "loading": "Loading node…",
-    "connecting": "Establishing secure connection…",
-    "copyUrl": "Copy full address",
-    "openInNewWindow": "Open in new window",
-    "refresh": "Reconnect",
-    "notFound": "Node not found",
-    "notFoundDesc": "The node may have been deleted, or does not belong to this account. Return to the node list and pick another one.",
-    "backToLinks": "Back to nodes"
-  },
   "device": {
     "title": "Device Authorization",
     "checking": "Checking sign-in status…",
@@ -288,7 +277,6 @@
     "dshDesc": "Official DeepSeek Harness community (Blue Whale): announcements, plugin showcases, Q&A and ideas.",
     "linksTitle": "Remote Link · deepSea",
     "linksDesc": "Manage deepSea multi-device interconnect: local sharing, Tunnel mapping and managed nodes.",
-    "linkViewTitle": "Remote Connection · deepSea",
     "deviceTitle": "Device Authorization · deepSea",
     "deviceDesc": "Sign in to deepSea with a device authorization code.",
     "settingsTitle": "Account & Settings · deepSea",

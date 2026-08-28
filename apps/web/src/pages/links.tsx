@@ -7,12 +7,13 @@
 //   3. managed 主站纳管：登录后插件上报最新 URL，本页列出（断链自动重连上报）。
 //
 // 主站只纳管 URL，不存任何 secret（TOTP 动态码由用户本地 2FA 应用生成）。
-// 卡片「打开」= 站内导航到 /link/<nodeId> iframe 包装页（地址栏不暴露隧道域名，
-// 免密直连 ticket / 手动 2FA 都在包装页内完成）。
+// 卡片「打开」= 直接新标签打开节点隧道地址（顶层导航，官方 SameSite=Strict
+// launch-token cookie 第一方上下文正常工作）；有主站一次性 ticket 则自动免密
+// 进入（3081 验签 → 种 dc_site + 服务端交换官方会话 cookie → 302），否则在
+// 新标签内走 3081 内置 TOTP 2FA 页手动输码。不再有 iframe/引导包装页。
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { Badge } from "@/components/ui/badge"
@@ -35,7 +36,9 @@ import { cn } from "@/lib/utils"
 import {
   listTunnels,
   deleteTunnel,
+  requestAccess,
   type TunnelNodeView,
+  type TunnelTicket,
 } from "@/lib/deepc-link/tunnels"
 import {
   Check,
@@ -48,6 +51,34 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react"
+
+/** 命名新窗口名：ticket form POST 的 target（3081 验签后 302 进 dsh）。 */
+const NODE_WINDOW_NAME = "deepc-node-window"
+
+/** 提交一次性 ticket 到节点（form urlencoded POST，target 命名新窗口；
+ *  3081 验签后种 dc_site + 服务端交换官方 cookie + 302，免手动 2FA）。 */
+function postTicketToWindow(url: string, ticket: TunnelTicket): void {
+  const form = document.createElement("form")
+  form.method = "POST"
+  form.action = `${url.replace(/\/+$/, "")}/__deepc_ticket`
+  form.target = NODE_WINDOW_NAME
+  const fields: Record<string, string> = {
+    nodeId: ticket.nodeId,
+    ts: String(ticket.ts),
+    nonce: ticket.nonce,
+    sig: ticket.sig,
+  }
+  for (const [k, v] of Object.entries(fields)) {
+    const input = document.createElement("input")
+    input.type = "hidden"
+    input.name = k
+    input.value = v
+    form.appendChild(input)
+  }
+  document.body.appendChild(form)
+  form.submit()
+  form.remove()
+}
 
 export function LinksPage() {
   const { t } = useTranslation()
@@ -186,7 +217,6 @@ function TunnelCard({
   onDelete: () => void
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [copied, setCopied] = useState(false)
   // 在线探测：前端直连节点隧道地址的 __deepc_probe WS 端点做 ping/pong（不写 DB）。
@@ -276,10 +306,25 @@ function TunnelCard({
     window.setTimeout(() => setCopied(false), 1200)
   }
 
-  // 打开 = 站内导航到 /link/<nodeId>（iframe 内嵌，地址栏不暴露隧道域名；
-  // ticket/bypass 与手动 2FA 流程都在包装页内处理）。
-  const handleOpen = () => {
-    navigate(`/link/${node.nodeId}`)
+  // 打开 = 直接新标签打开节点隧道地址（顶层导航）。有主站一次性 ticket 则免密直连：
+  // 先开命名窗口定位节点域 → form POST ticket（3081 验签 → 种 dc_site + 服务端
+  // 交换官方会话 cookie → 302 进入）；无 ticket（未启用 bypass / 无权限）→ 新标签
+  // 直接打开，3081 内置 TOTP 2FA 页内手动输码。
+  const handleOpen = async () => {
+    if (!node.url) return
+    let ticket: TunnelTicket | null = null
+    try {
+      const access = await requestAccess(node.nodeId)
+      ticket = access?.ticket ?? null
+    } catch {
+      ticket = null
+    }
+    if (ticket) {
+      window.open(node.url, NODE_WINDOW_NAME)
+      postTicketToWindow(node.url, ticket)
+    } else {
+      window.open(node.url, "_blank", "noopener")
+    }
   }
 
   return (

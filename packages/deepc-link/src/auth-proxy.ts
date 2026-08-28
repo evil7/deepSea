@@ -8,17 +8,27 @@
  * 职责：
  *   · HTTP 反代 3080（path/headers/body 原样透传）
  *   · WebSocket 透传（WS hijack 双向转发）
- *   · TOTP 2FA 鉴权：无 dc_site cookie → 401 + 内置鉴权页 → POST /__deepc_auth
- *     （6 位动态码，RFC 6238 校验，±1 时间步容差）→ Set-Cookie dc_site
- *     （Partitioned）→ 302 回原路径
- *   · 防暴力：连续失败 5 次锁 1 小时（secret 级全局，remoteAddress 恒为本地
- *     cloudflared/局域网，基于 IP 限速无效）+ 审计日志 + 常量时间比较
+ *   · 门禁（二选一）：TOTP 2FA（POST /__deepc_auth，RFC 6238 ±1 步）或主站 bypass
+ *     ticket（POST /__deepc_ticket，一次性+短 TTL+nodeId 绑定）。门通过后：
+ *       1) 种门通行证 dc_site（SameSite=Strict，7 天，仅 3081 判定"已过门"）
+ *       2) 服务端原生 http 交换官方 launch-token（GET 127.0.0.1:3080/?token=，
+ *          token 只在本机往返，永不进浏览器 URL/公网）→ 原样透传官方 Set-Cookie
+ *          （dsh-auth-*，SameSite=Strict/HttpOnly/host-only 官方定义零改写）
+ *       3) 302 回原路径 → 浏览器携带官方 cookie 反代 → 官方裁决会话
+ *   · 防暴力：连续失败 5 次锁 1 小时 + 审计日志 + 常量时间比较
+ *
+ * 会话模型（双 cookie）：dc_site = 门通行证（短 TTL，可刷新）；dsh-auth-* = 官方会话
+ * （30 天）。官方 cookie 过期/secret 更换时，3081 把带有效 dc_site 的 index 401
+ * 302 到 /__deepc_reauth 重新过门。无 dc_site 的请求不反代（401 鉴权页），伪造 cookie
+ * 无法触发任何服务端交换。
+ *
+ * 老版本 dsh（legacyDsh，无 launch-token）：门通过后仅种 dc_site（自有会话，原行为）。
  *
  * TOTP secret 仅存内存（不落盘），由 host.ts 持久化到 ~/.deepc 并注入；
  * 用户用 2FA 应用扫码绑定，动态码 30s 轮换，最终安全由用户本地掌控。
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { type Duplex } from 'node:stream'
@@ -30,6 +40,9 @@ const UPSTREAM = 'http://127.0.0.1:3080'
 
 /** 鉴权端点路径（手动输入 2FA 码）。 */
 const AUTH_PATH = '/__deepc_auth'
+
+/** 重新认证端点（官方会话失效时 3081 内部 302 到这里重新过门）。 */
+const REAUTH_PATH = '/__deepc_reauth'
 
 /** 探活 WebSocket 端点（免鉴权，纯 ping/pong echo，供主站前端实时探测节点在线）。 */
 const PROBE_PATH = '/__deepc_probe'
@@ -80,6 +93,12 @@ export interface AuthProxyOptions {
   host?: string
   /** 反代上游（默认 3080）。 */
   upstream?: string
+  /**
+   * dsh v0.1.2+ launch-token 浏览器认证适配：返回当前 dsh 进程的 launch token
+   * （经 ctx.connection.authenticatedUrl 提取）。老版本 dsh 无此能力 → 返回 null，
+   * 反代不启用 token 转发（老版本无 401，直接透传，兼容双版本）。
+   */
+  getLaunchToken?: () => string | null
   /** 日志回调（默认 console）。 */
   log?: (msg: string) => void
 }
@@ -486,6 +505,14 @@ function authPage(lockedUntil = 0): string {
 </body></html>`
 }
 
+/**
+ * 是否 dsh index 请求（v0.1.2+ 仅对根路径 / 与 /index.html 做 launch-token 认证，
+ * 静态资源保持公开）。
+ */
+function isIndexPath(pathname: string): boolean {
+  return pathname === '/' || pathname === '/index.html'
+}
+
 export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   const port = opts.port ?? 3081
   const host = opts.host ?? '0.0.0.0'
@@ -540,19 +567,29 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   })
   proxy.on('proxyReqWs', stripOrigin)
 
-  // 允许主站 iframe 嵌套（/link/:nodeId 统一路径包装）：剥离 X-Frame-Options 与
-  // CSP frame-ancestors —— dsh 3080 若带这些头会拒绝被 deepc.cn 嵌入。3081 本身
-  // 即鉴权边界（cookie 验签通过才会反代），剥离不影响安全；iframe 内仍走 cookie
-  // 鉴权（Partitioned 分区 cookie，见 setCookieHeader）。
-  proxy.on('proxyRes', (proxyRes) => {
-    delete proxyRes.headers['x-frame-options']
-    const csp = proxyRes.headers['content-security-policy']
-    if (typeof csp === 'string' && /\bframe-ancestors\b/i.test(csp)) {
-      proxyRes.headers['content-security-policy'] = csp
-        .split(';')
-        .map((s) => s.trim())
-        .filter((s) => !/^frame-ancestors\b/i.test(s))
-        .join('; ')
+  // 远端访问统一走「顶层导航/新窗口」（主站 links 直接新标签打开节点），浏览器顶层
+  // 上下文即节点域 → 官方 SameSite=Strict launch-token cookie 在第一方上下文正常存储
+  // 与发送，**零改写任何官方 cookie 属性**（host-only/HttpOnly/Strict 原样保留）。
+  // 不剥离 X-Frame-Options / CSP frame-ancestors——不再 iframe 嵌入，官方安全头原样透传。
+  proxy.on('proxyRes', (proxyRes, req) => {
+    // [会话刷新] 官方 cookie 失效（过期 / 官方 secret 更换后重启）且本浏览器已过门
+    // （带有效 dc_site）→ 同步 302 到 /__deepc_reauth 重新过门（TOTP/ticket → 新交换）。
+    // 关键安全边界：无 dc_site 的请求在 3081 层不反代（401 鉴权页），这里 302 只服务
+    // 「已过门但官方会话失效」的合法场景；伪造 cookie 触发不了服务端交换（门不通过）。
+    if (
+      opts.getLaunchToken &&
+      proxyRes.statusCode === 401 &&
+      req.method === 'GET' &&
+      typeof req.url === 'string' &&
+      isIndexPath(new URL(req.url, 'http://x').pathname)
+    ) {
+      const cookies = parseCookies(req)
+      const dc = cookies[COOKIE_NAME]
+      if (dc && verifyCookie(dc)) {
+        proxyRes.statusCode = 302
+        proxyRes.headers.location = REAUTH_PATH
+        proxyRes.headers['cache-control'] = 'no-store'
+      }
     }
   })
 
@@ -653,17 +690,81 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
     return true
   }
 
-  /** 种 cookie 的 Set-Cookie 头（Partitioned = 第三方 iframe 上下文必需）。 */
-  function setCookieHeader(res: ServerResponse): void {
+  /**
+   * 生成门通行证 cookie（SameSite=Strict，7 天）。
+   * 注意：dc_site 仅 3081 判定「本浏览器已过门」；真正会话由官方 dsh-auth-* cookie 承担，
+   * 因此不再需要 Partitioned（iframe 时代遗留）——顶层导航下 SameSite=Strict 足够，
+   * 去掉 Secure 兼容局域网 http（模式 1 local）。
+   */
+  function dcSiteCookie(): string {
     const exp = Date.now() + 7 * 24 * 3600 * 1000
     const sig = hmacHex(secret!, `deepc-cookie:${exp}`)
-    res.setHeader(
-      'Set-Cookie',
-      `${COOKIE_NAME}=${exp}.${sig}; Path=/; HttpOnly; SameSite=None; Secure; Partitioned; Max-Age=${7 * 24 * 3600}`,
-    )
+    return `${COOKIE_NAME}=${exp}.${sig}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${7 * 24 * 3600}`
   }
 
-  /** 处理鉴权 POST（手动输入安全码 / iframe auto-post ticket）。 */
+  /**
+   * 服务端代浏览器完成官方 launch-token 交换（dsh v0.1.2+）。
+   * 原生 http.request GET `127.0.0.1:3080/?token=<launchToken>`（redirect manual）
+   * → 官方 303 + Set-Cookie（authority=127.0.0.1:3080，与反代 changeOrigin 一致）。
+   * token 只在本机 127.0.0.1 往返，永不进入浏览器 URL / 公网隧道。
+   * @returns 官方 Set-Cookie 数组（原样透传），失败返回 null。
+   */
+  function exchangeOfficialToken(): Promise<string[] | null> {
+    const launchToken = opts.getLaunchToken?.() ?? null
+    if (!launchToken) return Promise.resolve(null)
+    const u = new URL(upstream)
+    return new Promise((resolve) => {
+      const r = httpRequest(
+        {
+          host: u.hostname,
+          port: Number(u.port || (u.protocol === 'https:' ? 443 : 80)),
+          path: `/?token=${encodeURIComponent(launchToken)}`,
+          method: 'GET',
+          headers: { host: u.host },
+        },
+        (res) => {
+          const cookies = res.headers['set-cookie']
+          res.resume() // 排空响应体，避免连接悬挂
+          if (res.statusCode !== 303) {
+            log(`[token] 官方交换异常：HTTP ${String(res.statusCode)}（预期 303）`)
+            resolve(null)
+            return
+          }
+          resolve(Array.isArray(cookies) ? cookies : cookies ? [cookies] : null)
+        },
+      )
+      r.on('error', (err: Error) => {
+        log(`[token] 官方交换失败：${err.message}`)
+        resolve(null)
+      })
+      r.end()
+    })
+  }
+
+  /**
+   * 门通过后的统一授权动作：种门通行证 dc_site + 服务端交换官方会话 cookie（新 dsh）
+   * → 302 回原路径。老版本 dsh（无 launch-token）仅种 dc_site（自有会话回退，原行为）。
+   */
+  async function grantAccess(res: ServerResponse, back: string): Promise<void> {
+    const dc = dcSiteCookie()
+    const official = await exchangeOfficialToken()
+    const headers: Record<string, string | string[]> = {
+      Location: back,
+      'Cache-Control': 'no-store',
+    }
+    if (official) {
+      headers['Set-Cookie'] = [dc, ...official]
+    } else {
+      if (opts.getLaunchToken) {
+        log('[token] 交换失败，会话降级为 dc_site（下次 index 401 将自动重新交换）')
+      }
+      headers['Set-Cookie'] = dc
+    }
+    res.writeHead(302, headers)
+    res.end()
+  }
+
+  /** 处理鉴权 POST（手动输入安全码）。 */
   async function handleAuth(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const now = Date.now()
     const ip = req.socket.remoteAddress ?? 'unknown'
@@ -694,8 +795,6 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
     }
 
     auditLog(ip, true)
-    // 种 cookie + 302 回原路径
-    setCookieHeader(res)
     const origin = req.headers.referer
     let back = '/'
     if (origin) {
@@ -706,8 +805,7 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
         back = '/'
       }
     }
-    res.writeHead(302, { Location: back, 'Cache-Control': 'no-store' })
-    res.end()
+    await grantAccess(res, back)
   }
 
   // HTTP/WS 反代统一交给 http-proxy（成熟的 hop-by-hop 头处理、body 流式、连接清理、WS 双向），
@@ -734,9 +832,7 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
           /* ignore */
         }
         if (verifyTicket(fields)) {
-          setCookieHeader(res)
-          res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store' })
-          res.end()
+          await grantAccess(res, '/')
         } else {
           sendJson(res, 401, { ok: false, error: 'bad-ticket' })
         }
@@ -747,6 +843,17 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
     // 鉴权端点本身免鉴权（否则死循环）
     if (req.method === 'POST' && pathname === AUTH_PATH) {
       void handleAuth(req, res)
+      return
+    }
+
+    // 重新认证端点（官方会话失效时由 proxyRes 401 同步 302 到这里）：
+    // 直接返回鉴权页 + 过期 dc_site，强制重新过门（避免 302 到 / 反代死循环）。
+    if (req.method === 'GET' && pathname === REAUTH_PATH) {
+      const locked = isLocked()
+      // 过期旧 dc_site：浏览器后续请求不再携带，重新走门禁。
+      res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; Max-Age=0`)
+      res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(authPage(locked ? lockedUntil : 0))
       return
     }
 

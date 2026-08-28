@@ -27,6 +27,8 @@ export interface BackendStatus {
   otpauthUri: string | null
   devMode?: boolean
   allowBypass?: boolean
+  /** 当前 dsh 是否为不支持 launch-token 的旧版本（提示降级插件/升级 dsh）。 */
+  legacyDsh?: boolean
   connectedAt?: number | null
   tunnelState?: TunnelState
   profile?: { login: string; avatar_url: string; name: string | null }

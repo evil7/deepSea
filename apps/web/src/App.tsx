@@ -17,7 +17,6 @@ import { PluginsPage } from "@/pages/plugins"
 import { CommunityPage } from "@/pages/community"
 import { CommunityDetailPage } from "@/pages/community-detail"
 import { LinksPage } from "@/pages/links"
-import { LinkViewPage } from "@/pages/link-view"
 import { DeviceLoginPage } from "@/pages/device-login"
 import { SettingsPage } from "@/pages/settings"
 import { RequireAuth } from "@/components/auth/require-auth"
@@ -58,10 +57,8 @@ function seoForPath(pathname: string, t: SeoT) {
         source === "dsh" ? t("seo.postDshDesc") : t("seo.postDpcDesc"),
       canonical: `${SITE}/community/${source}/${number}`,
     }
-  }  // 远端节点 /link/:nodeId 为 iframe 包装页：不收录（地址栏不暴露隧道域名）
-  if (pathname.startsWith("/link/")) {
-    return { title: t("seo.linkViewTitle"), noindex: true }
-  }  switch (pathname) {
+  }
+  switch (pathname) {
     case "/":
       return {
         title: t("seo.homeTitle"),
@@ -145,9 +142,7 @@ export function App() {
 
   // 二级功能页（/plugins、/plugin/...）：固定海底 + 背景虚化
   // /auth/* 为登录等纯功能路由（worker 处理），不改变海洋展示状态（视为首页）
-  // /link/:nodeId 为远端节点 iframe 包装页（不渲染 footer，见下）
   const isAuthRoute = location.pathname.startsWith("/auth/")
-  const isLinkView = location.pathname.startsWith("/link/")
   const isSubPage = !isAuthRoute && location.pathname !== "/"
 
   // 统一海洋状态：surface=海面（首页 hero/插件精选），deep=深海
@@ -226,14 +221,6 @@ export function App() {
             </RequireAuth>
           }
         />
-        <Route
-          path="/link/:nodeId"
-          element={
-            <RequireAuth>
-              <LinkViewPage />
-            </RequireAuth>
-          }
-        />
         <Route path="/device-login" element={<DeviceLoginPage />} />
         <Route
           path="/settings"
@@ -270,9 +257,8 @@ export function App() {
       </Routes>
       </div>
 
-      {/* 子页面共享 footer（首页 / 保留其专属三行布局 footer；/auth/* 为 Worker 路由不渲染；
-          /link/:nodeId 为沉浸式全屏 chatUI，隐藏 footer 避免挤压） */}
-      {isSubPage && !isLinkView && <SiteFooter />}
+      {/* 子页面共享 footer（首页 / 保留其专属三行布局 footer；/auth/* 为 Worker 路由不渲染） */}
+      {isSubPage && <SiteFooter />}
 
       {/* star/follow 引导卡片（左下角）：已登录 + 有纳管节点 + 未 star/follow 时展示
           默认参数 evil7/deepSea + evil7/deepwn，props 可覆盖 */}

@@ -1,6 +1,7 @@
 {
   "host": {
     "fabTitle": "deepSea Link",
+    "legacyDshNotice": "This dsh version is too old for the latest browser auth — upgrade dsh, or downgrade the plugin to deepc-link@0.0.7",
     "brandSub": "Remote Link",
     "clickToLogout": "Click to sign out",
     "loginMain": "Sign in to deepSea",

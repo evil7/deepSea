@@ -69,6 +69,11 @@ export interface TunnelManagerOptions {
   proxyPort?: number
   /** 反代上游（dsh 实际端口；默认 http://127.0.0.1:3080）。 */
   upstream?: string
+  /**
+   * dsh v0.1.2+ launch-token 浏览器认证适配：返回当前 dsh 进程的 launch token
+   * （老版本 dsh 无此能力 → null，反代透传兼容）。
+   */
+  getLaunchToken?: () => string | null
   /** cloudflared 进程异常退出回调（managed 模式用于自动重连上报）。 */
   onExit?: () => void
   /** 日志回调。 */
@@ -116,7 +121,13 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
   // 本地共享关闭时鉴权代理仅绑 127.0.0.1（本机/隧道上游）；开启则 0.0.0.0（局域网可达）。
   const proxyHost = opts.localOn ? '0.0.0.0' : '127.0.0.1'
 
-  const proxy: AuthProxy = createAuthProxy({ log, host: proxyHost, port: proxyPort, upstream })
+  const proxy: AuthProxy = createAuthProxy({
+    log,
+    host: proxyHost,
+    port: proxyPort,
+    upstream,
+    getLaunchToken: opts.getLaunchToken,
+  })
   const cf: CloudflaredManager = createCloudflaredManager({
     log,
     onUrl: (u) => {
@@ -159,7 +170,9 @@ export function createTunnelManager(opts: TunnelManagerOptions): TunnelManager {
       const body = (await res.json()) as { ok?: boolean; error?: string }
       if (body.ok !== true) return { ok: false, error: body.error ?? 'report-failed' }
       return { ok: true }
-    } catch {
+    } catch (err) {
+      // 诊断：network-error 多为信令基址不可达（如开发模式指向未运行的本地 Vite）。
+      log(`上报主站失败（基址 ${signalBase}）：${err instanceof Error ? err.message : String(err)}`)
       return { ok: false, error: 'network-error' }
     }
   }
