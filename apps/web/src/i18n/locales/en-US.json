@@ -14,7 +14,8 @@
     "nextPage": "Next page",
     "prevPage": "Previous page",
     "viewOnGitHub": "View on GitHub",
-    "viewAll": "More"
+    "viewAll": "More",
+    "close": "Close"
   },
   "nav": {
     "ecosystem": "Ecosystem",
@@ -306,10 +307,21 @@
     "themeSystem": "System",
     "audit": "Security audit",
     "auditDesc": "Recent security-sensitive operations (device grant / tunnel report / tunnel delete / tunnel access)",
-    "auditHint": "Only security-sensitive, low-frequency high-value operations are recorded",
+    "auditHint": "Security-sensitive, low-frequency actions only; logs are kept for 30 days",
     "refresh": "Refresh",
     "auditEmpty": "No audit records yet",
     "auditLoadError": "Failed to load audit records",
+    "auditEvent": {
+      "auth_login": "Sign in",
+      "auth_logout": "Sign out",
+      "account_destroy": "Account destroyed",
+      "device_grant": "Device authorized",
+      "tunnel_report": "Tunnel online/updated",
+      "tunnel_delete": "Tunnel node deleted",
+      "tunnel_access": "Passwordless direct access",
+      "device_register": "Device registered",
+      "tunnel_rotate": "Security code rotated"
+    },
     "blocks": "Community blocks",
     "blocksDesc": "block users or filter by thumbs-down count — blocked content is only hidden from your view",
     "blockMode": "Handling mode",
@@ -350,6 +362,12 @@
   },
   "errors": {
     "rateLimited": "Rate-limited by GitHub, please try again later"
+  },
+  "starFollow": {
+    "starLine": "Like {{repo}}? Give it a star!",
+    "starBtn": "Star it",
+    "followLine": "Follow {{names}} to stay tuned!",
+    "followBtn": "Follow"
   },
   "time": {
     "justNow": "just now",

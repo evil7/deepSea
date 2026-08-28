@@ -99,7 +99,8 @@ export async function handleTunnelReport(
   await appendLog(env, {
     githubId,
     event: "tunnel_report",
-    detail: body.nodeId,
+    // detail 统一语义：设备名(设备id)
+    detail: `${nodeName}(${body.nodeId})`,
     ip: getClientIp(request),
   })
 
@@ -165,7 +166,8 @@ export async function handleTunnelDelete(
   await appendLog(env, {
     githubId,
     event: "tunnel_delete",
-    detail: body.nodeId,
+    // detail 统一语义：设备名(设备id)
+    detail: `${row.node_name}(${body.nodeId})`,
     ip: getClientIp(request),
   })
 
@@ -222,7 +224,8 @@ export async function handleTunnelAccess(
   await appendLog(env, {
     githubId,
     event: "tunnel_access",
-    detail: row.node_id,
+    // detail 统一语义：设备名(设备id)
+    detail: `${row.node_name}(${row.node_id})`,
     ip: getClientIp(request),
   })
 

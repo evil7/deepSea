@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Eye,
   Globe,
+  LogIn,
   LogOut,
   RefreshCw,
   ScrollText,
@@ -67,6 +68,12 @@ interface AuditLogRow {
 /** 事件 → 图标（按事件码语义映射；未知事件回退通用盾牌） */
 function eventIcon(event: string) {
   switch (event) {
+    case "auth_login":
+      return LogIn
+    case "auth_logout":
+      return LogOut
+    case "account_destroy":
+      return Trash2
     case "device_grant":
       return ShieldCheck
     case "tunnel_report":
@@ -78,6 +85,23 @@ function eventIcon(event: string) {
     default:
       return ShieldCheck
   }
+}
+
+/** 事件码 → i18n 描述（多语言；未知事件码原样显示，不回退中文库 description）。 */
+const AUDIT_EVENT_CODES = new Set([
+  "auth_login",
+  "auth_logout",
+  "account_destroy",
+  "device_grant",
+  "tunnel_report",
+  "tunnel_delete",
+  "tunnel_access",
+  // 旧版遗留事件码（历史日志仍展示）
+  "device_register",
+  "tunnel_rotate",
+])
+function auditEventLabel(event: string, t: ReturnType<typeof useTranslation>["t"]): string {
+  return AUDIT_EVENT_CODES.has(event) ? t(`settings.auditEvent.${event}` as const) : event
 }
 
 /** 分段选择器（通用小块按钮组，用于语言 / 主题 / 模式） */
@@ -399,7 +423,7 @@ export function SettingsPage() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium text-foreground">
-                          {log.description ?? log.event}
+                          {auditEventLabel(log.event, t)}
                         </p>
                         {log.detail && (
                           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">

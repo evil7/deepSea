@@ -9,7 +9,7 @@
 
 import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys, sessionTtl } from "../lib/kv"
-import { createSession, upsertUser } from "../lib/d1"
+import { createSession, upsertUser, appendLog } from "../lib/d1"
 import { getClientIp } from "../lib/ratelimit"
 import { expireCookie, serializeCookie } from "../lib/cookies"
 import { encryptToken } from "../lib/crypto"
@@ -160,6 +160,13 @@ export async function handleCallback(
     httpOnly: true,
     secure: true,
     sameSite: "Lax",
+  })
+
+  // 审计：登录成功（web 端用户操作事件）。
+  await appendLog(env, {
+    githubId: user.id,
+    event: "auth_login",
+    ip: getClientIp(request),
   })
 
   return new Response(null, {

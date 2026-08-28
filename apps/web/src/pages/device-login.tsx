@@ -27,6 +27,11 @@ export function DeviceLoginPage() {
   const { user, loading } = useAuth()
   const [searchParams] = useSearchParams()
   const state = useMemo(() => searchParams.get("state") ?? "", [searchParams])
+  // 插件端透传的设备名（hostname；审计展示「设备名(设备id)」）
+  const deviceName = useMemo(
+    () => (searchParams.get("name") ?? "").trim().slice(0, 128),
+    [searchParams]
+  )
 
   const [phase, setPhase] = useState<Phase>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +45,7 @@ export function DeviceLoginPage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state }),
+        body: JSON.stringify({ state, ...(deviceName ? { name: deviceName } : {}) }),
       })
       const body = (await res.json().catch(() => null)) as {
         ok?: boolean
@@ -56,7 +61,7 @@ export function DeviceLoginPage() {
       setPhase("error")
       setError(t("device.networkError"))
     }
-  }, [state, user, t])
+  }, [state, user, t, deviceName])
 
   // 已登录且有 state → 自动走授权（传递凭据，无需手动点「确认授权」）。
   // 覆盖两条路径：① 主站本就登录着打开本页；② 未登录 → OAuth 回跳后 user 就绪。

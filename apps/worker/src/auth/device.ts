@@ -52,6 +52,8 @@ function parseState(state: unknown): string | null {
 /**
  * POST /auth/device-grant —— 登录态签发 device_token（收件箱暂存）。
  * 主站授权确认页调用（同源 cookie）；插件端不经此端点（它只 poll）。
+ * body 可带 name（插件端 hostname，经 device-login?name= 透传），
+ * 审计 detail 记录「设备名(id 前缀)」。
  */
 export async function handleDeviceGrant(
   request: Request,
@@ -60,14 +62,19 @@ export async function handleDeviceGrant(
   const githubId = await resolveSessionUserId(request, env)
   if (githubId === null) return json({ ok: false, authed: false }, 401)
 
-  let body: { state?: unknown }
+  let body: { state?: unknown; name?: unknown }
   try {
-    body = (await request.json()) as { state?: unknown }
+    body = (await request.json()) as { state?: unknown; name?: unknown }
   } catch {
     return json({ ok: false, error: "invalid-json" }, 400)
   }
   const state = parseState(body.state)
   if (state === null) return json({ ok: false, error: "bad-state" }, 400)
+  // 设备名（可选，插件端 hostname；上限 128 防滥用）
+  const deviceName =
+    typeof body.name === "string" && body.name.trim().length > 0
+      ? body.name.trim().slice(0, 128)
+      : null
 
   // 签发设备令牌：随机 256-bit，D1 存 SHA-256 哈希。
   const token = randomTokenHex(32)
@@ -77,6 +84,10 @@ export async function handleDeviceGrant(
   await appendLog(env, {
     githubId,
     event: "device_grant",
+    // detail 统一语义：设备名(设备id)；id 取 state 前缀（插件生成的 connectId）
+    detail: deviceName
+      ? `${deviceName}(${state.slice(0, 8)})`
+      : null,
     ip: getClientIp(request),
   })
 

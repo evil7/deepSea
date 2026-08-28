@@ -9,7 +9,12 @@
 import type { Env } from "../index"
 import { SESSION_COOKIE, kvKeys } from "../lib/kv"
 import { expireCookie, parseCookies } from "../lib/cookies"
-import { destroyUserData, resolveSessionUserId } from "../lib/d1"
+import { getClientIp } from "../lib/ratelimit"
+import {
+  appendLog,
+  destroyUserData,
+  resolveSessionUserId,
+} from "../lib/d1"
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -39,6 +44,14 @@ export async function handleAccountDestroy(
     await env.DEEPSEA_KV.delete(kvKeys.session(sessionId))
   }
   await env.DEEPSEA_KV.delete(kvKeys.user(String(githubId)))
+
+  // 3. 审计：销毁账号（web 端用户操作事件；此时关联日志已清空，
+  //    本行独立保留——24h 撤回窗口内 /auth/me 仍返回 destroyed 状态）
+  await appendLog(env, {
+    githubId,
+    event: "account_destroy",
+    ip: getClientIp(request),
+  })
 
   // 3. 过期会话 cookie（前端据此回到未登录态）
   const destroyedAt = Date.now()

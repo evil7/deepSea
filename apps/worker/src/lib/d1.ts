@@ -75,12 +75,24 @@ export interface InterconnectLogRow {
   description?: string | null
 }
 
-/** 审计事件码（与 migrations 字典一致）。 */
+/** 审计事件码（与 migrations 字典一致；前端按码映射 i18n 文案）。
+ * 体系划分（统一规划）：
+ *   web 端用户操作：auth_login（登录）/ auth_logout（登出）/ account_destroy（销毁账号）
+ *                     / tunnel_delete（删除节点）/ tunnel_access（后台免密直连）
+ *   插件端事件：    device_grant（设备授权）/ tunnel_report（隧道上线/更新）
+ *   旧版遗留事件：  device_register（设备注册，旧 bridge）/ tunnel_rotate（安全码轮换，旧 bridge）
+ *                     —— 历史日志仍会展示，前端需映射 i18n 文案
+ */
 export type AuditEventCode =
+  | "auth_login"
+  | "auth_logout"
+  | "account_destroy"
   | "device_grant"
   | "tunnel_report"
   | "tunnel_delete"
   | "tunnel_access"
+  | "device_register"
+  | "tunnel_rotate"
 
 /** deepc 设备授权令牌行（只存 token 哈希）。 */
 export interface DeepcDeviceTokenRow {

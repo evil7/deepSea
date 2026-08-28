@@ -50,8 +50,20 @@ export async function listTunnels(): Promise<TunnelNodeView[]> {
   const data = await authFetch<{ ok?: boolean; nodes?: TunnelNodeView[] }>(
     "/auth/tunnel/list",
   )
-  return data?.nodes ?? []
+  const nodes = data?.nodes ?? []
+  // 有纳管节点 → 标记「已使用 links」（star/follow 引导卡片据此展示）
+  if (nodes.length > 0) {
+    try {
+      localStorage.setItem(HAS_NODES_KEY, "1")
+    } catch {
+      /* ignore */
+    }
+  }
+  return nodes
 }
+
+/** localStorage 键：账号存在纳管节点（StarFollowGuide 展示前提之一）。 */
+export const HAS_NODES_KEY = "deepsea:has-nodes"
 
 /** 删除隧道节点（D1 硬删；tunnel 是插件本地 Quick Tunnel，无需 CF API）。 */
 export async function deleteTunnel(nodeId: string): Promise<boolean> {

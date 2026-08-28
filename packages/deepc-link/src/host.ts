@@ -395,7 +395,8 @@ export function createDeepcHost(opts: DeepcHostOptions = {}): DeepcHost {
       // 未登录：发起 Device Grant 授权，仅保存凭证；不切模式、不自动开启隧道。
       // 隧道映射开关始终由用户手动启动，登录只决定「开启时是否上报纳管」（managed vs tunnel）。
       const state = generateConnectId()
-      const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}`
+      // 附带设备名（hostname）：主站审计记录「设备名(设备id)」，授权页可展示来源设备。
+      const url = `${resolveSiteBase()}/device-login?state=${encodeURIComponent(state)}&name=${encodeURIComponent(deviceName)}`
       const gen = ++pollGeneration
       void (async () => {
         const t = await pollDeviceGrant(resolveSignalBase(), state)

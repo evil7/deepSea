@@ -36,7 +36,7 @@ export function SiteFooter() {
           >
             <img
               alt="GitHub Repo stars"
-              src="https://img.shields.io/github/stars/evil7/deepSea?style=social&label=Star"
+              src="https://img.shields.io/github/stars/evil7/deepSea?style=social"
               className="inline-block h-4 w-auto"
             />
           </a>

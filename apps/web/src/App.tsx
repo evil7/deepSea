@@ -22,6 +22,7 @@ import { DeviceLoginPage } from "@/pages/device-login"
 import { SettingsPage } from "@/pages/settings"
 import { RequireAuth } from "@/components/auth/require-auth"
 import { SiteFooter } from "@/components/layout/site-footer"
+import { StarFollowGuide } from "@/components/community/star-follow-guide"
 
 /** 旧路由 /community/:number → 跳转到 /community/dpc/:number（默认社区） */
 function CommunityNumberRedirect() {
@@ -272,6 +273,10 @@ export function App() {
       {/* 子页面共享 footer（首页 / 保留其专属三行布局 footer；/auth/* 为 Worker 路由不渲染；
           /link/:nodeId 为沉浸式全屏 chatUI，隐藏 footer 避免挤压） */}
       {isSubPage && !isLinkView && <SiteFooter />}
+
+      {/* star/follow 引导卡片（左下角）：已登录 + 有纳管节点 + 未 star/follow 时展示
+          默认参数 evil7/deepSea + evil7/deepwn，props 可覆盖 */}
+      <StarFollowGuide star="evil7/deepSea" follow={["evil7", "deepwn"]} />
 
       {/* 全局提示（自行捕捞需登录等）
            · richColors：开启后 success/info/warning/error 各自醒目配色

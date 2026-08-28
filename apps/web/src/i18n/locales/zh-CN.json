@@ -14,7 +14,8 @@
     "nextPage": "下一页",
     "prevPage": "上一页",
     "viewOnGitHub": "在 GitHub 查看",
-    "viewAll": "更多"
+    "viewAll": "更多",
+    "close": "关闭"
   },
   "nav": {
     "ecosystem": "生态概览",
@@ -308,10 +309,21 @@
     "themeSystem": "跟随系统",
     "audit": "安全审计",
     "auditDesc": "最近的安全敏感操作记录（设备授权 / 隧道上报 / 隧道删除 / 隧道访问）",
-    "auditHint": "仅记录安全敏感、低频高价值操作",
+    "auditHint": "仅记录安全敏感、低频高价值操作，仅保存近 30 天日志",
     "refresh": "刷新",
     "auditEmpty": "暂无审计记录",
     "auditLoadError": "审计记录加载失败",
+    "auditEvent": {
+      "auth_login": "登录站点",
+      "auth_logout": "退出登录",
+      "account_destroy": "销毁账号",
+      "device_grant": "设备授权",
+      "tunnel_report": "隧道上线/更新",
+      "tunnel_delete": "隧道节点删除",
+      "tunnel_access": "后台免密直连",
+      "device_register": "设备注册",
+      "tunnel_rotate": "安全码轮换"
+    },
     "blocks": "社区屏蔽",
     "blocksDesc": "屏蔽用户或按踩贴数量过滤，被屏蔽内容仅从你的视图隐藏",
     "blockMode": "处理模式",
@@ -352,6 +364,12 @@
   },
   "errors": {
     "rateLimited": "触发 GitHub 限流，请稍后再试"
+  },
+  "starFollow": {
+    "starLine": "如果您觉得 {{repo}} 不错，不如奖励一个 star 吧！",
+    "starBtn": "Star 支持",
+    "followLine": "关注 {{names}} 便可了解更多发布动态哦！",
+    "followBtn": "关注"
   },
   "time": {
     "justNow": "刚刚",
