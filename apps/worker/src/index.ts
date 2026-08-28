@@ -16,7 +16,8 @@ import { handleCallback } from "./auth/callback"
 import { handleLogin } from "./auth/login"
 import { handleLogout } from "./auth/logout"
 import { handleMe } from "./auth/me"
-import { handleInterconnectLog } from "./auth/preferences"
+import { handleInterconnectLog, handlePreferencesGet, handlePreferencesPut } from "./auth/preferences"
+import { handleAccountDestroy } from "./auth/account"
 import {
   handleDeviceGrant,
   handleDeviceGrantPoll,
@@ -27,7 +28,7 @@ import {
   handleTunnelDelete,
   handleTunnelAccess,
 } from "./auth/tunnel"
-import { purgeLogs, resolveActorUserId, resolveDeviceUserIdFromToken } from "./lib/d1"
+import { purgeDestroyedUsers, purgeLogs, resolveActorUserId, resolveDeviceUserIdFromToken } from "./lib/d1"
 import { checkFreqLimit, getClientIp } from "./lib/ratelimit"
 import { TunnelHub } from "./durable/tunnel-hub"
 
@@ -138,6 +139,21 @@ const handler: ExportedHandler<Env> = {
         return handleLogout(request, env)
       case "/auth/interconnect-log":
         return handleInterconnectLog(request, env)
+      case "/auth/preferences":
+        // GET 读偏好 / PUT 写偏好（其他方法 405）
+        if (request.method === "PUT") {
+          return handlePreferencesPut(request, env)
+        }
+        if (request.method === "GET") {
+          return handlePreferencesGet(request, env)
+        }
+        return new Response(null, { status: 405 })
+      case "/auth/account/destroy":
+        // POST 销毁账号（软删除，24h 内可撤回）；其他方法 405
+        if (request.method === "POST") {
+          return handleAccountDestroy(request, env)
+        }
+        return new Response(null, { status: 405 })
       case "/auth/device-grant":
         return handleDeviceGrant(request, env)
       case "/auth/device-grant/poll":
@@ -179,6 +195,12 @@ const handler: ExportedHandler<Env> = {
     const purged = await purgeLogs(env, cutoff)
     if (purged > 0) {
       console.log(`[audit] purged ${purged} interconnect_log rows older than 30d`)
+    }
+    // 账号销毁物理清理：24h 撤回窗口过期的 users 行（关联数据销毁时已删）
+    const destroyCutoff = Date.now() - 24 * 60 * 60 * 1000
+    const destroyed = await purgeDestroyedUsers(env, destroyCutoff)
+    if (destroyed > 0) {
+      console.log(`[account] purged ${destroyed} destroyed accounts older than 24h`)
     }
   },
 }

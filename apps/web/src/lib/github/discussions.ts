@@ -215,6 +215,8 @@ export interface DiscussionSummary {
   comments: number
   /** 投票数（API 直接提供的 Discussion.upvoteCount；旧 seed 可能缺失 → 可选，兜底 0） */
   upvoteCount?: number
+  /** 踩贴数（THUMBS_DOWN，低质贴判定；旧 seed 可能缺失 → 可选，兜底 0） */
+  thumbsDown?: number
   author: string
   /** 发起者头像（seed 可能没有 → 可选，渲染时用 fallback） */
   avatarUrl?: string
@@ -427,6 +429,7 @@ interface LiveDiscussionNode {
   createdAt: string
   updatedAt: string
   upvoteCount: number
+  reactionGroups?: RawReactionGroup[]
 }
 
 /**
@@ -478,6 +481,7 @@ async function fetchDiscussionsLive(
                 author { login avatarUrl }
                 createdAt updatedAt
                 upvoteCount
+                reactionGroups { content users { totalCount } }
               }
             }
           }
@@ -497,6 +501,9 @@ async function fetchDiscussionsLive(
           categoryName: d.category.name,
           comments: d.comments.totalCount,
           upvoteCount: d.upvoteCount,
+          thumbsDown:
+            d.reactionGroups?.find((g) => g.content === "THUMBS_DOWN")
+              ?.users?.totalCount ?? 0,
           author: d.author.login,
           avatarUrl: d.author.avatarUrl,
           createdAt: d.createdAt,

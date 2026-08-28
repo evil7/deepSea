@@ -120,3 +120,47 @@ export async function getRateLimit(): Promise<{
     return null
   }
 }
+
+/** GitHub 用户搜索结果项（供屏蔽用户搜索下拉） */
+export interface UserSearchItem {
+  login: string
+  /** 展示名（可能为空） */
+  name: string | null
+  avatarUrl: string
+}
+
+/**
+ * 搜索 GitHub 用户（REST GET /search/users，需登录）。
+ * 未登录 / 失败 / 无结果返回空数组（不抛错）。
+ * @param q 查询串（仅 login，防止 @ 干扰）
+ * @param perPage 结果数（≤100；默认 20，需求至多 50 可传 50）
+ */
+export async function searchUsers(
+  q: string,
+  perPage = 20
+): Promise<UserSearchItem[]> {
+  const t = token
+  if (!t) return []
+  const clean = q.trim().replace(/^@/, "").replace(/\s+/g, " ")
+  if (!clean) return []
+  try {
+    const res = await octokit.request("GET /search/users", {
+      q: `${clean} in:login`,
+      per_page: Math.min(50, Math.max(1, perPage)),
+    })
+    const items = res.data.items as Array<{
+      login: string
+      name?: string | null
+      avatar_url?: string
+    }>
+    return (items ?? [])
+      .filter((u) => typeof u?.login === "string" && u.login.length > 0)
+      .map((u) => ({
+        login: u.login,
+        name: u.name ?? null,
+        avatarUrl: u.avatar_url ?? "",
+      }))
+  } catch {
+    return []
+  }
+}

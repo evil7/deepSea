@@ -8,6 +8,7 @@ import { Ocean } from "@/components/showcase/ocean"
 import type { SeaState } from "@/components/showcase/sea-state"
 import { useAuth } from "@/hooks/use-auth"
 import { useDiscussionsSync } from "@/hooks/use-discussions-sync"
+import { useUserPreferences } from "@/hooks/use-user-preferences"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { usePageMeta } from "@/hooks/use-page-meta"
 import { HomePage } from "@/pages/home"
@@ -18,6 +19,7 @@ import { CommunityDetailPage } from "@/pages/community-detail"
 import { LinksPage } from "@/pages/links"
 import { LinkViewPage } from "@/pages/link-view"
 import { DeviceLoginPage } from "@/pages/device-login"
+import { SettingsPage } from "@/pages/settings"
 import { RequireAuth } from "@/components/auth/require-auth"
 import { SiteFooter } from "@/components/layout/site-footer"
 
@@ -98,6 +100,13 @@ function seoForPath(pathname: string, t: SeoT) {
         canonical: `${SITE}/device-login`,
         noindex: true,
       }
+    case "/settings":
+      return {
+        title: t("seo.settingsTitle"),
+        description: t("seo.settingsDesc"),
+        canonical: `${SITE}/settings`,
+        noindex: true,
+      }
     default:
       // /auth/* 等 Worker 路由与未知路径：不收录
       if (pathname.startsWith("/auth/")) {
@@ -126,6 +135,9 @@ export function App() {
   // 前端同步 worker（每 3 分钟刷新 discussions 列表，见 discussions-sync.ts）
   const { user } = useAuth()
   useDiscussionsSync(user)
+  // 用户偏好：登录后从 D1 同步语言/主题/社区屏蔽（写入 localStorage 缓存）；
+  // 挂载于全局以便任何页面登录后都能应用账号级偏好
+  useUserPreferences()
 
   // 移动端：不渲染 3D 海洋（WebGL 开销大），改静态渐变背景；调试面板同理
   const isMobile = useIsMobile()
@@ -222,6 +234,14 @@ export function App() {
           }
         />
         <Route path="/device-login" element={<DeviceLoginPage />} />
+        <Route
+          path="/settings"
+          element={
+            <RequireAuth>
+              <SettingsPage />
+            </RequireAuth>
+          }
+        />
         <Route path="/community" element={<Navigate to="/community/dpc" replace />} />
         <Route path="/community/dsh" element={<CommunityPage />} />
         <Route path="/community/dpc" element={<CommunityPage />} />

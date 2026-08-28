@@ -33,6 +33,8 @@ export interface UserRow {
   token_enc: string
   created_at: number
   updated_at: number
+  /** 销毁标记（NULL=正常；非空=已销毁，24h 撤回窗口内） */
+  destroyed_at: number | null
 }
 
 /** 插入/更新的用户档案输入（token_enc 已加密）。 */
@@ -93,7 +95,8 @@ export interface DeepcDeviceTokenRow {
 // users
 // ---------------------------------------------------------------------------
 
-/** upsert 用户（登录回调时写；已存在则更新档案 + 换新 token）。 */
+/** upsert 用户（登录回调时写；已存在则更新档案 + 换新 token）。
+ *  重新登录即撤回销毁：ON CONFLICT 更新时清除 destroyed_at（24h 撤回窗口）。 */
 export async function upsertUser(
   env: Env,
   input: UpsertUserInput
@@ -115,6 +118,7 @@ export async function upsertUser(
        following = excluded.following,
        public_repos = excluded.public_repos,
        token_enc = excluded.token_enc,
+       destroyed_at = NULL,
        updated_at = excluded.updated_at`
   )
     .bind(
@@ -152,6 +156,46 @@ export async function deleteUser(env: Env, githubId: number): Promise<void> {
   await env.DEEPSEA_D1.prepare("DELETE FROM users WHERE github_id = ?")
     .bind(githubId)
     .run()
+}
+
+/**
+ * 销毁账号（软删除，24h 内可撤回）：
+ *   原子删除该用户全部关联数据（会话/设备令牌/隧道/偏好/日志），
+ *   清空 token_enc（GitHub 访问失效）并标记 destroyed_at。
+ *   保留 users 行作为撤回窗口标记；超时由 purgeDestroyedUsers 物理清理。
+ * 注意：调用方需同时删除 KV user 缓存与当前会话（本函数只管 D1）。
+ */
+export async function destroyUserData(
+  env: Env,
+  githubId: number
+): Promise<void> {
+  const now = Date.now()
+  await env.DEEPSEA_D1.batch([
+    env.DEEPSEA_D1.prepare("DELETE FROM sessions WHERE github_id = ?").bind(githubId),
+    env.DEEPSEA_D1.prepare("DELETE FROM deepc_device_tokens WHERE github_id = ?").bind(githubId),
+    env.DEEPSEA_D1.prepare("DELETE FROM deepc_tunnels WHERE github_id = ?").bind(githubId),
+    env.DEEPSEA_D1.prepare("DELETE FROM user_preferences WHERE github_id = ?").bind(githubId),
+    env.DEEPSEA_D1.prepare("DELETE FROM interconnect_log WHERE github_id = ?").bind(githubId),
+    env.DEEPSEA_D1.prepare(
+      "UPDATE users SET destroyed_at = ?, token_enc = '', updated_at = ? WHERE github_id = ?"
+    ).bind(now, now, githubId),
+  ])
+}
+
+/**
+ * 物理清理已销毁超时账号（24h 撤回窗口过后删除 users 行）。
+ * 关联数据在 destroyUserData 时已删，此处仅删标记行。返回删除行数。
+ */
+export async function purgeDestroyedUsers(
+  env: Env,
+  cutoff: number
+): Promise<number> {
+  const res = await env.DEEPSEA_D1.prepare(
+    "DELETE FROM users WHERE destroyed_at IS NOT NULL AND destroyed_at < ?"
+  )
+    .bind(cutoff)
+    .run()
+  return res.meta.changes ?? 0
 }
 
 // ---------------------------------------------------------------------------
@@ -424,7 +468,13 @@ export async function reportTunnel(
     url: string
     /** 节点在线状态：connected（默认，上报即在线）/ offline（断链上报离线）。 */
     status?: "connected" | "offline"
-    /** sha512(TOTP secret)（免密直连开启时附带；关闭时缺省 → 清掉旧散列）。 */
+    /**
+     * sha512(TOTP secret)（免密直连开启时附带）。
+     * ⚠️ 安全码跟随 dsh-node 而非 tunnel-URL：URL 变更（如 cloudflared
+     * 临时链接到期重连）不应影响节点已绑定的安全码。因此缺省（未附 /
+     * 关闭免密）时 **保留旧值**（COALESCE），只有附带新 hash（用户手动
+     * 轮换 TOTP）时才更新。
+     */
     secretHash?: string
   }
 ): Promise<void> {
@@ -438,7 +488,7 @@ export async function reportTunnel(
        node_name = excluded.node_name,
        url = excluded.url,
        status = excluded.status,
-       secret_hash = excluded.secret_hash,
+       secret_hash = COALESCE(excluded.secret_hash, deepc_tunnels.secret_hash),
        modified_at = excluded.modified_at`
   )
     .bind(
@@ -492,4 +542,70 @@ export async function deleteTunnel(
   )
     .bind(nodeId, githubId)
     .run()
+}
+
+// ---------------------------------------------------------------------------
+// user_preferences（用户偏好：语言 / 主题 / 社区屏蔽，跨设备跟随账号）
+// ---------------------------------------------------------------------------
+
+/** 用户偏好行。 */
+export interface UserPreferencesRow {
+  github_id: number
+  language: string
+  theme: string
+  thumbs_down_threshold: number
+  block_mode: string
+  blocked_users: string
+  updated_at: number
+}
+
+/** 偏好写入输入（blockedUsers 传数组，内部序列化 JSON）。 */
+export interface UserPreferencesInput {
+  githubId: number
+  language: string
+  theme: string
+  thumbsDownThreshold: number
+  blockMode: "collapse" | "hide" | "off"
+  blockedUsers: string[]
+}
+
+/** upsert 用户偏好（不存在插入，存在整行覆盖）。 */
+export async function upsertUserPreferences(
+  env: Env,
+  input: UserPreferencesInput
+): Promise<void> {
+  await env.DEEPSEA_D1.prepare(
+    `INSERT INTO user_preferences
+       (github_id, language, theme, thumbs_down_threshold, block_mode, blocked_users, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(github_id) DO UPDATE SET
+       language = excluded.language,
+       theme = excluded.theme,
+       thumbs_down_threshold = excluded.thumbs_down_threshold,
+       block_mode = excluded.block_mode,
+       blocked_users = excluded.blocked_users,
+       updated_at = excluded.updated_at`
+  )
+    .bind(
+      input.githubId,
+      input.language,
+      input.theme,
+      Math.max(0, Math.floor(input.thumbsDownThreshold)),
+      input.blockMode,
+      JSON.stringify(input.blockedUsers),
+      Date.now()
+    )
+    .run()
+}
+
+/** 读用户偏好（不存在返回 null）。 */
+export async function getUserPreferences(
+  env: Env,
+  githubId: number
+): Promise<UserPreferencesRow | null> {
+  return env.DEEPSEA_D1.prepare(
+    "SELECT * FROM user_preferences WHERE github_id = ?"
+  )
+    .bind(githubId)
+    .first<UserPreferencesRow>()
 }

@@ -35,6 +35,8 @@ run_worker_first = [
   "/auth/me",
   "/auth/logout",
   "/auth/interconnect-log",
+  "/auth/preferences",
+  "/auth/account/destroy",
   "/auth/device-grant",
   "/auth/device-grant/poll",
   "/auth/tunnel/report",

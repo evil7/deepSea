@@ -81,6 +81,27 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
   let profile: UserProfile
   const d1User = await getUser(env, githubId)
   if (d1User) {
+    // 已销毁账号（24h 撤回窗口内）：返回轻量档案 + 销毁状态（无 GitHub token，
+    // 撤回 = 重新 OAuth 登录）。前端据此显示「待销毁状态」（撤回 + 倒计时）。
+    if (d1User.destroyed_at) {
+      return json({
+        authed: true,
+        destroyed: true,
+        destroyedAt: d1User.destroyed_at,
+        user: {
+          id: String(githubId),
+          login: d1User.login,
+          email: d1User.email,
+          avatar_url: d1User.avatar_url,
+          name: d1User.name,
+          bio: d1User.bio,
+          html_url: d1User.html_url,
+          followers: d1User.followers,
+          following: d1User.following,
+          public_repos: d1User.public_repos,
+        },
+      })
+    }
     profile = {
       login: d1User.login,
       email: d1User.email,

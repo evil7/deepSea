@@ -54,11 +54,19 @@ const LIST_QUERY = /* GraphQL */ `
           createdAt
           updatedAt
           upvoteCount
+          reactionGroups { content users { totalCount } }
         }
       }
     }
   }
 `
+
+/** 取 reactionGroups 中 THUMBS_DOWN 计数（低质贴判定；无则 0） */
+function thumbsDownOf(groups) {
+  return (
+    groups?.find((g) => g.content === "THUMBS_DOWN")?.users?.totalCount ?? 0
+  )
+}
 
 async function fetchDiscussions(owner, repo, first, token) {
   const data = await graphql({
@@ -77,6 +85,7 @@ async function fetchDiscussions(owner, repo, first, token) {
     categoryName: it.category?.name ?? "未分类",
     comments: it.comments?.totalCount ?? 0,
     upvoteCount: it.upvoteCount ?? 0,
+    thumbsDown: thumbsDownOf(it.reactionGroups),
     author: it.author?.login ?? "unknown",
     createdAt: it.createdAt,
     updatedAt: it.updatedAt,

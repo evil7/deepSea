@@ -23,6 +23,10 @@ import "github-markdown-css/github-markdown.css"
 import { toast } from "sonner"
 
 import { useAuth } from "@/hooks/use-auth"
+import { useCommunityBlocks } from "@/hooks/use-community-blocks"
+import { BlockedNotice } from "@/components/community/blocked-notice"
+import { BlockUserButton } from "@/components/community/block-user-button"
+import { resolveBlockReason, type CommunityBlocks } from "@/lib/community-blocks"
 import {
   formatRelativeTime,
   loadDiscussionDetail,
@@ -38,6 +42,7 @@ import {
   type WriteFailure,
 } from "@/lib/github/discussions"
 import { useAuthHrefs } from "@/hooks/use-auth-hrefs"
+import { usePageMeta } from "@/hooks/use-page-meta"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -307,6 +312,7 @@ function ReplyRow({
   canInteract,
   onToggleReaction,
   isLast,
+  blocks,
 }: {
   reply: DiscussionComment
   discussionAuthor: string
@@ -314,8 +320,25 @@ function ReplyRow({
   onToggleReaction: (subjectId: string, content: string, active: boolean) => void
   /** 是否为板块内最后一条回复（决定竖线是否贯穿到底） */
   isLast: boolean
+  /** 社区软屏蔽偏好（用户屏蔽 / 踩贴过滤） */
+  blocks: CommunityBlocks
 }) {
   const { t } = useTranslation()
+  // 软屏蔽判定：命中且 hide 模式 → 整条不渲染；collapse 模式 → 折叠提示条
+  const reason = resolveBlockReason(blocks, {
+    author: reply.author,
+    reactions: reply.reactions,
+  })
+  const [expanded, setExpanded] = useState(false)
+
+  if (reason && blocks.mode === "hide") return null
+  if (reason && !expanded) {
+    return (
+      <div className={cn(!isLast && "pb-3")}>
+        <BlockedNotice open={false} onToggle={() => setExpanded(true)} />
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-3">
@@ -346,6 +369,8 @@ function ReplyRow({
           <span className="text-xs text-muted-foreground">
             · {formatRelativeTime(reply.createdAt)}
           </span>
+          {/* 用户屏蔽快捷按钮 */}
+          <BlockUserButton login={reply.author} size="icon" />
         </div>
 
         {/* 回复引用（回复他人时显示） */}
@@ -396,14 +421,32 @@ function CommentItem({
   discussionAuthor,
   canInteract,
   onToggleReaction,
+  blocks,
 }: {
   node: CommentNode
   discussionAuthor: string
   canInteract: boolean
   onToggleReaction: (subjectId: string, content: string, active: boolean) => void
+  /** 社区软屏蔽偏好（用户屏蔽 / 踩贴过滤） */
+  blocks: CommunityBlocks
 }) {
   const { t } = useTranslation()
   const { comment, replies } = node
+  // 软屏蔽判定：hide → 整条评论（含回复）不渲染；collapse → 折叠提示条
+  const reason = resolveBlockReason(blocks, {
+    author: comment.author,
+    reactions: comment.reactions,
+  })
+  const [expanded, setExpanded] = useState(false)
+
+  if (reason && blocks.mode === "hide") return null
+  if (reason && !expanded) {
+    return (
+      <div>
+        <BlockedNotice open={false} onToggle={() => setExpanded(true)} />
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -438,6 +481,8 @@ function CommentItem({
             <span className="text-xs text-muted-foreground">
               · {formatRelativeTime(comment.createdAt)}
             </span>
+            {/* 用户屏蔽快捷按钮 */}
+            <BlockUserButton login={comment.author} size="icon" />
           </div>
 
           {/* 回复引用（回复他人时显示） */}
@@ -488,6 +533,7 @@ function CommentItem({
                   canInteract={canInteract}
                   onToggleReaction={onToggleReaction}
                   isLast={idx === replies.length - 1}
+                  blocks={blocks}
                 />
               ))}
             </div>
@@ -519,6 +565,11 @@ export function CommunityDetailPage() {
   // 评论排序方式（默认 oldest = 时间正序，符合「时间线」语义）
   const [sortMode, setSortMode] = useState<SortMode>("oldest")
 
+  // 社区软屏蔽偏好（本地过滤，非 API 操作）
+  const { blocks } = useCommunityBlocks()
+  // 主贴（OP）软屏蔽：hide → 不渲染正文卡片；collapse → 折叠提示条
+  const [opExpanded, setOpExpanded] = useState(false)
+
   // 是否可回复：由 discussion 实际状态动态判定（非硬编码社区开关）
   // 管理员锁定（locked）或关闭（closed）的讨论均不可回复
   const canReply = !!detail && !detail.locked && !detail.closed
@@ -528,6 +579,16 @@ export function CommunityDetailPage() {
     () => (detail ? buildCommentTree(detail.comments, sortMode) : []),
     [detail, sortMode]
   )
+
+  // 浏览器 title：随社区名 + 帖子标题（加载后覆盖 App 层通用 title）
+  usePageMeta({
+    title: detail
+      ? t("seo.detailPageTitle", {
+          title: detail.title,
+          community: info.label,
+        })
+      : t("seo.postTitle", { number: num }),
+  })
 
   useEffect(() => {
     let alive = true
@@ -783,7 +844,19 @@ export function CommunityDetailPage() {
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* ── 左栏：主贴卡片 + 评论卡片（两卡片分离） ── */}
           <main className="min-w-0 space-y-6">
-            {/* 主贴卡片（OP 独立卡片，标题已上移到页头） */}
+            {/* 主贴卡片（OP 独立卡片，标题已上移到页头；软屏蔽命中时折叠/隐藏） */}
+            {(() => {
+              const opReason = resolveBlockReason(blocks, {
+                author: detail.author,
+                reactions: detail.reactions,
+              })
+              if (opReason && blocks.mode === "hide") return null
+              if (opReason && !opExpanded) {
+                return (
+                  <BlockedNotice open={false} onToggle={() => setOpExpanded(true)} />
+                )
+              }
+              return (
             <section className="rounded-xl border border-border bg-card">
               {/* 卡片头：左作者信息 / 右分类标签 + 在 GitHub 查看 */}
               <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
@@ -804,6 +877,8 @@ export function CommunityDetailPage() {
                       })}
                     </p>
                   </div>
+                  {/* 用户屏蔽快捷按钮（OP） */}
+                  <BlockUserButton login={detail.author} size="icon" className="self-start" />
                 </div>
 
                 <a
@@ -837,6 +912,8 @@ export function CommunityDetailPage() {
                 />
               </div>
             </section>
+              )
+            })()}
 
             {/* 评论 bar：{n} comments · {m} replies（左）+ outline 排序 tabs（右），左右分布 */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
@@ -880,6 +957,7 @@ export function CommunityDetailPage() {
                     discussionAuthor={detail.author}
                     canInteract={!!user && canReply}
                     onToggleReaction={handleToggleReaction}
+                    blocks={blocks}
                   />
                 ))}
               </div>
@@ -930,7 +1008,7 @@ export function CommunityDetailPage() {
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-3">
                 <UserAvatar url={detail.authorAvatarUrl} name={detail.author} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-foreground">
                     {detail.author}
                   </p>
@@ -941,6 +1019,8 @@ export function CommunityDetailPage() {
                     })}
                   </p>
                 </div>
+                {/* 用户屏蔽快捷按钮（侧栏） */}
+                <BlockUserButton login={detail.author} size="icon" />
               </div>
               <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">

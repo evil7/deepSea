@@ -8,7 +8,7 @@ import {
   MessagesSquare,
   Moon,
   Package,
-  RefreshCw,
+  Settings,
   Sun,
   UserCircle,
   Waves,
@@ -43,7 +43,7 @@ function ProfileStat({ value, label }: { value: number; label: string }) {
 export function Topbar() {
   const { t, i18n } = useTranslation()
   const { user, loading, logout } = useAuth()
-  const { loginHref, reauthHref } = useAuthHrefs()
+  const { loginHref } = useAuthHrefs()
   const { theme, setTheme } = useTheme()
 
   // 首页各屏菜单（与首页 slide 逐一对应；文案随语言切换）
@@ -219,16 +219,16 @@ export function Topbar() {
                   <ProfileStat value={user.public_repos ?? 0} label={t("nav.publicRepos")} />
                 </div>
 
-                {/* 底部栏：重新授权 + 登出账号（等宽按钮组） */}
+                {/* 底部栏：用户管理（设置）+ 登出账号（等宽按钮组） */}
                 <div className="flex items-center gap-2 px-3 py-2.5">
-                  <Button asChild variant="outline" size="sm" className="flex-1">
-                    <a href={reauthHref}>
-                      <RefreshCw className="size-4" />
-                      {t("nav.reauth")}
-                    </a>
+                  <Button asChild variant="ghost" size="sm" className="flex-1">
+                    <Link to="/settings">
+                      <Settings className="size-4" />
+                      {t("nav.manage")}
+                    </Link>
                   </Button>
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="sm"
                     className="flex-1"
                     onClick={() => void logout()}

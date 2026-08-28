@@ -8,6 +8,7 @@ import {
   MessagesSquare,
   PenLine,
   Search,
+  ThumbsDown,
   User,
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
@@ -15,6 +16,8 @@ import { toast } from "sonner"
 import { useTranslation } from "react-i18next"
 
 import { useAuth } from "@/hooks/use-auth"
+import { useCommunityBlocks } from "@/hooks/use-community-blocks"
+import { isLowQualitySummary, isUserBlocked } from "@/lib/community-blocks"
 import {
   deriveCategories,
   formatRelativeTime,
@@ -51,7 +54,10 @@ import { cn } from "@/lib/utils"
 // ---------------------------------------------------------------------------
 
 type SortMode = "hot" | "latest"
-type CategoryFilter = "ALL" | string
+type CategoryFilter = "ALL" | "LOW_QUALITY" | string
+
+/** 前端虚拟分类：低质贴（THUMBS_DOWN ≥ 阈值，collapse 模式折叠展示） */
+const LOW_QUALITY_CATEGORY = "LOW_QUALITY"
 
 const PAGE_SIZE = 10
 
@@ -118,6 +124,25 @@ export function CommunityPage() {
   const [page, setPage] = useState(0)
   // 分类：登录后取 GitHub 真实分类（含 id）；匿名从 seed 数据推导
   const [categories, setCategories] = useState<string[]>([])
+
+  // 社区软屏蔽（本地偏好）：hide 模式直接过滤；collapse 模式折叠标记
+  // 统一归类：低质贴（THUMBS_DOWN ≥ 阈值）与用户屏蔽都记入「低质贴」标签
+  const { blocks, lowQualityEnabled } = useCommunityBlocks()
+  // 低质贴集合（低质过滤 + 用户屏蔽；用户屏蔽始终生效，不受临时开关影响）
+  const lowQualitySet = useMemo(() => {
+    const set = new Set<number>()
+    for (const d of list ?? []) {
+      if (
+        isUserBlocked(blocks, d.author) ||
+        isLowQualitySummary(blocks, d.thumbsDown)
+      ) {
+        set.add(d.number)
+      }
+    }
+    return set
+    // lowQualityEnabled 进依赖：临时开关切换时重算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, blocks, lowQualityEnabled])
 
   // 社区切换（dsh ↔ dpc）左右平移过渡：新内容从对应方向滑入。
   //   · dsh（蓝鲸社区，官方，在首页位于左侧）→ 从左侧滑入
@@ -211,16 +236,36 @@ export function CommunityPage() {
       return []
     }
     const q = query.trim().toLowerCase()
+    const isLow = (number: number) => lowQualitySet.has(number)
     let out = list.filter(
-      (d) =>
-        (category === "ALL" || d.categoryName === category) &&
-        (!q ||
-          d.title.toLowerCase().includes(q) ||
-          d.author.toLowerCase().includes(q))
+      (d) => {
+        const inLowQuality = isLow(d.number)
+        const matchCategory =
+          category === "ALL" ||
+          (category === LOW_QUALITY_CATEGORY ? inLowQuality : d.categoryName === category)
+        return (
+          matchCategory &&
+          (!q ||
+            d.title.toLowerCase().includes(q) ||
+            d.author.toLowerCase().includes(q)) &&
+          // hide 模式：直接过滤低质贴/被屏蔽用户帖子（collapse 保留，渲染时标记/降序）
+          !(blocks.mode === "hide" && inLowQuality)
+        )
+      }
     )
     out = mode === "hot" ? sortDiscussionsHot(out) : sortDiscussionsLatest(out)
+    // collapse 模式：低质贴降序到最后（稳定降级，各自保留原相对顺序）；
+    // 低质贴分类内部不再二次降序（保持排序一致性）。
+    if (blocks.mode === "collapse" && category !== LOW_QUALITY_CATEGORY) {
+      const low = out.filter((d) => lowQualitySet.has(d.number))
+      if (low.length > 0) {
+        out = [...out.filter((d) => !lowQualitySet.has(d.number)), ...low]
+      }
+    }
     return out
-  }, [list, mode, category, query])
+    // lowQualityEnabled 进依赖：低质开关生效状态变化时重算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, mode, category, query, blocks.mode, lowQualitySet, lowQualityEnabled])
 
   // 分页
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -365,6 +410,24 @@ export function CommunityPage() {
               </button>
             )
           })}
+          {/* 低质贴分类（collapse 模式：低质过滤生效时自动出现在分类末尾） */}
+          {blocks.mode === "collapse" && lowQualitySet.size > 0 && (
+            <button
+              key={LOW_QUALITY_CATEGORY}
+              type="button"
+              onClick={() => setCategory(LOW_QUALITY_CATEGORY)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs transition-colors",
+                category === LOW_QUALITY_CATEGORY
+                  ? "border-orange-400/50 bg-orange-400/10 text-orange-300"
+                  : "border-orange-400/25 bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              <ThumbsDown className="mr-1 inline size-3" />
+              {t("community.lowQualityLabel")}
+              <span className="ml-1.5 opacity-50">{lowQualitySet.size}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -379,7 +442,8 @@ export function CommunityPage() {
             {t("community.empty")}
           </div>
         ) : (
-          pageItems.map((d) => (
+          pageItems.map((d) => {
+            return (
             <Link
               key={d.number}
               to={`/community/${info.source}/${d.number}`}
@@ -419,7 +483,7 @@ export function CommunityPage() {
                 </p>
               </div>
               {/* 尾部统计：评论数 + 投票数（icon + 数字，无文字；仅桌面显示，
-                  手机端只显示纯卡片，不展示回复/投票数量） */}
+                  手机端只显示纯卡片，不展示回复/投票数量）。低质贴 label 靠最右 */}
               <div className="hidden shrink-0 items-center gap-2 sm:flex">
                 <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
                   <MessagesSquare className="size-3.5 text-theme-accent" />
@@ -433,9 +497,16 @@ export function CommunityPage() {
                     {d.upvoteCount ?? 0}
                   </span>
                 </div>
+                {lowQualitySet.has(d.number) && blocks.mode === "collapse" && (
+                  <Badge className="border-orange-400/40 bg-orange-400/10 text-orange-300">
+                    <ThumbsDown />
+                    {t("community.lowQualityLabel")}
+                  </Badge>
+                )}
               </div>
             </Link>
-          ))
+            )
+          })
         )}
       </div>
 

@@ -32,6 +32,9 @@ interface MeResponse {
   token?: string
   /** GitHub token 已失效（被撤销 / 过期 / 无法解密），需重新授权 */
   tokenExpired?: boolean
+  /** 账号已销毁（24h 撤回窗口内）：有轻量档案、无 token */
+  destroyed?: boolean
+  destroyedAt?: number
 }
 
 /** sessionStorage 键：登录态（user + token）会话内暂留 */
@@ -93,8 +96,13 @@ function writeCached(data: { user: AuthUser; token: string } | null): void {
 let fetchMeInFlight: Promise<{ user: AuthUser; token: string } | null> | null =
   null
 
-/** 读取当前登录用户 + token（未登录返回 null；网络错误返回 null 不抛错） */
-function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
+/** 读取当前登录用户 + token（未登录返回 null；网络错误返回 null 不抛错）。
+ * 账号已销毁（destroyed）时返回 { destroyedAt } 标记，token 为空。 */
+function fetchMe(): Promise<{
+  user: AuthUser
+  token: string
+  destroyedAt: number | null
+} | null> {
   if (fetchMeInFlight) return fetchMeInFlight
   fetchMeInFlight = (async () => {
     try {
@@ -111,8 +119,12 @@ function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
         sessionStorage.removeItem(AUTH_STORAGE_KEY)
         return null
       }
+      // 已销毁账号：轻量档案可展示（设置页待销毁状态），无 token。
+      if (data.destroyed && data.user && data.destroyedAt) {
+        return { user: data.user, token: "", destroyedAt: data.destroyedAt }
+      }
       if (!data.authed || !data.user || !data.token) return null
-      return { user: data.user, token: data.token }
+      return { user: data.user, token: data.token, destroyedAt: null }
     } catch {
       return null
     } finally {
@@ -126,6 +138,8 @@ function fetchMe(): Promise<{ user: AuthUser; token: string } | null> {
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  /** 账号已销毁的时间戳（null = 正常）；24h 撤回窗口内设置页显示待销毁状态 */
+  const [destroyedAt, setDestroyedAt] = useState<number | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   // 仅依赖 search 参数：登录回跳（?auth=success）强制刷新拿新 token；
@@ -141,6 +155,7 @@ export function useAuth() {
       if (cached) {
         // 命中会话缓存：直接恢复，零网络请求
         setUser(cached.user)
+        setDestroyedAt(null)
         setGitHubToken(cached.token)
         setLoading(false)
         return
@@ -150,9 +165,16 @@ export function useAuth() {
         if (!cancelled) {
           if (result) {
             setUser(result.user)
-            // token 注入前端 octokit（仅存内存），供 GitHub API 直调
-            setGitHubToken(result.token)
-            writeCached(result)
+            setDestroyedAt(result.destroyedAt)
+            if (result.token) {
+              // token 注入前端 octokit（仅存内存），供 GitHub API 直调
+              setGitHubToken(result.token)
+              writeCached(result)
+            } else {
+              // 已销毁账号：无 token，不写会话缓存
+              setGitHubToken(null)
+              writeCached(null)
+            }
             // 消费 auth=success：登录/续期成功即清理 URL 参数（replace 不产生历史
             // 记录）。否则 ?auth=success 粘滞在 URL 上，每次刷新都强制 fetchMe，
             // 且后续 RequireAuth 拼 redirect 时叠加 auth 参数。
@@ -171,6 +193,7 @@ export function useAuth() {
             }
           } else {
             setUser(null)
+            setDestroyedAt(null)
             setGitHubToken(null)
             writeCached(null)
           }
@@ -190,6 +213,7 @@ export function useAuth() {
   useEffect(() => {
     const onAuthExpired = () => {
       setUser(null)
+      setDestroyedAt(null)
       setGitHubToken(null)
       writeCached(null)
     }
@@ -205,10 +229,11 @@ export function useAuth() {
       })
     } finally {
       setUser(null)
+      setDestroyedAt(null)
       setGitHubToken(null)
       writeCached(null)
     }
   }, [])
 
-  return { user, loading, logout }
+  return { user, loading, logout, destroyedAt }
 }
