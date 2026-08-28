@@ -1151,10 +1151,8 @@ export function CommunityDetailPage() {
                 <ul className="mt-3 space-y-0.5">
                   {detail.authorPosts.map((p) => (
                     <li key={p.number}>
-                      <a
-                        href={p.url}
-                        target="_blank"
-                        rel="noreferrer"
+                      <Link
+                        to={`/community/${info.source}/${p.number}`}
                         className="group flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors hover:bg-accent"
                       >
                         <span className="shrink-0 font-mono text-muted-foreground group-hover:text-foreground">
@@ -1163,7 +1161,7 @@ export function CommunityDetailPage() {
                         <span className="min-w-0 flex-1 truncate text-foreground">
                           {p.title}
                         </span>
-                      </a>
+                      </Link>
                     </li>
                   ))}
                 </ul>

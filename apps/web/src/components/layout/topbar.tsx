@@ -12,7 +12,6 @@ import {
   Settings,
   Sun,
   UserCircle,
-  Waves,
 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
@@ -74,9 +73,12 @@ export function Topbar() {
           state={{ slideId: "hero" }}
           className="flex items-center gap-2.5"
         >
-          <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Waves className="size-5" />
-          </span>
+          {/* 固定 logo：deepsea.svg（蓝色圆角底 + 深黑波浪线，深浅色一致） */}
+          <img
+            src="/deepsea.svg"
+            alt="deepSea"
+            className="size-9 shrink-0 rounded-lg"
+          />
           {/* 站点名称：手机端隐藏，仅保留 logo */}
           <span className="hidden text-lg font-semibold tracking-tight sm:inline">
             deepSea
