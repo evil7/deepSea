@@ -366,10 +366,14 @@
     "rateLimited": "触发 GitHub 限流，请稍后再试"
   },
   "starFollow": {
-    "starLine": "如果您觉得 {{repo}} 不错，不如奖励一个 star 吧！",
+    "starLine": "感觉不错？给个Star吧！",
     "starBtn": "Star 支持",
-    "followLine": "关注 {{names}} 便可了解更多发布动态哦！",
-    "followBtn": "关注"
+    "followLine": "关注作者了解更多动态哦！",
+    "followBtn": "关注",
+    "badgeTitle": "deepSea · 支持一下（Star / Follow）",
+    "starredToast": "已为 {{repo}} 点亮 Star，感谢支持！",
+    "followedToast": "已关注 {{name}}",
+    "operateFailed": "操作失败，请稍后重试"
   },
   "time": {
     "justNow": "刚刚",

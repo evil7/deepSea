@@ -87,21 +87,29 @@ function eventIcon(event: string) {
   }
 }
 
-/** 事件码 → i18n 描述（多语言；未知事件码原样显示，不回退中文库 description）。 */
-const AUDIT_EVENT_CODES = new Set([
-  "auth_login",
-  "auth_logout",
-  "account_destroy",
-  "device_grant",
-  "tunnel_report",
-  "tunnel_delete",
-  "tunnel_access",
+/** 事件码 → i18n key（精确字面量映射；模板字符串 key 会触发 TFunction 泛型实例化过深） */
+const AUDIT_EVENT_KEYS = {
+  auth_login: "settings.auditEvent.auth_login",
+  auth_logout: "settings.auditEvent.auth_logout",
+  account_destroy: "settings.auditEvent.account_destroy",
+  device_grant: "settings.auditEvent.device_grant",
+  tunnel_report: "settings.auditEvent.tunnel_report",
+  tunnel_delete: "settings.auditEvent.tunnel_delete",
+  tunnel_access: "settings.auditEvent.tunnel_access",
   // 旧版遗留事件码（历史日志仍展示）
-  "device_register",
-  "tunnel_rotate",
-])
-function auditEventLabel(event: string, t: ReturnType<typeof useTranslation>["t"]): string {
-  return AUDIT_EVENT_CODES.has(event) ? t(`settings.auditEvent.${event}` as const) : event
+  device_register: "settings.auditEvent.device_register",
+  tunnel_rotate: "settings.auditEvent.tunnel_rotate",
+} as const
+
+type AuditEventCode = keyof typeof AUDIT_EVENT_KEYS
+
+/** 事件码 → i18n 描述（多语言；未知事件码原样显示，不回退中文库 description）。 */
+function auditEventLabel(
+  event: string,
+  t: ReturnType<typeof useTranslation>["t"]
+): string {
+  const key = AUDIT_EVENT_KEYS[event as AuditEventCode]
+  return key ? t(key) : event
 }
 
 /** 分段选择器（通用小块按钮组，用于语言 / 主题 / 模式） */
@@ -702,7 +710,7 @@ export function SettingsPage() {
 /** 销毁倒计时（24h 撤回窗口剩余）：如「23 小时 59 分」。 */
 function destroyCountdown(
   destroyedAt: number,
-  t: (key: string, opts?: Record<string, unknown>) => string
+  t: ReturnType<typeof useTranslation>["t"]
 ): string {
   const remain = destroyedAt + 24 * 60 * 60 * 1000 - Date.now()
   if (remain <= 0) return t("time.justNow")

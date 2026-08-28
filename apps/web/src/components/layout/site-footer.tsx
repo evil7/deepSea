@@ -10,13 +10,15 @@
 
 import { Copyright } from "lucide-react"
 
+import { GitHubStarBadge } from "@/components/layout/github-star-badge"
+
 const YEAR = new Date().getFullYear()
 
 export function SiteFooter() {
   return (
     <footer className="shrink-0 border-t border-white/10 bg-slate-950/60 py-4 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 text-sm text-white/70 sm:flex-row sm:px-6">
-        {/* 左侧：品牌 + GitHub stars（均指向仓库） */}
+        {/* 左侧：品牌 + 自绘 GitHub stars 徽章（点击弹出 star/follow 引导） */}
         <div className="flex items-center gap-2">
           <a
             href="https://github.com/evil7/deepSea"
@@ -27,19 +29,7 @@ export function SiteFooter() {
             deepSea
           </a>
           <span className="text-white/40">·</span>
-          <a
-            href="https://github.com/evil7/deepSea"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-opacity hover:opacity-80"
-            aria-label="GitHub stars"
-          >
-            <img
-              alt="GitHub Repo stars"
-              src="https://img.shields.io/github/stars/evil7/deepSea?style=social"
-              className="inline-block h-4 w-auto"
-            />
-          </a>
+          <GitHubStarBadge repo="evil7/deepSea" />
         </div>
 
         {/* 右侧：版权 icon + 自动年份 · deePwn */}

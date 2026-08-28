@@ -459,6 +459,13 @@ export function CommunityPage() {
               />
               <div className="min-w-0 flex-1 pl-2">
                 <div className="flex items-center gap-2">
+                  {/* 低质贴标签：类别前方（低质过滤 collapse 模式命中时标记） */}
+                  {lowQualitySet.has(d.number) && blocks.mode === "collapse" && (
+                    <Badge className="shrink-0 border-orange-400/40 bg-orange-400/10 text-orange-300">
+                      <ThumbsDown />
+                      {t("community.lowQualityLabel")}
+                    </Badge>
+                  )}
                   <Badge
                     className={cn(
                       "shrink-0 font-mono text-[10px]",
@@ -483,7 +490,7 @@ export function CommunityPage() {
                 </p>
               </div>
               {/* 尾部统计：评论数 + 投票数（icon + 数字，无文字；仅桌面显示，
-                  手机端只显示纯卡片，不展示回复/投票数量）。低质贴 label 靠最右 */}
+                  手机端只显示纯卡片，不展示回复/投票数量） */}
               <div className="hidden shrink-0 items-center gap-2 sm:flex">
                 <div className="community-stat-chip flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
                   <MessagesSquare className="size-3.5 text-theme-accent" />
@@ -497,12 +504,6 @@ export function CommunityPage() {
                     {d.upvoteCount ?? 0}
                   </span>
                 </div>
-                {lowQualitySet.has(d.number) && blocks.mode === "collapse" && (
-                  <Badge className="border-orange-400/40 bg-orange-400/10 text-orange-300">
-                    <ThumbsDown />
-                    {t("community.lowQualityLabel")}
-                  </Badge>
-                )}
               </div>
             </Link>
             )

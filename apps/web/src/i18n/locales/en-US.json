@@ -364,10 +364,14 @@
     "rateLimited": "Rate-limited by GitHub, please try again later"
   },
   "starFollow": {
-    "starLine": "Like {{repo}}? Give it a star!",
+    "starLine": "Like what you see? Give us a star!",
     "starBtn": "Star it",
-    "followLine": "Follow {{names}} to stay tuned!",
-    "followBtn": "Follow"
+    "followLine": "Follow the author to stay updated!",
+    "followBtn": "Follow",
+    "badgeTitle": "deepSea · Show some love (Star / Follow)",
+    "starredToast": "Starred {{repo}} — thank you!",
+    "followedToast": "Following {{name}}",
+    "operateFailed": "Operation failed, please retry"
   },
   "time": {
     "justNow": "just now",
