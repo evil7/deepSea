@@ -26,7 +26,7 @@ export interface CommunityBlocks {
 
 export const DEFAULT_BLOCKS: CommunityBlocks = {
   blockedUsers: [],
-  thumbsDownThreshold: 0,
+  thumbsDownThreshold: 3,
   mode: "collapse",
 }
 

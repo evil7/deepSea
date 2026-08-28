@@ -6,11 +6,14 @@ import {
   CheckCircle2,
   CornerDownRight,
   ExternalLink,
+  Eye,
+  EyeOff,
   Home,
   Loader2,
   MessagesSquare,
   Send,
   SmilePlus,
+  ThumbsDown,
   User,
 } from "lucide-react"
 import { Link, useLocation, useParams } from "react-router-dom"
@@ -26,7 +29,11 @@ import { useAuth } from "@/hooks/use-auth"
 import { useCommunityBlocks } from "@/hooks/use-community-blocks"
 import { BlockedNotice } from "@/components/community/blocked-notice"
 import { BlockUserButton } from "@/components/community/block-user-button"
-import { resolveBlockReason, type CommunityBlocks } from "@/lib/community-blocks"
+import {
+  resolveBlockReason,
+  thumbsDownCount,
+  type CommunityBlocks,
+} from "@/lib/community-blocks"
 import {
   formatRelativeTime,
   loadDiscussionDetail,
@@ -332,16 +339,18 @@ function ReplyRow({
   const [expanded, setExpanded] = useState(false)
 
   if (reason && blocks.mode === "hide") return null
-  if (reason && !expanded) {
-    return (
-      <div className={cn(!isLast && "pb-3")}>
-        <BlockedNotice open={false} onToggle={() => setExpanded(true)} />
-      </div>
-    )
-  }
 
   return (
-    <div className="flex gap-3">
+    <div className={cn(!isLast && "pb-3")}>
+      {/* 低质横幅常驻：提供展开 / 再次折叠 */}
+      {reason && (
+        <BlockedNotice
+          open={expanded}
+          onToggle={() => setExpanded((v) => !v)}
+        />
+      )}
+      {(expanded || !reason) && (
+        <div className="flex gap-3">
       {/* 头像列：头像节点 + 竖向连接线（steps 主干） */}
       <div className="flex shrink-0 flex-col items-center">
         <UserAvatar url={reply.avatarUrl} name={reply.author} size="sm" />
@@ -406,6 +415,77 @@ function ReplyRow({
           />
         </div>
       </div>
+      </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 低质帖大卡片横幅：帖子（OP）命中低质判定时，整个帖子（含评论/回复）折叠
+ * 成占位卡片。居中大 👎 icon + 低质贴 + 被踩次数 + 「偏要浅尝狗屎咸淡」展开。
+ * 展开/收起可反复切换（横幅常驻）。
+ */
+function LowQualityHero({
+  thumbsDown,
+  open,
+  onToggle,
+}: {
+  thumbsDown: number
+  open: boolean
+  onToggle: () => void
+}) {
+  const { t } = useTranslation()
+
+  // 展开态：还原为横条横幅（与 BlockedNotice 一致的紧凑条状），
+  // 常驻内容上方，字体/配色与评论、回复的低质条统一。
+  if (open) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border border-dashed border-orange-400/30 bg-orange-400/5 px-3.5 py-2.5 text-xs text-muted-foreground">
+        <ThumbsDown className="size-3.5 shrink-0 text-orange-300" />
+        <span className="font-medium text-orange-300/90">
+          {t("community.lowQualityLabel")}
+        </span>
+        <span>
+          {t("communityDetail.lowQualityHeroDesc", { count: thumbsDown })}
+        </span>
+        <span className="min-w-0 flex-1" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs"
+          onClick={onToggle}
+        >
+          <EyeOff className="size-3" />
+          {t("settings.blockedCollapse")}
+        </Button>
+      </div>
+    )
+  }
+
+  // 折叠态：大卡片占位横幅（居中大 👎 + 标题 + 被踩次数 + 展开按钮）
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-orange-400/30 bg-orange-400/5 px-6 py-12 text-center">
+      <span className="flex size-14 items-center justify-center rounded-full border border-orange-400/40 bg-orange-400/10">
+        <ThumbsDown className="size-7 text-orange-300" />
+      </span>
+      <p className="text-lg font-semibold tracking-wide text-orange-300">
+        {t("community.lowQualityLabel")}
+      </p>
+      <p className="text-base leading-relaxed text-foreground/75">
+        {t("communityDetail.lowQualityHeroDesc", { count: thumbsDown })}
+      </p>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="mt-1 h-auto gap-1.5 px-3 py-1.5 text-sm font-semibold text-foreground/80 hover:bg-muted hover:text-foreground"
+        onClick={onToggle}
+      >
+        <Eye className="size-4" />
+        {t("communityDetail.lowQualityHeroExpand")}
+      </Button>
     </div>
   )
 }
@@ -440,17 +520,18 @@ function CommentItem({
   const [expanded, setExpanded] = useState(false)
 
   if (reason && blocks.mode === "hide") return null
-  if (reason && !expanded) {
-    return (
-      <div>
-        <BlockedNotice open={false} onToggle={() => setExpanded(true)} />
-      </div>
-    )
-  }
 
   return (
     <div>
-      <div className="flex gap-3">
+      {/* 低质横幅常驻：提供展开 / 再次折叠 */}
+      {reason && (
+        <BlockedNotice
+          open={expanded}
+          onToggle={() => setExpanded((v) => !v)}
+        />
+      )}
+      {(expanded || !reason) && (
+        <div className="flex gap-3">
         {/* 头像（顶层评论用大尺寸） */}
         <div className="shrink-0 pt-0.5">
           <UserAvatar
@@ -539,7 +620,8 @@ function CommentItem({
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -844,19 +926,24 @@ export function CommunityDetailPage() {
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* ── 左栏：主贴卡片 + 评论卡片（两卡片分离） ── */}
           <main className="min-w-0 space-y-6">
-            {/* 主贴卡片（OP 独立卡片，标题已上移到页头；软屏蔽命中时折叠/隐藏） */}
             {(() => {
               const opReason = resolveBlockReason(blocks, {
                 author: detail.author,
                 reactions: detail.reactions,
               })
-              if (opReason && blocks.mode === "hide") return null
-              if (opReason && !opExpanded) {
-                return (
-                  <BlockedNotice open={false} onToggle={() => setOpExpanded(true)} />
-                )
-              }
               return (
+                <>
+                  {/* 低质帖（OP 命中）：最高优先级——整个帖子（OP + 评论 + 回复）
+                      一并折叠成大卡片横幅；hide 模式 URL 直达同样显示（可展开） */}
+                  {opReason && (
+                    <LowQualityHero
+                      thumbsDown={thumbsDownCount(detail.reactions)}
+                      open={opExpanded}
+                      onToggle={() => setOpExpanded((v) => !v)}
+                    />
+                  )}
+                  {(!opReason || opExpanded) && (
+            <>
             <section className="rounded-xl border border-border bg-card">
               {/* 卡片头：左作者信息 / 右分类标签 + 在 GitHub 查看 */}
               <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
@@ -912,8 +999,6 @@ export function CommunityDetailPage() {
                 />
               </div>
             </section>
-              )
-            })()}
 
             {/* 评论 bar：{n} comments · {m} replies（左）+ outline 排序 tabs（右），左右分布 */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
@@ -1000,6 +1085,11 @@ export function CommunityDetailPage() {
                 </div>
               )}
             </div>
+            </>
+                  )}
+                </>
+              )
+            })()}
           </main>
 
           {/* ── 右栏：边栏（sticky 固定，滚动不消失；与插件详情页一致） ── */}

@@ -23,7 +23,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   language: "",
   theme: "",
   blockedUsers: [],
-  thumbsDownThreshold: 0,
+  thumbsDownThreshold: 3,
   mode: "collapse",
 }
 
@@ -53,7 +53,7 @@ export function loadLocalPreferences(): UserPreferences {
           ...DEFAULT_PREFERENCES,
           blockedUsers: Array.isArray(old.blockedUsers) ? old.blockedUsers : [],
           thumbsDownThreshold:
-            typeof old.thumbsDownThreshold === "number" ? old.thumbsDownThreshold : 0,
+            typeof old.thumbsDownThreshold === "number" ? old.thumbsDownThreshold : 3,
           mode: old.mode === "hide" || old.mode === "off" ? old.mode : "collapse",
         }
         writeLocalPreferences(merged)
@@ -88,7 +88,7 @@ export function normalizePreferences(p: Partial<UserPreferences>): UserPreferenc
       Number.isFinite(p.thumbsDownThreshold) &&
       p.thumbsDownThreshold >= 0
         ? Math.floor(p.thumbsDownThreshold)
-        : 0,
+        : 3,
     mode: p.mode === "hide" || p.mode === "off" ? p.mode : "collapse",
   }
 }

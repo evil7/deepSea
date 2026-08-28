@@ -210,7 +210,9 @@
     "blockUser": "Block {{name}}",
     "unblockUser": "Unblock {{name}}",
     "userBlockedToast": "Blocked {{name}}",
-    "userUnblockedToast": "Unblocked {{name}}"
+    "userUnblockedToast": "Unblocked {{name}}",
+    "lowQualityHeroDesc": "This post was downvoted {{count}} times",
+    "lowQualityHeroExpand": "I'm curious what the hell the shit is"
   },
   "links": {
     "title": "Remote Link",

@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   Compass,
   ExternalLink,
@@ -45,6 +46,8 @@ export function Topbar() {
   const { user, loading, logout } = useAuth()
   const { loginHref } = useAuthHrefs()
   const { theme, setTheme } = useTheme()
+  // 头像用户菜单（受控）：点击「用户管理」跳转前收起，避免卡片残留
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   // 首页各屏菜单（与首页 slide 逐一对应；文案随语言切换）
   const menuItems = [
@@ -146,8 +149,8 @@ export function Topbar() {
               <Loader2 className="size-4 animate-spin" />
             </Button>
           ) : user ? (
-            // 已登录：用户卡片 → 点击展开下拉菜单
-            <DropdownMenu>
+            // 已登录：用户卡片 → 点击展开下拉菜单（受控：跳转前收起）
+            <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
@@ -221,7 +224,13 @@ export function Topbar() {
 
                 {/* 底部栏：用户管理（设置）+ 登出账号（等宽按钮组） */}
                 <div className="flex items-center gap-2 px-3 py-2.5">
-                  <Button asChild variant="ghost" size="sm" className="flex-1">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setUserMenuOpen(false)}
+                  >
                     <Link to="/settings">
                       <Settings className="size-4" />
                       {t("nav.manage")}

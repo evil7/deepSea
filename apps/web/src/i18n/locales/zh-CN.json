@@ -212,7 +212,9 @@
     "blockUser": "屏蔽 {{name}}",
     "unblockUser": "解除屏蔽 {{name}}",
     "userBlockedToast": "已屏蔽 {{name}}",
-    "userUnblockedToast": "已解除屏蔽 {{name}}"
+    "userUnblockedToast": "已解除屏蔽 {{name}}",
+    "lowQualityHeroDesc": "该帖被踩 {{count}} 次",
+    "lowQualityHeroExpand": "偏要浅尝狗屎咸淡"
   },
   "links": {
     "title": "远端互联",
