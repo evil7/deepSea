@@ -9,8 +9,15 @@
 // 运行：先 node test/build-tests.mjs，再 node test/auth-proxy.test.mjs
 
 import { createServer, request as httpRequest } from 'node:http'
+import { createHash, createHmac } from 'node:crypto'
 import { createAuthProxy } from './.auth-proxy.bundle.mjs'
 import { generateTotpSecret, totpCode } from './.totp.bundle.mjs'
+
+/** 复刻插件 verifyTicket：HMAC-SHA256(key=sha512(secret) hex 字符串, msg)。 */
+function signTicket(secret, nodeId, ts, nonce) {
+  const key = createHash('sha512').update(secret).digest('hex')
+  return createHmac('sha256', key).update(`deepc-ticket:${nodeId}:${ts}:${nonce}`).digest('hex')
+}
 
 // ── mock 3080 上游（legacy：始终 200；用 3090 避免与真实 dsh 3080 冲突）────────
 const upstream = createServer((incoming, res) => {
@@ -150,6 +157,35 @@ const cookie = resp.setCookie.split(';')[0]
 resp = await req('/', { cookie })
 check('带 cookie 访问 → 200', resp.status === 200)
 check('返回上游内容', resp.text.includes('HELLO FROM DSH 3080'))
+
+// ── 4b. 主站 ticket 免密（跨站 form POST 场景）→ dc_site None+Secure ──
+// 关键回归：ticket 来自 deepc.cn 跨站 POST，SameSite=Strict 跨站响应拒存 →
+// 免密失效（302 后无 dc_site → 401 TOTP 页）。必须 None+Secure 才能种入。
+proxy.setBypass('test-node-1')
+const tTs = Date.now()
+const tNonce = 'ticket-nonce-1'
+const tSig = signTicket(SECRET, 'test-node-1', tTs, tNonce)
+resp = await req('/__deepc_ticket', {
+  method: 'POST',
+  form: `nodeId=test-node-1&ts=${tTs}&nonce=${tNonce}&sig=${tSig}`,
+})
+check('ticket 免密 → 302', resp.status === 302)
+check(
+  'ticket 免密 dc_site = SameSite=None; Secure（跨站可种入）',
+  (resp.setCookie || '').includes('dc_site=') &&
+    (resp.setCookie || '').includes('SameSite=None') &&
+    (resp.setCookie || '').includes('Secure'),
+)
+const ticketCookie = resp.setCookie.split(';')[0]
+resp = await req('/', { cookie: ticketCookie })
+check('ticket 免密后带 dc_site 访问 → 200', resp.status === 200)
+
+// 错误 ticket → 401 bad-ticket
+resp = await req('/__deepc_ticket', {
+  method: 'POST',
+  form: `nodeId=test-node-1&ts=${tTs}&nonce=${tNonce}&sig=deadbeef`,
+})
+check('错误 ticket → 401 bad-ticket', resp.status === 401 && resp.text.includes('bad-ticket'))
 
 // ── 5. 防暴力：连败 5 次 → 429 锁定（1 小时）─────────────────────────
 // 前面已成功一次（计数重置为 0），这里连发 5 次错误码触发锁定。

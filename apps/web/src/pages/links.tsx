@@ -306,25 +306,22 @@ function TunnelCard({
     window.setTimeout(() => setCopied(false), 1200)
   }
 
-  // 打开 = 直接新标签打开节点隧道地址（顶层导航）。有主站一次性 ticket 则免密直连：
-  // 先开命名窗口定位节点域 → form POST ticket（3081 验签 → 种 dc_site + 服务端
-  // 交换官方会话 cookie → 302 进入）；无 ticket（未启用 bypass / 无权限）→ 新标签
-  // 直接打开，3081 内置 TOTP 2FA 页内手动输码。
-  const handleOpen = async () => {
+  // 打开 = 直接新标签打开节点隧道地址（顶层导航）。有主站一次性 ticket 则免密直连。
+  // 关键：window.open 必须在用户手势同步阶段调用——await 网络请求之后调用会被浏览器
+  // 弹窗拦截器拦截（返回 null，新窗口不开、ticket 无处投递）。因此先同步开窗导航节点
+  // URL（3081 鉴权页或直达），再异步拿 ticket，form POST 到同一命名窗口覆盖为免密进入
+  // （3081 验签 → 种 dc_site + 服务端交换官方 cookie → 302）。
+  const handleOpen = () => {
     if (!node.url) return
-    let ticket: TunnelTicket | null = null
-    try {
-      const access = await requestAccess(node.nodeId)
-      ticket = access?.ticket ?? null
-    } catch {
-      ticket = null
-    }
-    if (ticket) {
-      window.open(node.url, NODE_WINDOW_NAME)
-      postTicketToWindow(node.url, ticket)
-    } else {
-      window.open(node.url, "_blank", "noopener")
-    }
+    window.open(node.url, NODE_WINDOW_NAME)
+    void (async () => {
+      try {
+        const access = await requestAccess(node.nodeId)
+        if (access?.ticket) postTicketToWindow(node.url, access.ticket)
+      } catch {
+        // 拿不到 ticket（bypass 未启用 / 网络失败）→ 窗口保持节点 URL，3081 手动 TOTP
+      }
+    })()
   }
 
   return (

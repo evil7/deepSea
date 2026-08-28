@@ -691,15 +691,19 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   }
 
   /**
-   * 生成门通行证 cookie（SameSite=Strict，7 天）。
-   * 注意：dc_site 仅 3081 判定「本浏览器已过门」；真正会话由官方 dsh-auth-* cookie 承担，
-   * 因此不再需要 Partitioned（iframe 时代遗留）——顶层导航下 SameSite=Strict 足够，
-   * 去掉 Secure 兼容局域网 http（模式 1 local）。
+   * 生成门通行证 cookie（7 天）。属性按**种入上下文**区分（关键！）：
+   *   · crossSite=true（主站 ticket 免密）：ticket 是 deepc.cn 跨站 form POST 到隧道域，
+   *     `SameSite=Strict` 在跨站响应中**不会被浏览器存储** → 免密失效（302 后无 dc_site
+   *     → 门禁 401 → 显示 TOTP 页）。必须 `SameSite=None; Secure` 才能跨站种入。
+   *   · crossSite=false（手动 TOTP）：页面在隧道域/局域网（第一方）提交，`SameSite=Strict`
+   *     足够且兼容局域网 http（Secure 需 https，局域网是 http）。
+   * dc_site 仅 3081 判定「已过门」；真正会话由官方 dsh-auth-* cookie 承担（新 dsh）。
    */
-  function dcSiteCookie(): string {
+  function dcSiteCookie(crossSite: boolean): string {
     const exp = Date.now() + 7 * 24 * 3600 * 1000
     const sig = hmacHex(secret!, `deepc-cookie:${exp}`)
-    return `${COOKIE_NAME}=${exp}.${sig}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${7 * 24 * 3600}`
+    const sameSite = crossSite ? 'SameSite=None; Secure' : 'SameSite=Strict'
+    return `${COOKIE_NAME}=${exp}.${sig}; Path=/; HttpOnly; ${sameSite}; Max-Age=${7 * 24 * 3600}`
   }
 
   /**
@@ -744,9 +748,10 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
   /**
    * 门通过后的统一授权动作：种门通行证 dc_site + 服务端交换官方会话 cookie（新 dsh）
    * → 302 回原路径。老版本 dsh（无 launch-token）仅种 dc_site（自有会话回退，原行为）。
+   * @param crossSite 种 dc_site 的上下文是否跨站（ticket 免密=true，TOTP 手动=false）。
    */
-  async function grantAccess(res: ServerResponse, back: string): Promise<void> {
-    const dc = dcSiteCookie()
+  async function grantAccess(res: ServerResponse, back: string, crossSite: boolean): Promise<void> {
+    const dc = dcSiteCookie(crossSite)
     const official = await exchangeOfficialToken()
     const headers: Record<string, string | string[]> = {
       Location: back,
@@ -805,7 +810,7 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
         back = '/'
       }
     }
-    await grantAccess(res, back)
+    await grantAccess(res, back, false)
   }
 
   // HTTP/WS 反代统一交给 http-proxy（成熟的 hop-by-hop 头处理、body 流式、连接清理、WS 双向），
@@ -832,7 +837,8 @@ export function createAuthProxy(opts: AuthProxyOptions = {}): AuthProxy {
           /* ignore */
         }
         if (verifyTicket(fields)) {
-          await grantAccess(res, '/')
+          // ticket 来自主站跨站 form POST → dc_site 必须 None+Secure 才能种入。
+          await grantAccess(res, '/', true)
         } else {
           sendJson(res, 401, { ok: false, error: 'bad-ticket' })
         }
