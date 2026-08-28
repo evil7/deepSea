@@ -224,7 +224,7 @@
     "needLoginDesc": "登录 GitHub 账号后，可查看并管理同一账号下上报的 dsh 节点",
     "loadingNodes": "加载节点…",
     "emptyTitle": "暂无纳管节点",
-    "emptyDesc": "在本地 dsh 安装 deepc-link 插件，选择「主站纳管」模式并登录后，节点会显示在这里",
+    "emptyDesc": "在本地 dsh 安装 deepc-link 插件，开启「隧道映射」并在插件端登录后，节点会显示在这里",
     "online": "在线",
     "connecting": "连接中…",
     "offline": "离线",

@@ -222,7 +222,7 @@
     "needLoginDesc": "After signing in with GitHub, view and manage dsh nodes reported under your account",
     "loadingNodes": "Loading nodes…",
     "emptyTitle": "No managed nodes",
-    "emptyDesc": "Install the deepc-link plugin in local dsh, choose \"Managed\" mode and sign in — nodes will appear here",
+    "emptyDesc": "Install the deepc-link plugin in local dsh, Turn on the \"Tunnel\" mode and sign in — nodes will appear here",
     "online": "Online",
     "connecting": "Connecting…",
     "offline": "Offline",
